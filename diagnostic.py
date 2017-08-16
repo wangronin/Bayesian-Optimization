@@ -15,16 +15,15 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern
 from sklearn.metrics import r2_score
 
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from deap import benchmarks
 
 import numpy as np
-from numpy import pi, cos
 
 np.random.seed(100)
 
 plt.ioff()
-fig_width = 20
+fig_width = 21.5
 fig_height = fig_width / 3.2
 
 def fitness(X):
@@ -36,11 +35,12 @@ def fitness(X):
 #    y = np.sum(X ** 2., axis=1) + 1e-1 *  np.random.randn(X.shape[0])
 #    return y
 
-    return np.array([benchmarks.ackley(x)[0] for x in X])
+    return np.array([benchmarks.sphere(x)[0] for x in X]) + .5 * np.random.randn(X.shape[0])
+
 
 dim = 2
 alpha = np.pi / 6.
-n_init_sample = 500
+n_init_sample = 100
 
 x_lb = np.array([-5] * dim)
 x_ub = np.array([5] * dim)
@@ -50,8 +50,8 @@ y = fitness(X)
 
 length_lb = 1e-10
 length_ub = 1e2
-#thetaL = length_ub ** -2.  / (x_ub - x_lb) ** 2. * np.ones(dim)
-#thetaU = length_lb ** -2.  / (x_ub - x_lb) ** 2. * np.ones(dim)
+# thetaL = length_ub ** -2.  / (x_ub - x_lb) ** 2. * np.ones(dim)
+# thetaU = length_lb ** -2.  / (x_ub - x_lb) ** 2. * np.ones(dim)
 
 thetaL = 1e-5 * (x_ub - x_lb) * np.ones(dim)
 thetaU = 10 * (x_ub - x_lb) * np.ones(dim)
@@ -60,34 +60,34 @@ thetaU = 10 * (x_ub - x_lb) * np.ones(dim)
 theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
 if 1 < 2:
-#    model = GaussianProcess(corr='matern',
-##                            theta0=np.array([0.86637243,  0.78871857]) ** -2,
-#                            theta0 = theta0,
-#                            thetaL=thetaL,
-#                            thetaU=thetaU,
-#                            nugget=1e-10,
-#                            nugget_estim=True,
-#                            optimizer='BFGS',
-#                            verbose=True,
-#                            wait_iter=10,
-#                            random_start=30,
-#                            normalize=False)
+    model = GaussianProcess(corr='matern',
+#                            theta0=np.array([0.86637243,  0.78871857]) ** -2,
+                            theta0 = theta0,
+                            thetaL=thetaL,
+                            thetaU=thetaU,
+                            nugget=.5,
+                            nugget_estim=True,
+                            optimizer='BFGS',
+                            verbose=True,
+                            wait_iter=10,
+                            random_start=30,
+                            normalize=False)
 
-    model = OWCK(corr='matern',
-                 n_cluster=5,
-                 min_leaf_size=50,
-                 cluster_method='k-mean',
-                 overlap=0.0,
-                 verbose=True,
-                 theta0=theta0,
-                 thetaL=thetaL,
-                 thetaU=thetaU,
-                 nugget=1e-10,
-                 random_start=30,
-                 optimizer='BFGS',
-                 nugget_estim=False,
-                 normalize=False,
-                 is_parallel=False)
+   # model = OWCK(corr='matern',
+   #               n_cluster=5,
+   #               min_leaf_size=50,
+   #               cluster_method='k-mean',
+   #               overlap=0.0,
+   #               verbose=True,
+   #               theta0=theta0,
+   #               thetaL=thetaL,
+   #               thetaU=thetaU,
+   #               nugget=1e-10,
+   #               random_start=30,
+   #               optimizer='BFGS',
+   #               nugget_estim=False,
+   #               normalize=False,
+   #               is_parallel=False)
 
 else:
     l = 1 / np.sqrt(theta0)
@@ -100,11 +100,10 @@ model.fit(X, y)
 y_hat = model.predict(X)
 r2 = r2_score(y, y_hat)
 print r2
-
-#print model.noise_var
+print model.noise_var
 
 fig0, (ax0, ax1) = plt.subplots(1, 2, sharey=True, sharex=False,
-                                     figsize=(fig_width, fig_height),
+                                figsize=(fig_width, fig_height),
                                      subplot_kw={'aspect':'equal'}, dpi=100)
 
 f = lambda x: model.predict(x)
@@ -114,7 +113,6 @@ plot_contour_gradient(ax0, fitness, None, x_lb, x_ub, title='Function',
 
 plot_contour_gradient(ax1, f, None, x_lb, x_ub, title='Kriging model',
                       n_level=15, n_per_axis=100)
-
 
 ax0.plot(X[:, 0], X[:, 1], ls='none', marker='.', ms=10, mfc='k', mec='none',
          alpha=0.7)
