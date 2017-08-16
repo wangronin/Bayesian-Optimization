@@ -2,10 +2,9 @@
 """
 Created on Fri Jan 27 13:57:13 2017
 
-@author: wangronin
+@author: Hao Wang
+@email: wangronin@gmail.com
 """
-
-import pdb
 
 from GaussianProcess import OWCK
 from GaussianProcess import GaussianProcess_extra as GaussianProcess
@@ -19,9 +18,9 @@ import matplotlib.pyplot as plt
 from deap import benchmarks
 
 import numpy as np
+from numpy.random import randn
 
 np.random.seed(100)
-
 plt.ioff()
 fig_width = 21.5
 fig_height = fig_width / 3.2
@@ -35,7 +34,7 @@ def fitness(X):
 #    y = np.sum(X ** 2., axis=1) + 1e-1 *  np.random.randn(X.shape[0])
 #    return y
 
-    return np.array([benchmarks.sphere(x)[0] for x in X]) + .5 * np.random.randn(X.shape[0])
+    return np.array([benchmarks.sphere(x)[0] for x in X]) + .5 * randn(X.shape[0])
 
 
 dim = 2
@@ -61,8 +60,8 @@ theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
 if 1 < 2:
     model = GaussianProcess(corr='matern',
-#                            theta0=np.array([0.86637243,  0.78871857]) ** -2,
-                            theta0 = theta0,
+                            # theta0=np.array([0.86637243,  0.78871857]) ** -2,
+                            theta0=theta0,
                             thetaL=thetaL,
                             thetaU=thetaU,
                             nugget=.5,
@@ -73,38 +72,39 @@ if 1 < 2:
                             random_start=30,
                             normalize=False)
 
-   # model = OWCK(corr='matern',
-   #               n_cluster=5,
-   #               min_leaf_size=50,
-   #               cluster_method='k-mean',
-   #               overlap=0.0,
-   #               verbose=True,
-   #               theta0=theta0,
-   #               thetaL=thetaL,
-   #               thetaU=thetaU,
-   #               nugget=1e-10,
-   #               random_start=30,
-   #               optimizer='BFGS',
-   #               nugget_estim=False,
-   #               normalize=False,
-   #               is_parallel=False)
+    # model = OWCK(corr='matern',
+    #              n_cluster=5,
+    #              min_leaf_size=50,
+    #              cluster_method='k-mean',
+    #              overlap=0.0,
+    #              verbose=True,
+    #              theta0=theta0,
+    #              thetaL=thetaL,
+    #              thetaU=thetaU,
+    #              nugget=1e-10,
+    #              random_start=30,
+    #              optimizer='BFGS',
+    #              nugget_estim=False,
+    #              normalize=False,
+    #              is_parallel=False)
 
 else:
-    l = 1 / np.sqrt(theta0)
-    kernel = 1.0 * Matern(length_scale=l, length_scale_bounds=(length_lb, length_ub))
+    par = 1 / np.sqrt(theta0)
+    kernel = 1.0 * Matern(length_scale=par, length_scale_bounds=(length_lb, length_ub))
     model = GaussianProcessRegressor(kernel, alpha=1e-10, n_restarts_optimizer=20,
-                                     normalize_y = True)
+                                     normalize_y=True)
 
 model.fit(X, y)
 
 y_hat = model.predict(X)
 r2 = r2_score(y, y_hat)
-print r2
-print model.noise_var
+
+print 'R2', r2
+print 'Homoscedastic noise variance', model.noise_var
 
 fig0, (ax0, ax1) = plt.subplots(1, 2, sharey=True, sharex=False,
                                 figsize=(fig_width, fig_height),
-                                     subplot_kw={'aspect':'equal'}, dpi=100)
+                                subplot_kw={'aspect': 'equal'}, dpi=100)
 
 f = lambda x: model.predict(x)
 
@@ -123,5 +123,3 @@ for i, ax in enumerate((ax0, ax1)):
 
 plt.tight_layout()
 plt.show()
-
-pdb.set_trace()
