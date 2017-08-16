@@ -129,7 +129,6 @@ def matern(theta, X, eval_Dx=False, eval_Dtheta=False,
         return np.exp(-np.sum(theta.reshape(1, n_features) * d ** 2, axis=1))
 
     """
-
     theta = np.asarray(theta, dtype=np.float64)
     X = np.asarray(X, dtype=np.float64)
     if X.ndim > 1:
@@ -162,14 +161,12 @@ def matern(theta, X, eval_Dx=False, eval_Dtheta=False,
         K *= tmp ** nu
         K *= kv(nu, tmp)
 
-
     if eval_Dx:
         pass
 
     # convert from upper-triangular matrix to square matrix
-    #K = squareform(K)
-    #np.fill_diagonal(K, 1)
-
+    # K = squareform(K)
+    # np.fill_diagonal(K, 1)
     if eval_Dtheta:
         pass
 #        # We need to recompute the pairwise dimension-wise distances
@@ -424,9 +421,7 @@ def cubic(theta, d):
     return r
 
 
-
 MACHINE_EPSILON = np.finfo(np.double).eps
-
 
 def l1_cross_distances(X):
     """
@@ -625,15 +620,14 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
     _optimizer_types = [
         'BFGS',
-        'fmin_cobyla'
-        ]
+        'fmin_cobyla']
 
     # 10. * MACHINE_EPSILON
-    def __init__(self, regr='constant', corr='squared_exponential', beta0=None,
-                 verbose=False, theta0=1e-1, thetaL=None, thetaU=None, sigma2=None,
-                 optimizer='BFGS', random_start=1, normalize=False,
-                 nugget=None, nugget_estim=False, wait_iter=5,
-                 random_state=None):
+    def __init__(self, regr='constant', corr='squared_exponential', 
+                 beta0=None, verbose=False, theta0=1e-1, thetaL=None, 
+                 thetaU=None, sigma2=None, optimizer='BFGS', random_start=1,
+                 normalize=False, nugget=None, nugget_estim=False, 
+                 wait_iter=5, random_state=None):
 
         self.regr = regr
         self.corr = corr
@@ -940,7 +934,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
                 return y
 
-
     def corr_grad_theta(self, theta, X, R, nu=1.5):
         # Check input shapes
         X = np.atleast_2d(X)
@@ -1072,8 +1065,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             L, Ft, Yt, Q, G, rho = self._compute_aux_var(R0)
             sigma2 = (rho ** 2.).sum(axis=0) / n_samples
 
-            log_likelihood = -0.5 * (n_samples * log(2.*pi*sigma2) \
-                + 2. * np.log(np.diag(L)).sum() + n_samples)
+            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2) + 2. * np.log(np.diag(L)).sum() + n_samples)
 
         elif self.log_likelihood_mode == 'nugget_estim':
             theta, alpha = hyper_par[:-1], hyper_par[-1]
@@ -1086,16 +1078,14 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 return (log_likelihood, np.zeros(n_hyper_par, 1)) if eval_grad else log_likelihood
 
             sigma2_total = (rho ** 2.).sum(axis=0) / n_samples
-            sigma2, noise_var = alpha * sigma2_total, (1-alpha) * sigma2_total
+            sigma2, noise_var = alpha * sigma2_total, (1 - alpha) * sigma2_total
 
-            log_likelihood = -0.5 * (n_samples * log(2.*pi*sigma2_total) \
-                + 2. * np.log(np.diag(L)).sum() + n_samples)
+            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2_total) + 2. * np.log(np.diag(L)).sum() + n_samples)
 
         elif self.log_likelihood_mode == 'noisy':
             theta, sigma2 = hyper_par[:-1], hyper_par[-1]
             noise_var = self.noise_var
             sigma2_total = sigma2 + noise_var
-#            sd_total = np.sqrt(sigma2_total)
 
             R0 = self.correlation_matrix(theta)
             C = sigma2 * R0 + noise_var * np.eye(n_samples)
@@ -1106,14 +1096,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             except linalg.LinAlgError:
                 return (log_likelihood, np.zeros(n_hyper_par, 1)) if eval_grad else log_likelihood
 
-            log_likelihood = -0.5 * (n_samples * log(2.*pi*sigma2_total) \
-                + 2. * np.log(np.diag(L)).sum() + np.dot(rho.T, rho)/sigma2_total)
-
-#            L = L / sigma2_total
-#            Ft, Yt, rho = map(lambda x: x*sigma2_total, [Ft, Yt, rho])
-#            Q, G = Q * sd_total, G * sd_total
-
-#        sigma2 *= self.y_std ** 2.
+            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2_total) + 2. * np.log(np.diag(L)).sum() + np.dot(rho.T, rho) / sigma2_total)
 
         if par_out is not None:
             par_out['sigma2'] = sigma2
@@ -1158,7 +1141,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             R_grad_tensor = alpha * self.corr_grad_theta(theta, self.X, R0)
 
             # partial derivatives w.r.t theta's
-            for i in range(n_hyper_par-1):
+            for i in range(n_hyper_par - 1):
                 R_grad_upper = R_grad_tensor[:, :, i][np.triu_indices(n_samples, 1)]
 
                 # Note that sigma2_total is used here
@@ -1167,8 +1150,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
             # partial derivatives w.r.t 'v'
             R_dv = R0 - np.eye(n_samples)
-            log_likelihood_grad[n_hyper_par-1] = -0.5 * (np.sum(Rinv * R_dv) \
-                - np.dot(gamma.T, R_dv.dot(gamma)) / sigma2_total)
+            log_likelihood_grad[n_hyper_par - 1] = -0.5 * (np.sum(Rinv * R_dv) - np.dot(gamma.T, R_dv.dot(gamma)) / sigma2_total)
 
         elif self.log_likelihood_mode == 'noisy':
             gamma_ = gamma / sigma2_total
@@ -1180,8 +1162,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
             for i in range(n_hyper_par):
                 C_grad = C_grad_tensor[:, :, i]
-                log_likelihood_grad[i] = -0.5 * (np.sum(Cinv * C_grad) 
-                                         - np.dot(gamma_.T, C_grad).dot(gamma_))
+                log_likelihood_grad[i] = -0.5 * (np.sum(Cinv * C_grad) - np.dot(gamma_.T, C_grad).dot(gamma_))
                 
         return log_likelihood, log_likelihood_grad
 
@@ -1393,7 +1374,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 optimal_theta = optimal_param
 
         return optimal_theta, optimal_llf_value, optimal_par
-
 
     def _check_params(self, n_samples=None):
 
