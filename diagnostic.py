@@ -34,7 +34,8 @@ def fitness(X):
 #    y = np.sum(X ** 2., axis=1) + 1e-1 *  np.random.randn(X.shape[0])
 #    return y
 
-    return np.array([benchmarks.sphere(x)[0] for x in X]) + .5 * randn(X.shape[0])
+    return np.array([benchmarks.sphere(x)[0] for x in X]) \
+        + .3 * randn(X.shape[0])
 
 
 dim = 2
@@ -90,8 +91,10 @@ if 1 < 2:
 
 else:
     par = 1 / np.sqrt(theta0)
-    kernel = 1.0 * Matern(length_scale=par, length_scale_bounds=(length_lb, length_ub))
-    model = GaussianProcessRegressor(kernel, alpha=1e-10, n_restarts_optimizer=20,
+    kernel = 1.0 * Matern(length_scale=par, 
+                          length_scale_bounds=(length_lb, length_ub))
+    model = GaussianProcessRegressor(kernel, alpha=1e-10, 
+                                     n_restarts_optimizer=20,
                                      normalize_y=True)
 
 model.fit(X, y)
@@ -114,8 +117,8 @@ plot_contour_gradient(ax0, fitness, None, x_lb, x_ub, title='Function',
 plot_contour_gradient(ax1, f, None, x_lb, x_ub, title='Kriging model',
                       n_level=15, n_per_axis=100)
 
-ax0.plot(X[:, 0], X[:, 1], ls='none', marker='.', ms=10, mfc='k', mec='none',
-         alpha=0.7)
+ax0.plot(X[:, 0], X[:, 1], ls='none', marker='.', 
+         ms=10, mfc='k', mec='none', alpha=0.9)
 
 for i, ax in enumerate((ax0, ax1)):
     ax.set_xlim(x_lb[i], x_ub[i])
