@@ -23,6 +23,7 @@ from sklearn.utils.validation import check_is_fitted
 import math
 import warnings
 
+MACHINE_EPSILON = np.finfo(np.double).eps
 
 """
 The built-in regression models submodule for the gaussian_process module.
@@ -420,8 +421,6 @@ def cubic(theta, d):
 
     return r
 
-
-MACHINE_EPSILON = np.finfo(np.double).eps
 
 def l1_cross_distances(X):
     """
@@ -1446,3 +1445,4 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         # Force random_start type to int
         self.random_start = int(self.random_start)
+
