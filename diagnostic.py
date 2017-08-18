@@ -21,7 +21,6 @@ import numpy as np
 from numpy.random import randn
 
 
-
 np.random.seed(100)
 plt.ioff()
 fig_width = 21.5
