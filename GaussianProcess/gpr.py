@@ -1326,14 +1326,14 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             for iteration in range(self.random_start):
                 # if the model has been optimized before,
                 # then use the last optimized hyperparameters
-                if hasattr(self, 'theta_'):
-                    if self.log_likelihood_mode == 'nugget_estim':
-                        log10param = np.r_[log10(self.theta_),
-                                           log10(1. / (self.noise_var / self.sigma2 + 1.))]
+                # if hasattr(self, 'theta_'):
+                #     if self.log_likelihood_mode == 'nugget_estim':
+                #         log10param = np.r_[log10(self.theta_),
+                #                            log10(1. / (self.noise_var / self.sigma2 + 1.))]
 
-                    elif self.log_likelihood_mode == 'noisy':
-                            log10param = np.r_[log10(self.theta_), log10(self.sigma2)]
-                elif self.theta0 is not None and \
+                #     elif self.log_likelihood_mode == 'noisy':
+                #             log10param = np.r_[log10(self.theta_), log10(self.sigma2)]
+                if self.theta0 is not None and \
                     self.log_likelihood_mode in ['nugget_estim', 'noisy']:
                     log10param = np.r_[log10(self.theta0).flatten(),
                                        np.random.uniform(log10bounds[-1, 0],
@@ -1344,20 +1344,23 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 param_opt_, llf_opt_, convergence_dict = \
                     fmin_l_bfgs_b(obj_func, log10param, bounds=log10bounds,
                                   maxfun=eval_budget)
+
                 if iteration == 0:
                     param_opt = param_opt_
 
                 if convergence_dict["warnflag"] != 0 and self.verbose:
                     warnings.warn("fmin_l_bfgs_b terminated abnormally with the "
-                          " state: %s" % convergence_dict)
-                if self.verbose:
-                    print('iteration: ', iteration+1, convergence_dict['funcalls'], llf_opt)
-
+                                  " state: %s" % convergence_dict)
+                
                 if llf_opt_ < llf_opt:
                     param_opt, llf_opt = param_opt_, llf_opt_
                     c = 0
                 else:
                     c += 1
+
+                if self.verbose:
+                    print('iteration: ', iteration + 1, 
+                          convergence_dict['funcalls'], llf_opt)
 
                 # if function evaluation budget is gone or stagnation...
                 eval_budget -= convergence_dict['funcalls']
@@ -1369,7 +1372,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
             if self.log_likelihood_mode in ['nugget_estim', 'noisy']:
                 optimal_theta = optimal_param[:-1]
-            else:
+            else:   
                 optimal_theta = optimal_param
 
         return optimal_theta, optimal_llf_value, optimal_par

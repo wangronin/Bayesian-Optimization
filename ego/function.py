@@ -37,8 +37,6 @@ def level_cal(Z, step=0.2):
     _min, _max = min(Z.flatten()), max(Z.flatten())
     levels = base**(arange(log(1e-30)/log(base), log(_max-_min+1e-30)/log(base), step)) + _min - 1e-30
     
-    pdb.set_trace()
-
     return levels
     
 def colors_cal(levels):
