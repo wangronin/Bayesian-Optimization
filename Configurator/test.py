@@ -53,7 +53,7 @@ def svm_from_cfg(cfg):
     regr = svm.SVR(degree=2, max_iter=1e5, **cfg)
 
     scores = cross_val_score(regr, X, y, cv=5, scoring='r2')
-    return np.mean(scores)  
+    return np.mean(scores)
 
 
 np.random.seed(1)

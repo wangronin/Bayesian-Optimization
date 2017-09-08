@@ -34,19 +34,20 @@ pandas2ri.activate()
 
 # TODO: implement the configuration space class
 
-# Python wrapper for the R 'randomForest' library 
+# Python wrapper for the R 'randomForest' library
 class RrandomForest(object):
     def __init__(self):
         self.pkg = importr('randomForest')
-        
+
     def fit(self, X, y):
         self.columns = X.columns
         self.n_sample, self.n_feature = X.shape
-        self.rf = self.pkg.randomForest(x=X, y=y, ntree=50, 
+        pdb.set_trace()
+        self.rf = self.pkg.randomForest(x=X, y=y, ntree=50,
                                         mtry=ceil(self.n_feature * 5 / 6.),
                                         nodesize=10)
         return self
-    
+
     def predict(self, X, eval_MSE=False):
         if not isinstance(X, pd.DataFrame):
             X = pd.DataFrame([X], columns=self.columns)
@@ -58,13 +59,13 @@ class RrandomForest(object):
             return y_hat, mse
         else:
             return np.array(_)
-        
-        
+
+
 class configurator(object):
     """
     Bayesian optimization based configurator
     """
-    def __init__(self, conf_space, obj_func, eval_budget, 
+    def __init__(self, conf_space, obj_func, eval_budget,
                  minimize=True, max_iter=None, n_init_sample=None,
                  verbose=False, random_seed=666):
 
@@ -73,21 +74,21 @@ class configurator(object):
         self.init_n_eval = 1
         self.conf_space = conf_space
         self.var_names = [conf['name'] for conf in self.conf_space]
-        self.obj_func = obj_func 
-        
+        self.obj_func = obj_func
+
         assert hasattr(self.obj_func, '__call__')
-        
+
         # random forest is used as the surrogate for now
         # TODO: add Gaussian process (OWCK) to here
         self.surrogate = RrandomForest()
         self.minimize = minimize
         self.dim = len(self.conf_space)
-        
+
         self.con_ = [k['name'] for k in self.conf_space if k['type'] == 'R']  # continuous
-        self.cat_ = [k['name'] for k in self.conf_space if k['type'] == 'D']  # nominal discrete
-        self.int_ = [k['name'] for k in self.conf_space if k['type'] == 'I']  # ordinal discrete
+        self.cat_ = [k['name'] for k in self.conf_space if k['type'] == 'D']  # nominal
+        self.int_ = [k['name'] for k in self.conf_space if k['type'] == 'I']  # ordinal
         self.param_type = [k['type'] for k in self.conf_space]
-        
+
         # parameter: objective evaluation
         self.max_eval = int(eval_budget)
         self.random_start = 30
@@ -112,7 +113,7 @@ class configurator(object):
         self.random_seed = random_seed
         random.seed(self.random_seed)
         np.random.seed(self.random_seed)
-        
+
     def _extract_bounds(self):
         # extract variable bounds from the configuration space
         bounds = []
@@ -120,31 +121,31 @@ class configurator(object):
             if k['type'] in ['I', 'R']:
                 bounds.append(k['bounds'])
         return bounds
-        
+
     def _better(self, perf1, perf2):
         if self.minimize:
             return perf1 < perf2
         else:
             return perf1 > perf2
-        
+
     def evaluate(self, conf, runs=1):
         perf_, n_eval = conf.perf, conf.n_eval
         __ = [self.obj_func(conf[self.var_names].to_dict()) for i in range(runs)]
         perf = np.sum(__)
-        
+
         conf.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
         conf.n_eval += runs
-        
+
         self.eval_count += runs
         self.eval_hist += __
         self.eval_hist_id += [conf.name] * runs
         return conf
-        
+
     def fit_and_assess(self):
         # build the surrogate model
         X, perf = self.data[self.var_names], self.data['perf']
         self.surrogate.fit(X, perf)
-        
+
         perf_hat = self.surrogate.predict(X)
         r2 = r2_score(perf, perf_hat)
         if self.verbose:
@@ -166,16 +167,16 @@ class configurator(object):
             elif type_ == 'R':
                 lb, ub = subspace['bounds']
                 data.append((ub - lb) * rand(N) + lb)
-        
+
         data.append([0] * N)         # No. of evaluations for each solution
         data.append([None] * N)      # the corresponding objective value
-                
+
         data = np.atleast_2d(data).T
         data = pd.DataFrame(data, columns=self.var_names + ['n_eval', 'perf'])
-        
+
         data[self.con_] = data[self.con_].apply(pd.to_numeric)
         data[self.int_] = data[self.int_].apply(pd.to_numeric)
-        
+
         return data
 
     def _remove_duplicate(self, confs):
@@ -188,13 +189,13 @@ class configurator(object):
             if not (CON and INT and CAT):
                 idx.append(i)
         return confs.iloc[idx, :]
-        
+
     def select_candidate(self):
         # always generate mu + 1 candidate solutions
         while True:
             confs_, acqui_opts_ = self.arg_max_acquisition()
             N = self.data.shape[0]
-            confs_ = pd.DataFrame([[N + i, None, 0] + conf for i, conf in enumerate(confs_)], 
+            confs_ = pd.DataFrame([[N + i, None, 0] + conf for i, conf in enumerate(confs_)],
                                    columns=['id', 'perf', 'n_eval'] + self.var_names)
             confs_ = self._remove_duplicate(confs_)
 
@@ -211,7 +212,7 @@ class configurator(object):
                     break
             else:
                 break
-        
+
         # proportional selection without replacement
         candidates_id = list(confs_.id)
         if 1 < 2:
@@ -220,7 +221,7 @@ class configurator(object):
             if self.minimize:
                 perf = -perf
                 perf -= np.min(perf)
-            
+
             idx = np.argsort(perf)
             perf = perf[idx]
             id_curr = id_curr[idx]
@@ -247,7 +248,7 @@ class configurator(object):
             # ID is not the dataframe index...
             conf = self.data[self.data.id == ID]
             self.evaluate(conf, 1)
-            
+
             if conf.n_eval > self.incumbent.n_eval:
                 self.evaluate(self.incumbent, 1)
                 extra_run = 0
@@ -268,26 +269,26 @@ class configurator(object):
                 r = min(2 * r, self.incumbent.n_eval - conf.n_eval)
                 self.evaluate(conf, r)
                 extra_run += r
-        
+
     def configure(self):
         if self.verbose:
             print 'building the initial design of experiemnts...'
         # create the initial data set
         self.data = self.sampling(self.n_init_sample)
-        
+
         print 'evaluating the initial design sites...'
         for i, conf in self.data.iterrows():
             self.data.loc[i] = self.evaluate(conf, runs=self.init_n_eval)
             print conf.to_frame().T
-        
+
         self.data.perf = pd.to_numeric(self.data.perf)
-            
+
         # set the initial incumbent
         perf = np.array(self.data.perf)
         idx = np.nonzero(perf == np.max(perf))[0][0]
         self.incumbent = self.data.iloc[idx, :]
         self.fit_and_assess()
-        
+
         self.iter_count = 0
         while not self.stop():
             ids = self.select_candidate()
@@ -297,7 +298,7 @@ class configurator(object):
             self.iter_count += 1
 
         return self.incumbent
-    
+
     def stop(self):
         if self.iter_count > self.max_iter:
             self.stop_condition.append('max_iter')
@@ -306,25 +307,25 @@ class configurator(object):
             self.stop_condition.append('max_eval')
 
         return len(self.stop_condition)
-        
+
     def arg_max_acquisition(self, plugin=None):
         if plugin is None:
             plugin = np.min(self.data.perf) if self.minimize else np.max(self.data.perf)
 
         obj_func = EI(self.surrogate, plugin, minimize=self.minimize)
-        
+
         eval_budget = 1e4 * self.dim
         xopt, fopt = None, -np.inf
         for iteration in range(self.random_start):
-            
+
             x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]
             pdb.set_trace()
-            mies = MIES(obj_func, x0, self.bounds, self.levels, 
+            mies = MIES(obj_func, x0, self.bounds, self.levels,
                         self.param_type, eval_budget, minimize=False)
             xopt_, fopt_, stop_dict = mies.optimize()
-            
-            # TODO: verify this rule to determine the insignificant improvement 
-            diff = (fopt_ - fopt) / max(abs(fopt_), abs(fopt), 1)  
+
+            # TODO: verify this rule to determine the insignificant improvement
+            diff = (fopt_ - fopt) / max(abs(fopt_), abs(fopt), 1)
             if diff >= 1e7 * MACHINE_EPSILON:
                 xopt, fopt = xopt_, fopt_
                 wait_count = 0
@@ -340,7 +341,7 @@ class configurator(object):
                 break
 
         return xopt, fopt
-    
+
     def _check_params(self):
         pass
 

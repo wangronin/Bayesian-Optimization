@@ -14,8 +14,7 @@ import numpy as np
 from numpy import exp, nonzero, argsort
 from numpy.random import randint, rand, randn, geometric
 
-from boundary_handling import boundary_handling
-
+from constraint import boundary_handling
 
 class MIES(object):
 
@@ -43,7 +42,7 @@ class MIES(object):
         self.N_i = len(self.id_i)
         self.N_d = len(self.id_d)
         self.dim = self.N_r + self.N_i + self.N_d
-        
+
         # by default, we use individual step sizes for continuous and integer variables
         # and global strength for the nominal variables
         N_p = min(self.N_d, int(1))
@@ -60,8 +59,8 @@ class MIES(object):
         individual0 = x0 + [sigma0] * self.N_r + [eta0] * self.N_i + [P0] * N_p + [fitness0]
         self.xopt = x0
         self.fopt = fitness0
-        
-        # column names of the dataframe: used for slicing 
+
+        # column names of the dataframe: used for slicing
         self.cols_x = ['x{}'.format(i) for i in range(self.dim)]
         self.cols_sigma = ['sigma{}'.format(i) for i in range(self.N_r)]
         self.cols_eta = ['eta{}'.format(i) for i in range(self.N_i)]
@@ -72,9 +71,9 @@ class MIES(object):
         self.pop_lambda = DataFrame([individual0] * self.lambda_, columns=self.cols)
         self.par_id = range(self.dim)
         self.s_par_id = range(self.dim, len(self.cols) - 1)
-        
+
         self._set_hyperparam()
-        
+
     def _set_hyperparam(self):
         # hyperparameters: mutation strength adaptation
         self.tau_r = 1 / np.sqrt(2 * self.N_r)
@@ -136,7 +135,7 @@ class MIES(object):
             sigma = sigma * exp(self.tau_r * randn())
         else:
             sigma = sigma * exp(self.tau_p_r * randn() + self.tau_r * randn(self.N_r))
-        
+
         individual[self.cols_sigma] = sigma
         individual[self.id_r] += sigma * randn(self.N_r)
 
@@ -150,7 +149,7 @@ class MIES(object):
             eta = max(1, eta * exp(self.tau_p_i * randn() + self.tau_i * randn(self.N_i)))
             p = 1 - (eta / self.N_i) / (1 + np.sqrt(1 + (eta / self.N_i) ** 2))
             individual[self.id_i] += [geometric(p_) - geometric(p_) for p_ in p]
-            
+
         individual[self.cols_eta] = eta
 
     def _mutate_d(self, individual):
@@ -179,10 +178,10 @@ class MIES(object):
         while not self.stop():
             for i in range(self.lambda_):
                 p1, p2 = randint(0, self.mu_), randint(0, self.mu_)
-                
+
                 individual = self.recombine(p1, p2)
                 self.pop_lambda.loc[i] = self.mutate(individual)
-            
+
             self.keep_in_bound(self.pop_lambda)
             self.evaluate(self.pop_lambda)
             self.select()
@@ -193,10 +192,10 @@ class MIES(object):
 
             if self._better(fopt_, self.fopt):
                 self.xopt, self.fopt = xopt_, fopt_
-            
+
             if self.verbose:
                 print self.xopt, self.fopt
-                
+
         self.stop_dict['n_evals'] = self.eval_count
         return self.xopt, self.fopt
 
@@ -207,7 +206,7 @@ if __name__ == '__main__':
     def fitness(x):
         x_r, x_i, x_d = np.array(x[:2]), x[2], x[3]
         if x_d == 'OK':
-            tmp = 0 
+            tmp = 0
         else:
             tmp = 1
         return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + tmp * 2
