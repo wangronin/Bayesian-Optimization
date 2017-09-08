@@ -40,6 +40,7 @@ class RrandomForest(object):
         self.pkg = importr('randomForest')
         
     def fit(self, X, y):
+        self.columns = X.columns
         self.n_sample, self.n_feature = X.shape
         self.rf = self.pkg.randomForest(x=X, y=y, ntree=50, 
                                         mtry=ceil(self.n_feature * 5 / 6.),
@@ -47,6 +48,9 @@ class RrandomForest(object):
         return self
     
     def predict(self, X, eval_MSE=False):
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame([X], columns=self.columns)
+        pdb.set_trace()
         _ = self.pkg.predict_randomForest(self.rf, X, predict_all=eval_MSE)
         if eval_MSE:
             y_hat = np.array(_[0])
@@ -55,29 +59,36 @@ class RrandomForest(object):
         else:
             return np.array(_)
         
+        
 class configurator(object):
-
-    def __init__(self, conf_space, obj_func, eval_budget, minimize=True,
-                 max_iter=None, n_init_sample=None,
+    """
+    Bayesian optimization based configurator
+    """
+    def __init__(self, conf_space, obj_func, eval_budget, 
+                 minimize=True, max_iter=None, n_init_sample=None,
                  verbose=False, random_seed=666):
 
+        self._check_params()
         self.verbose = verbose
         self.init_n_eval = 1
         self.conf_space = conf_space
-        self.names = [conf['name'] for conf in self.conf_space]
+        self.var_names = [conf['name'] for conf in self.conf_space]
         self.obj_func = obj_func 
+        
+        assert hasattr(self.obj_func, '__call__')
+        
+        # random forest is used as the surrogate for now
+        # TODO: add Gaussian process (OWCK) to here
         self.surrogate = RrandomForest()
         self.minimize = minimize
         self.dim = len(self.conf_space)
         
-        self.con_ = [k['name'] for k in self.conf_space if k['type'] == 'R']
-        self.cat_ = [k['name'] for k in self.conf_space if k['type'] == 'D']
-        self.int_ = [k['name'] for k in self.conf_space if k['type'] == 'I']
+        self.con_ = [k['name'] for k in self.conf_space if k['type'] == 'R']  # continuous
+        self.cat_ = [k['name'] for k in self.conf_space if k['type'] == 'D']  # nominal discrete
+        self.int_ = [k['name'] for k in self.conf_space if k['type'] == 'I']  # ordinal discrete
         self.param_type = [k['type'] for k in self.conf_space]
         
-        assert hasattr(self.obj_func, '__call__')
-
-        # parameter: evaluation
+        # parameter: objective evaluation
         self.max_eval = int(eval_budget)
         self.random_start = 30
         self.eval_count = 0
@@ -93,6 +104,7 @@ class configurator(object):
         # self.mu = int(np.ceil(self.n_init_sample / 3))
         self.mu = 3
         self.bounds = self._extract_bounds()
+        self.levels = [k['levels'] for k in self.conf_space if k['type'] == 'D']
 
         # stop criteria
         self.stop_condition = []
@@ -102,12 +114,11 @@ class configurator(object):
         np.random.seed(self.random_seed)
         
     def _extract_bounds(self):
+        # extract variable bounds from the configuration space
+        bounds = []
         for k in self.conf_space:
-            if k['type'] in ['integer', 'continuous']:
-                bounds.append([k['lb'], k['ub']])
-            elif k['type'] == 'categorical':
-                self.encoding_cat = {_: i for i, _ in enumerate(k['levels'])}
-                bounds.append([k['lb'], k['ub']])
+            if k['type'] in ['I', 'R']:
+                bounds.append(k['bounds'])
         return bounds
         
     def _better(self, perf1, perf2):
@@ -118,7 +129,7 @@ class configurator(object):
         
     def evaluate(self, conf, runs=1):
         perf_, n_eval = conf.perf, conf.n_eval
-        __ = [self.obj_func(conf[self.names]) for i in range(runs)]
+        __ = [self.obj_func(conf[self.var_names].to_dict()) for i in range(runs)]
         perf = np.sum(__)
         
         conf.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
@@ -126,11 +137,12 @@ class configurator(object):
         
         self.eval_count += runs
         self.eval_hist += __
-        self.eval_hist_id += [conf.id] * runs
+        self.eval_hist_id += [conf.name] * runs
+        return conf
         
     def fit_and_assess(self):
         # build the surrogate model
-        X, perf = self.data[self.names], self.data['perf']
+        X, perf = self.data[self.var_names], self.data['perf']
         self.surrogate.fit(X, perf)
         
         perf_hat = self.surrogate.predict(X)
@@ -140,31 +152,35 @@ class configurator(object):
         return r2
 
     def sampling(self, N):
-        if self.verbose:
-            print 'building the initial design of experiemnts...'
+        # TODO: think how to do LHS for integer and categorical variable
         # use uniform random sampling for now
-        data = [[i for i in range(N)],
-                 [None] * N,
-                 [0] * N]
-        
+        data = []
         for subspace in self.conf_space:
             type_ = subspace['type']
-            if  type_ == 'categorical':
+            if  type_ == 'D':
                 n_levels = len(subspace['levels'])
                 idx = randint(0, n_levels, N)
                 data.append(np.array(subspace['levels'])[idx])
-            elif type_ == 'integer':
-                data.append(randint(subspace['range'][0], subspace['range'][1], N))
-            elif type_ == 'continuous':
-                lb, ub = subspace['lb'], subspace['ub']
-                data.append((ub - lb) * rand(N, 1) + lb)
+            elif type_ == 'I':
+                data.append(randint(subspace['bounds'][0], subspace['bounds'][1], N))
+            elif type_ == 'R':
+                lb, ub = subspace['bounds']
+                data.append((ub - lb) * rand(N) + lb)
+        
+        data.append([0] * N)         # No. of evaluations for each solution
+        data.append([None] * N)      # the corresponding objective value
                 
-        data = pd.DataFrame(data, columns=['id', 'perf', 'n_eval'] + self.names)
+        data = np.atleast_2d(data).T
+        data = pd.DataFrame(data, columns=self.var_names + ['n_eval', 'perf'])
+        
+        data[self.con_] = data[self.con_].apply(pd.to_numeric)
+        data[self.int_] = data[self.int_].apply(pd.to_numeric)
+        
         return data
 
     def _remove_duplicate(self, confs):
         idx = []
-        X = self.data[self.names]
+        X = self.data[self.var_names]
         for i, x in confs.iterrows():
             CON = np.all(np.isclose(X[self.con_], x[self.con_], axis=1))
             INT = np.all(X[self.int_] == x[self.int_], axis=1)
@@ -179,7 +195,7 @@ class configurator(object):
             confs_, acqui_opts_ = self.arg_max_acquisition()
             N = self.data.shape[0]
             confs_ = pd.DataFrame([[N + i, None, 0] + conf for i, conf in enumerate(confs_)], 
-                                   columns=['id', 'perf', 'n_eval'] + self.names)
+                                   columns=['id', 'perf', 'n_eval'] + self.var_names)
             confs_ = self._remove_duplicate(confs_)
 
             # if no new design site is found, re-estimate the parameters immediately
@@ -254,11 +270,18 @@ class configurator(object):
                 extra_run += r
         
     def configure(self):
+        if self.verbose:
+            print 'building the initial design of experiemnts...'
         # create the initial data set
         self.data = self.sampling(self.n_init_sample)
+        
+        print 'evaluating the initial design sites...'
         for i, conf in self.data.iterrows():
-            self.evaluate(conf, runs=self.init_n_eval)
-
+            self.data.loc[i] = self.evaluate(conf, runs=self.init_n_eval)
+            print conf.to_frame().T
+        
+        self.data.perf = pd.to_numeric(self.data.perf)
+            
         # set the initial incumbent
         perf = np.array(self.data.perf)
         idx = np.nonzero(perf == np.max(perf))[0][0]
@@ -293,9 +316,11 @@ class configurator(object):
         eval_budget = 1e4 * self.dim
         xopt, fopt = None, -np.inf
         for iteration in range(self.random_start):
-            x0 = list(self.sampling(1)[self.names])
             
-            mies = MIES(obj_func, x0, self.bounds, self.param_type, eval_budget, minimize=False)
+            x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]
+            pdb.set_trace()
+            mies = MIES(obj_func, x0, self.bounds, self.levels, 
+                        self.param_type, eval_budget, minimize=False)
             xopt_, fopt_, stop_dict = mies.optimize()
             
             # TODO: verify this rule to determine the insignificant improvement 
@@ -315,28 +340,10 @@ class configurator(object):
                 break
 
         return xopt, fopt
+    
+    def _check_params(self):
+        pass
 
-if __name__ == '__main__':
-
-    np.random.seed(1)
-    from fitness import rastrigin
-
-    # test problem: to fit a so-called Rastrigin function in 20D
-    X = np.random.rand(500, 20)
-    y = rastrigin(X.T)
-
-    # configure a SVM regression model
-    conf = configurator('SVM', 'mse', 1e3, data=(X, y),
-                        n_init_sample=10,
-                        par_list=['C', 'epsilon', 'gamma'],
-                        par_lb=[1e-20, 1e-20, 1e-5],
-                        par_ub=[20, 1, 2],
-                        n_fold=10, verbose=True,
-                        random_seed=1)
-
-    res = conf.configure()
-
-    pdb.set_trace()
 
 #    def __init_obj_func(self):
 #        if self.verbose:
