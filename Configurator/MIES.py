@@ -157,11 +157,15 @@ class MIES(object):
         P = 1 / (1 + (1 - P) / P * exp(-self.tau_d * randn()))
         individual[self.cols_p] = boundary_handling(P, 1 / (3. * self.N_d), 0.5)
 
-        idx = rand(self.N_d) < P
-        if sum(idx):
-#            bounds_d = self.bounds[:, self.id_d][:, idx].T
-            individual[self.id_d[idx]] = [level[randint(0, len(level))] for level in self.levels]
-#            individual[self.id_d[idx]] = [randint(b[0], b[1]) for b in bounds_d]
+        idx = np.nonzero(rand(self.N_d) < P)[0]
+        for i in range(idx):
+            level = self.levels[i]
+            individual[self.id_d[i]] = level[randint(0, len(level))]
+        # if sum(idx):
+        #     bounds_d = self.bounds[:, self.id_d][:, idx].T
+        #     levels = [level for i, level in enumerate(self.levels) if idx[i]]
+        #     individual[self.id_d[idx]] = [level[randint(0, len(level))] for i, level in levels]
+        #     individual[self.id_d[idx]] = [randint(b[0], b[1]) for b in bounds_d]
 
     def stop(self):
         if self.eval_count > self.max_eval:

@@ -27,11 +27,6 @@ import warnings
 
 normcdf, normpdf = norm.cdf, norm.pdf
 
-class infill_criteria:
-
-    def __init__(self):
-        pass
-
 def ei(model, plugin=None):
 
     def __ei(X):
@@ -203,8 +198,8 @@ class ego:
         self.non_explorative_count = 0
 
         # set the new seed
-#        random.seed(self.random_seed)
-#        np.random.seed(self.random_seed)
+        random.seed(self.random_seed)
+        np.random.seed(self.random_seed)
 
         # TODO: implement UCB
         if criterion not in ['EI', 'PI', 'UCB']:
@@ -566,8 +561,8 @@ class ego:
 
         return array(samples)
 
-    # TODO: this part should be moved the OWCK
     def get_tree_boundary(self):
+        # TODO: this function should be moved the OWCK
         """
         Get the variable boundary for each leaf node
         """

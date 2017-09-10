@@ -7,9 +7,10 @@ Created on Mon Mar 6 15:05:01 2017
 
 from __future__ import division   # important! for the float division
 
-import pdb, warnings
+import pdb
 
-import random
+import random, warnings
+
 import numpy as np
 from numpy import ceil
 from numpy.random import randint, rand
@@ -20,11 +21,12 @@ from criteria import EI
 from MIES import MIES
 
 from sklearn.metrics import r2_score
+from sklearn.ensemble import RandomForestRegressor
 
+from rpy2 import robjects
 from rpy2.robjects.packages import importr
 from rpy2.robjects import pandas2ri
 from rpy2.robjects import numpy2ri
-
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
@@ -34,15 +36,19 @@ pandas2ri.activate()
 
 # TODO: implement the configuration space class
 
-# Python wrapper for the R 'randomForest' library
 class RrandomForest(object):
+    """
+    Python wrapper for the R 'randomForest' library
+    """
     def __init__(self):
         self.pkg = importr('randomForest')
 
     def fit(self, X, y):
         self.columns = X.columns
+        self.X = X
         self.n_sample, self.n_feature = X.shape
-        pdb.set_trace()
+        if not isinstance(y, np.ndarray):
+            y = np.array(y)
         self.rf = self.pkg.randomForest(x=X, y=y, ntree=50,
                                         mtry=ceil(self.n_feature * 5 / 6.),
                                         nodesize=10)
@@ -51,14 +57,17 @@ class RrandomForest(object):
     def predict(self, X, eval_MSE=False):
         if not isinstance(X, pd.DataFrame):
             X = pd.DataFrame([X], columns=self.columns)
-        pdb.set_trace()
+        n_sample = X.shape[0]
+        X = X.append(self.X)
+            
         _ = self.pkg.predict_randomForest(self.rf, X, predict_all=eval_MSE)
         if eval_MSE:
-            y_hat = np.array(_[0])
-            mse = np.std(np.atleast_2d(_[1]), axis=1, ddof=1) ** 2
+            y_hat = np.array(_[0])[:n_sample]
+            mse = np.std(np.atleast_2d(_[1])[0:n_sample, :], axis=1, ddof=1) ** 2
             return y_hat, mse
         else:
-            return np.array(_)
+            return np.array(_)[:n_sample]
+
 
 
 class configurator(object):
@@ -313,13 +322,12 @@ class configurator(object):
             plugin = np.min(self.data.perf) if self.minimize else np.max(self.data.perf)
 
         obj_func = EI(self.surrogate, plugin, minimize=self.minimize)
-
         eval_budget = 1e4 * self.dim
         xopt, fopt = None, -np.inf
+        
         for iteration in range(self.random_start):
 
             x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]
-            pdb.set_trace()
             mies = MIES(obj_func, x0, self.bounds, self.levels,
                         self.param_type, eval_budget, minimize=False)
             xopt_, fopt_, stop_dict = mies.optimize()

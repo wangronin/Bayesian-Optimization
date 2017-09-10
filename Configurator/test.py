@@ -6,6 +6,8 @@ Created on Fri Sep  8 12:01:02 2017
 @author: wangronin
 """
 
+import pdb
+
 import numpy as np
 from sklearn import svm
 from sklearn.model_selection import cross_val_score
@@ -55,12 +57,11 @@ def svm_from_cfg(cfg):
     scores = cross_val_score(regr, X, y, cv=5, scoring='r2')
     return np.mean(scores)
 
-
 np.random.seed(1)
 
 kernel = {'name' : "kernel",
           'type' : 'D',
-          'levels' : ["rbf", "poly", "sigmoid"]}
+          'levels' : ["rbf", "sigmoid"]}
 
 C = {'name' : "C",
           'type' : 'R',
