@@ -7,6 +7,7 @@
 from __future__ import print_function
 
 import pdb
+import random
 import numpy as np
 from numpy import log, pi, log10
 
@@ -645,6 +646,11 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.noise_var = np.atleast_1d(nugget) if nugget is not None else None
         self.nugget_estim = True if nugget_estim else False
         self.noisy = True if (self.noise_var is not None) or self.nugget_estim else False
+
+        if random_state:
+            # set the new seed
+            random.seed(self.random_state)
+            np.random.seed(self.random_state)
 
         # three cases to compute the log-likelihood function
         # TODO: verify: it seems noisy the most usefull one

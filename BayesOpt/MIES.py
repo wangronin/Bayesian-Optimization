@@ -8,7 +8,7 @@ Created on Thu Sep  7 11:10:18 2017
 
 import pdb
 
-from pandas import DataFrame
+from pandas import DataFrame, to_numeric
 
 import numpy as np
 from numpy import exp, nonzero, argsort
@@ -17,9 +17,8 @@ from numpy.random import randint, rand, randn, geometric
 from constraint import boundary_handling
 
 class MIES(object):
-
     def __init__(self, obj_func, x0, bounds, levels, param_type, max_eval,
-                 minimize=True, mu_=4, lambda_=28, sigma0=1, eta0=0.05, P0=0.2,
+                 minimize=True, mu_=4, lambda_=28, sigma0=1, eta0=0.05, P0=0.4,
                  verbose=False):
 
         self.verbose = verbose
@@ -46,16 +45,14 @@ class MIES(object):
         # by default, we use individual step sizes for continuous and integer variables
         # and global strength for the nominal variables
         N_p = min(self.N_d, int(1))
-
-        bounds = np.atleast_2d(bounds)
-        self.bounds = bounds.T if bounds.shape[0] != 2 else bounds
+        self.bounds = self._check_bounds(bounds)
 
         self.minimize = minimize
         self.obj_func = obj_func
         self.stop_dict = {}
 
         # initialize the populations
-        fitness0 = self.obj_func(x0)
+        fitness0 = np.sum(self.obj_func(x0)) # to get a scalar value
         individual0 = x0 + [sigma0] * self.N_r + [eta0] * self.N_i + [P0] * N_p + [fitness0]
         self.xopt = x0
         self.fopt = fitness0
@@ -73,22 +70,32 @@ class MIES(object):
         self.s_par_id = range(self.dim, len(self.cols) - 1)
 
         self._set_hyperparam()
-
+        
+    def _check_bounds(self, bounds):
+        bounds = np.atleast_2d(bounds)
+        bounds = bounds.T if bounds.shape[0] != 2 else bounds
+        if any(bounds[0, :] >= bounds[1, :]):
+            raise ValueError('lower bounds are bigger than the upper bounds')
+        return bounds
+        
     def _set_hyperparam(self):
         # hyperparameters: mutation strength adaptation
-        self.tau_r = 1 / np.sqrt(2 * self.N_r)
-        self.tau_p_r = 1 / np.sqrt(2 * np.sqrt(self.N_r))
+        if self.N_r:
+            self.tau_r = 1 / np.sqrt(2 * self.N_r)
+            self.tau_p_r = 1 / np.sqrt(2 * np.sqrt(self.N_r))
 
-        self.tau_i = 1 / np.sqrt(2 * self.N_i)
-        self.tau_p_i = 1 / np.sqrt(2 * np.sqrt(self.N_i))
+        if self.N_i:
+            self.tau_i = 1 / np.sqrt(2 * self.N_i)
+            self.tau_p_i = 1 / np.sqrt(2 * np.sqrt(self.N_i))
 
-        self.tau_d = 1 / np.sqrt(2 * self.N_d)
-        self.tau_p_d = 1 / np.sqrt(2 * np.sqrt(self.N_d))
+        if self.N_d:
+            self.tau_d = 1 / np.sqrt(2 * self.N_d)
+            self.tau_p_d = 1 / np.sqrt(2 * np.sqrt(self.N_d))
 
     def keep_in_bound(self, pop):
         idx = np.r_[self.id_r, self.id_i]
         X = pop.iloc[:, idx]
-        pop.iloc[:, idx] = boundary_handling(X, self.bounds[0, idx], self.bounds[1, idx])
+        pop.iloc[:, idx] = boundary_handling(X, self.bounds[0, :], self.bounds[1, :])
         pop.iloc[:, self.id_i] = pop.iloc[:, self.id_i].applymap(int)
         return pop
 
@@ -117,7 +124,8 @@ class MIES(object):
     def evaluate(self, pop):
         for i, individual in pop.iterrows():
             par = individual[self.par_id]
-            pop.loc[i, 'fitness'] = self.obj_func(par)
+            value = np.sum(self.obj_func(par)) # in case a 1-length array is returned
+            pop.loc[i, 'fitness'] = value
             self.eval_count += 1
 
     def mutate(self, individual):
@@ -130,7 +138,7 @@ class MIES(object):
         return individual
 
     def _mutate_r(self, individual):
-        sigma = np.array(list(individual[self.cols_sigma].values))
+        sigma = to_numeric(individual[self.cols_sigma]).values
         if len(self.cols_sigma) == 1:
             sigma = sigma * exp(self.tau_r * randn())
         else:
@@ -140,7 +148,7 @@ class MIES(object):
         individual[self.id_r] += sigma * randn(self.N_r)
 
     def _mutate_i(self, individual):
-        eta = np.array(list(individual[self.cols_eta].values))
+        eta = to_numeric(individual[self.cols_eta]).values
         if len(self.cols_eta) == 1:
             eta = max(1, eta * exp(self.tau_i * randn()))
             p = 1 - (eta / self.N_i) / (1 + np.sqrt(1 + (eta / self.N_i) ** 2))
@@ -153,12 +161,12 @@ class MIES(object):
         individual[self.cols_eta] = eta
 
     def _mutate_d(self, individual):
-        P = np.array(list(individual[self.cols_p].values))
+        P = to_numeric(individual[self.cols_p]).sum()
         P = 1 / (1 + (1 - P) / P * exp(-self.tau_d * randn()))
         individual[self.cols_p] = boundary_handling(P, 1 / (3. * self.N_d), 0.5)
 
         idx = np.nonzero(rand(self.N_d) < P)[0]
-        for i in range(idx):
+        for i in idx:
             level = self.levels[i]
             individual[self.id_d[i]] = level[randint(0, len(level))]
         # if sum(idx):
@@ -179,29 +187,32 @@ class MIES(object):
             return perf1 > perf2
 
     def optimize(self):
+        print 'MIES runnning...'
         while not self.stop():
             for i in range(self.lambda_):
                 p1, p2 = randint(0, self.mu_), randint(0, self.mu_)
 
                 individual = self.recombine(p1, p2)
                 self.pop_lambda.loc[i] = self.mutate(individual)
-
+            
             self.keep_in_bound(self.pop_lambda)
             self.evaluate(self.pop_lambda)
             self.select()
 
             curr_best = self.pop_mu.loc[0]
-            xopt_, fopt_ = curr_best[self.par_id].as_matrix(), curr_best.fitness
+            # return a list for xopt
+            xopt_, fopt_ = [x for x in curr_best[self.par_id].values], curr_best.fitness
+            
             self.iter_count += 1
 
             if self._better(fopt_, self.fopt):
                 self.xopt, self.fopt = xopt_, fopt_
 
             if self.verbose:
-                print self.xopt, self.fopt
+                print 'iteration ', self.iter_count + 1, self.xopt, self.fopt
 
         self.stop_dict['n_evals'] = self.eval_count
-        return self.xopt, self.fopt
+        return self.xopt, self.fopt, self.stop_dict
 
 
 if __name__ == '__main__':
@@ -216,7 +227,7 @@ if __name__ == '__main__':
         return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + tmp * 2
 
     x0 = [2, 1, 80, 'B']
-    bounds = [[-5] * 2 + [-100], [5] * 2 + [100]]
+    bounds = [[-5, -5, -100], [5, 5, 100]]
     levels = [['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G']]
 
     opt = MIES(fitness, x0, bounds, levels, ['R', 'R', 'I', 'D'], 1e3, verbose=True)
