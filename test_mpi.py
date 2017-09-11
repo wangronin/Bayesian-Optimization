@@ -15,7 +15,7 @@ import numpy as np
 
 from deap import benchmarks
 from GaussianProcess import GaussianProcess_extra as GaussianProcess
-from BayesOpt import configurator
+from BayesOpt import BayesOpt
 
 np.random.seed(1)
 
@@ -35,14 +35,14 @@ def create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample):
           'bounds': [-6, 6]}
     
     search_space = [x1, x2]
-    opt = configurator(search_space, fitness, n_step + n_init_sample, random_seed=seed,
+    opt = BayesOpt(search_space, fitness, n_step + n_init_sample, random_seed=seed,
                         n_init_sample=n_init_sample, minimize=True)
     
     return opt
 
 
 dims = [2]
-n_step = 20
+n_step = 2
 n_init_sample = 10
 benchmarkfunctions = {
                 #"schwefel":benchmarks.schwefel,
@@ -65,26 +65,23 @@ for dim in dims:
         y_hist_best = np.zeros((n_step, runs))
         
         csv_name = './data/{}D-{}N-{}.csv'.format(dim, n_init_sample, func_name)
-        df = pd.DataFrame([], columns=['run{}'.format(_+1) for _ in range(runs)])
-        df.to_csv(csv_name, mode='w', header=True, index=False)
-        
-        optimizer = create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample)
-        
-        for n in range(n_step):
-            xopt, fopt = optimizer.step()
-            comm.Barrier()
+        opt = create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample)
+        opt.optimize()
+        hist_perf = opt.hist_perf
+
+        comm.Barrier()
+        __ = comm.gather(fopt, root=0)
+
+        if rank == 0:
+            data = np.atleast_2d(__)
+            print data
+            data = data.T if data.shape[1] != runs else data
+            mean_ = np.mean(data, axis=0)
+            error_ = np.std(data, axis=0, ddof=1) / np.sqrt(runs)
+            print 'mean : ', mean_
+            print 'std error: ', error_
             
-            # gather running results
-            __ = comm.gather(fopt, root=0)
-            
-            if rank == 0:
-                y_hist_best[n, :] = __
-                mean_ = np.mean(__)
-                error_ = np.std(__, ddof=1) / np.sqrt(runs)
-                print 'step {}:'.format(n + 1) 
-                print 'mean : {}, std error: {}'.format(mean_, error_)
-                print
-                
-                # append the new data the csv
-                df = pd.DataFrame(np.atleast_2d(__))
-                df.to_csv(csv_name, mode='a', header=False, index=False)
+            # append the new data the csv
+            df = pd.DataFrame(data)
+            df = pd.DataFrame(data, columns=['run{}'.format(_+1) for _ in range(runs)])
+            df.to_csv(csv_name, mode='w', header=True, index=False)

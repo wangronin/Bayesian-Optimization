@@ -102,6 +102,7 @@ class BayesOpt(object):
 
         # stop criteria
         self.stop_dict = {}
+        self.hist_perf = []
         
         # set the random seed
         self.random_seed = random_seed
@@ -308,6 +309,7 @@ class BayesOpt(object):
             # model re-training
             self.fit_and_assess()
             self.iter_count += 1
+            self.hist_perf.append(self.data.loc[self.incumbent, 'perf'])
 
             if self.verbose:
                 print 'iteration {}, current incumbent is:'.format(self.iter_count)
