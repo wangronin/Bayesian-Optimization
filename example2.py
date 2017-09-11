@@ -11,7 +11,7 @@ import pdb
 import numpy as np
 from deap import benchmarks
 from GaussianProcess import GaussianProcess_extra as GaussianProcess
-from BayesOpt import BayesOpt
+from BayesOpt import configurator
 
 np.random.seed(1)
 
@@ -31,7 +31,7 @@ x2 = {'name' : "x2",
       'bounds': [lb[1], ub[1]]}
     
 search_space = [x1, x2]
-opt = BayesOpt(search_space, obj_func, 29, random_seed=None,
-               n_init_sample=n_init_sample, minimize=True, verbose=True)
-               
+opt = configurator(search_space, obj_func, 29, random_seed=None,
+                    n_init_sample=n_init_sample, minimize=True,
+                    verbose=True)
 opt.optimize()

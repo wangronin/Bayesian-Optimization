@@ -14,9 +14,8 @@ from mpi4py import MPI
 import numpy as np
 
 from deap import benchmarks
-from ego import ego
 from GaussianProcess import GaussianProcess_extra as GaussianProcess
-from Configurator import 
+from BayesOpt import configurator
 
 np.random.seed(1)
 
@@ -36,7 +35,7 @@ def create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample):
           'bounds': [-6, 6]}
     
     search_space = [x1, x2]
-    conf = configurator(search_space, fitness, n_step, 
+    opt = configurator(search_space, fitness, n_step + n_init_sample, random_seed=seed,
                         n_init_sample=n_init_sample, minimize=True)
     
     return opt
@@ -51,7 +50,7 @@ benchmarkfunctions = {
                 #"rastrigin":benchmarks.rastrigin,
                 #"bohachevsky":benchmarks.bohachevsky,
                 #"schaffer":benchmarks.schaffer,
-                "himmelblau":benchmarks.himmelblau
+                "himmelblau": benchmarks.himmelblau
                 }
 
 for dim in dims:
@@ -72,7 +71,7 @@ for dim in dims:
         optimizer = create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample)
         
         for n in range(n_step):
-            xopt, fopt, A, B, C = optimizer.step()
+            xopt, fopt = optimizer.step()
             comm.Barrier()
             
             # gather running results

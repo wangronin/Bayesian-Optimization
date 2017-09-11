@@ -11,7 +11,7 @@ import pdb
 from pandas import DataFrame, to_numeric
 
 import numpy as np
-from numpy import exp, nonzero, argsort
+from numpy import exp, nonzero, argsort, ceil, zeros, mod
 from numpy.random import randint, rand, randn, geometric
 
 from constraint import boundary_handling
@@ -70,6 +70,11 @@ class MIES(object):
         self.s_par_id = range(self.dim, len(self.cols) - 1)
 
         self._set_hyperparam()
+
+        # stop criteria
+        self.tolfun = 1e-5
+        self.nbin = int(3 + ceil(30. * self.dim / self.lambda_))
+        self.histfunval = zeros(self.nbin)
         
     def _check_bounds(self, bounds):
         bounds = np.atleast_2d(bounds)
@@ -178,6 +183,33 @@ class MIES(object):
     def stop(self):
         if self.eval_count > self.max_eval:
             self.stop_dict['max_eval'] = True
+
+        if self.eval_count != 0:
+            # TODO: implement more stop criteria
+            # if (sigma < 1e-16) or (sigma > 1e6):
+                # self.stop_dict['sigma'] = True
+
+            fitness = self.pop_mu.fitness
+            self.histfunval[mod(self.eval_count / self.lambda_ - 1, self.nbin)] = fitness[0]
+            if mod(self.eval_count / self.lambda_, self.nbin) == 0 and \
+                (max(self.histfunval) - min(self.histfunval)) < self.tolfun:
+                    self.stop_dict['tolfun'] = True
+
+            # if cond(self.C) > 1e14:
+            #     if is_stop_on_warning:
+            #         self.stop_dict['conditioncov'] = True
+            #     else:
+            #         self.flg_warning = True
+
+            # # TolUPX
+            # if any(sigma*sqrt(diagC)) > self.tolupx:
+            #     if is_stop_on_warning:
+            #         self.stop_dict['TolUPX'] = True
+            #     else:
+            #         self.flg_warning = True
+            if fitness[0] == fitness[int(min(ceil(.1 + self.lambda_ / 4.), self.mu_ - 1))]:
+                self.stop_dict['flatfitness'] = True
+
         return len(self.stop_dict)
 
     def _better(self, perf1, perf2):
@@ -187,7 +219,6 @@ class MIES(object):
             return perf1 > perf2
 
     def optimize(self):
-        print 'MIES runnning...'
         while not self.stop():
             for i in range(self.lambda_):
                 p1, p2 = randint(0, self.mu_), randint(0, self.mu_)
@@ -211,7 +242,7 @@ class MIES(object):
             if self.verbose:
                 print 'iteration ', self.iter_count + 1, self.xopt, self.fopt
 
-        self.stop_dict['n_evals'] = self.eval_count
+        self.stop_dict['funcalls'] = self.eval_count
         return self.xopt, self.fopt, self.stop_dict
 
 
@@ -230,5 +261,5 @@ if __name__ == '__main__':
     bounds = [[-5, -5, -100], [5, 5, 100]]
     levels = [['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G']]
 
-    opt = MIES(fitness, x0, bounds, levels, ['R', 'R', 'I', 'D'], 1e3, verbose=True)
+    opt = MIES(fitness, x0, bounds, levels, ['R', 'R', 'I', 'D'], 2e3, verbose=True)
     print opt.optimize()

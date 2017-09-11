@@ -11,29 +11,29 @@ import pdb
 
 import random, warnings
 
+import pandas as pd
 import numpy as np
 from numpy.random import randint, rand
 from scipy.optimize import fmin_l_bfgs_b
-
-import pandas as pd
 
 from GaussianProcess import GaussianProcess_extra as GaussianProcess
 from criteria import EI
 from MIES import MIES
 from cma_es import cma_es
-from surrogate import RrandomForest
+# from surrogate import RrandomForest
 
 from sklearn.metrics import r2_score
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
-class configurator(object):
+class BayesOpt(object):
     """
-    Bayesian optimization based configurator for ML algorithm 
+    Generic Bayesian optimization algorithm
     """
     def __init__(self, conf_space, obj_func, eval_budget,
                  minimize=True, noisy=False, max_iter=None, 
-                 n_init_sample=None, n_restart=None, verbose=False, random_seed=None):
+                 wait_iter=3, n_init_sample=None, n_restart=None, 
+                 verbose=False, random_seed=None):
 
         self._check_params()
         self.verbose = verbose
@@ -61,7 +61,7 @@ class configurator(object):
         self.bounds = self._extract_bounds()
         
         if self.N_d == 0 and self.N_i == 0:
-            self.optimizer = 'BFGS'
+            self._optimizer = 'BFGS'
             lb, ub = self.bounds[0, :], self.bounds[1, :]
             thetaL = 1e-3 * (ub - lb) * np.ones(self.dim)
             thetaU = 10 * (ub - lb) * np.ones(self.dim)
@@ -74,7 +74,9 @@ class configurator(object):
                         verbose=False, random_start = 15 * self.dim,
                         random_state=random_seed)
         else:
-            self.surrogate = RrandomForest()
+            # self.surrogate = RrandomForest()
+            pass
+        self._optimizer = 'MIES'
 
         # parameter: objective evaluation
         self.max_eval = int(eval_budget)
@@ -93,9 +95,15 @@ class configurator(object):
         self.mu = 3
         self.levels = [k['levels'] for k in self.conf_space if k['type'] == 'D']
 
+        # parameter: acqusition function maximization
+        self.max_eval_acquisition = 1e3 * self.dim
+        self.wait_iter = wait_iter
+        self.random_start_acquisition = 10
+
         # stop criteria
-        self.stop_condition = []
+        self.stop_dict = {}
         
+        # set the random seed
         self.random_seed = random_seed
         if self.random_seed:
             random.seed(self.random_seed)
@@ -189,6 +197,8 @@ class configurator(object):
         # always generate mu + 1 candidate solutions
         while True:
             confs_, acqui_opts_ = self.arg_max_acquisition()
+            if 1 < 2:
+                confs_ = [confs_[0]]
             N = self.data.shape[0]
             confs_ = pd.DataFrame([conf + [0, None] for i, conf in enumerate(confs_)],
                                    columns=self.var_names + ['n_eval', 'perf'])
@@ -269,13 +279,10 @@ class configurator(object):
                 print self.conf.to_frame().T
                 extra_run += r
 
-    def step(self):
-        pass
-
     def optimize(self):
         if self.verbose:
             print 'building the initial design of experiemnts...'
-        # create the initial data set
+                # create the initial data set
         self.data = self.sampling(self.n_init_sample)
 
         print 'evaluating the initial design sites...'
@@ -292,7 +299,6 @@ class configurator(object):
         self.iter_count = 0
         while not self.stop():
             ids = self.select_candidate()
-
             if self.noisy:
                 self.incumbent = self.intensify(ids)
             else:
@@ -306,138 +312,73 @@ class configurator(object):
             if self.verbose:
                 print 'iteration {}, current incumbent is:'.format(self.iter_count)
                 print self.data.loc[[self.incumbent]]
-
+        
+        self.stop_dict['n_eval'] = self.eval_count
         return self.incumbent
 
     def stop(self):
         if self.iter_count > self.max_iter:
-            self.stop_condition.append('max_iter')
+            self.stop_dict['max_iter'] = True
 
         if self.eval_count > self.max_eval:
-            self.stop_condition.append('max_eval')
+            self.stop_dict['max_eval'] = True
 
-        return len(self.stop_condition)
+        return len(self.stop_dict)
 
-    def arg_max_acquisition(self, plugin=None):
+    def _acquisition_func(self, plugin=None, dx=False):
         if plugin is None:
             plugin = np.min(self.data.perf) if self.minimize else np.max(self.data.perf)
+        acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
+        def func(x):
+            res = acquisition_func(x, dx=dx)
+            return (-res[0], -res[1]) if dx else -res
+        return func
 
-        obj_func0 = EI(self.surrogate, plugin, minimize=self.minimize)
-        eval_budget = 1e3 * self.dim
-        wait_count = 0
-        self.wait_iter = 3
+    def arg_max_acquisition(self, plugin=None):
+        eval_budget = self.max_eval_acquisition
         fopt = -np.inf
-        xopt_list = []
-        fopt_list = []
-        
-        def obj_func(x):
-            res = obj_func0(x, dx=True)
-            return -res[0], -res[1]
-        
-        if self.optimizer == 'BFGS':
-            # L-BFGS-B algorithm with restarts
-            c = 0
-            fopt = np.inf
-            for iteration in range(self.random_start):
-                x0 = np.random.uniform(self.bounds[0, :], self.bounds[1, :])
-                xopt_, fopt_, stop_info = fmin_l_bfgs_b(obj_func, x0, pgtol=1e-8,
+        optima, foptima = [], []
+        wait_count = 0
+
+        for iteration in range(self.random_start_acquisition):
+            x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]
+            # make sure the returned xopt_ is a list
+            if self._optimizer == 'BFGS':
+                obj_func = self._acquisition_func(plugin, dx=True)
+                xopt_, fopt_, stop_dict = fmin_l_bfgs_b(obj_func, x0, pgtol=1e-8,
                                                         factr=1e6, bounds=self.bounds.T,
                                                         maxfun=eval_budget)
+                # xopt_ = xopt_.flatten().tolist()
+                if stop_dict["warnflag"] != 0 and self.verbose:
+                    warnings.warn("L-BFGS-B terminated abnormally with the "
+                                  " state: %s" % stop_dict)
+            elif self._optimizer == 'MIES':
+                obj_func = self._acquisition_func(plugin, dx=False)
+                mies = MIES(obj_func, x0, self.bounds, self.levels,
+                            self.param_type, eval_budget, minimize=True, 
+                            verbose=False)                            
+                xopt_, fopt_, stop_dict = mies.optimize()
 
-                if stop_info["warnflag"] != 0 and self.verbose:
-                    warnings.warn("fmin_l_bfgs_b terminated abnormally with the "
-                          " state: %s" % stop_info)
+            if fopt_ < fopt:
+                fopt = fopt_
+                wait_count = 0
+                if self.verbose:
+                    print '[DEBUG] restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
+                        stop_dict['funcalls'], fopt_)
+            else:
+                wait_count += 1
 
-                if fopt_ < fopt:
-                    xopt, fopt = xopt_, fopt_
-                    if self.verbose:
-                        print 'iteration: ', iteration+1, stop_info['funcalls'], fopt_
-                    c = 0
-                else:
-                    c += 1
-
-                eval_budget -= stop_info['funcalls']
-                if eval_budget <= 0 or c >= self.wait_iter:
-                    break
-            
-            pdb.set_trace()
-            xopt_list.append(xopt.flatten().tolist())
-            fopt_list.append(-fopt)
-        
-#        x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]
-#            
-#        lb = self.bounds[0, :]
-#        ub = self.bounds[1, :]
-#        opt = {'sigma_init': 0.25 * np.max(ub - lb),
-#               'eval_budget': eval_budget,
-#               'f_target': np.inf,
-#               'lb': lb,
-#               'ub': ub,
-#               'restart_budget': self.random_start}
-#        
-#        # TODO: perphas use the BIPOP-CMA-ES in the future     
-#        optimizer = cma_es(self.dim, x0, obj_func, opt, is_minimize=False, restart='IPOP')
-#        xopt_, fopt_, evalcount, info = optimizer.optimize()
-#        
-#        xopt_list.append(xopt_.flatten().tolist())
-#        fopt_list.append(-fopt_)
-            
-#        for iteration in range(self.random_start):
-#           
-#            x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]
-#            
-#            mies = MIES(obj_func, x0, self.bounds, self.levels,
-#                        self.param_type, eval_budget, minimize=False, 
-#                        verbose=self.verbose)
-#            xopt_, fopt_, stop_dict = mies.optimize()
-#
-#            # TODO: verify this rule to determine the insignificant improvement
-#            # diff = (fopt_ - fopt) / max(abs(fopt_), abs(fopt), 1)
-#            # if diff >= 1e7 * MACHINE_EPSILON:
-#            xopt_list.append(xopt_), 
-#            fopt_list.append(fopt_)
-#            if fopt_ > fopt:
-#                fopt = fopt_
-#                wait_count = 0
-#            else:
-#                wait_count += 1
-#
-#            if self.verbose:
-#                print 'restart {} takes {} evals'.format(iteration + 1, stop_dict['n_evals'])
-#                print 'best acquisition function values: {}'.format(fopt)
-#
-#            eval_budget -= stop_dict['n_evals']
-#            if eval_budget <= 0 or wait_count >= self.wait_iter:
-#                break
-        
-        return xopt_list, fopt_list
+            eval_budget -= stop_dict['funcalls']
+            optima.append(xopt_)
+            foptima.append(-fopt_)
+            if eval_budget <= 0 or wait_count >= self.wait_iter:
+                break
+            # sort the optima in descending order
+            idx = np.argsort(foptima)[::-1]
+            optima = [optima[_] for _ in idx]
+            foptima = [foptima[_] for _ in idx]
+        return optima, foptima
 
     def _check_params(self):
         pass
 
-
-#    def __init_obj_func(self):
-#        if self.verbose:
-#            print 'Creating the objective function for the configuration...'
-#
-#        def __(par):
-#            par_, perf_ = par['par'], par['perf']
-#            # evaluate the par(ameters) by fitting the model
-#            model_par = {key : par_[i] for i, key in enumerate(self.par_list)}
-#            model = regressor(algorithm=self.algorithm, metric=self.metric,
-#                              model_par=model_par, light_mode=True,
-#                              verbose=False, random_seed=self.random_seed)
-#
-#            model.fit(self.X, self.y, n_fold=self.n_fold, parallel=False)
-#
-#            # TODO: cross-validation may also be considered as multiple problem instance
-#            perf = np.mean(model.performance[self.metric])
-#
-#            N = par['N']
-#            par['perf'] =  perf if perf_ is None else (perf_ * N + perf) / (N + 1)
-#            par['N'] += 1
-#
-#            self.__current_model = model
-#            self.eval_count += 1
-#            return perf
-#        return __

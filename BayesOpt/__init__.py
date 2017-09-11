@@ -5,8 +5,8 @@ Created on Fri Nov 13 20:45:21 2015
 @author: wangronin
 """
 
-from .configurator import configurator
+from .BayesOpt import BayesOpt
 from .criteria import EI
 # from .optimizer.cma_es import cma_es
 
-__all__ = ['configurator', 'EI']
+__all__ = ['BayesOpt', 'EI']
