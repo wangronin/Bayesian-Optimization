@@ -80,6 +80,7 @@ class BayesOpt(object):
 
         # parameter: objective evaluation
         self.max_eval = int(eval_budget)
+        self.max_iter = int(max_iter)
         self.random_start = int(30 * self.dim) if n_restart is None else n_restart
         self.eval_count = 0
         self.eval_hist = []
@@ -149,6 +150,8 @@ class BayesOpt(object):
         self.is_updated = True
         perf_hat = self.surrogate.predict(X)
         r2 = r2_score(perf, perf_hat)
+        
+        # TODO: in case r2 is really poor, re-fit the model or transform the input? 
         if self.verbose:
             print 'Surrogate model r2: {}'.format(r2)
         return r2
@@ -249,6 +252,9 @@ class BayesOpt(object):
         return candidates_id
 
     def intensify(self, candidates_ids):
+        """
+        intensification procedure for noisy observations (SMAC)
+        """
         maxR = 20 # maximal number of the evaluations on the incumbent
         for i, ID in enumerate(candidates_ids):
             r, extra_run = 1, 1
@@ -330,6 +336,7 @@ class BayesOpt(object):
     def _acquisition_func(self, plugin=None, dx=False):
         if plugin is None:
             plugin = np.min(self.data.perf) if self.minimize else np.max(self.data.perf)
+            
         acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
         def func(x):
             res = acquisition_func(x, dx=dx)
@@ -343,8 +350,10 @@ class BayesOpt(object):
         wait_count = 0
 
         for iteration in range(self.random_start_acquisition):
+            # make sure the all the solutions are stored as list
             x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]
-            # make sure the returned xopt_ is a list
+            
+            # TODO: when the surrogate is GP, implement a GA-BFGS 
             if self._optimizer == 'BFGS':
                 obj_func = self._acquisition_func(plugin, dx=True)
                 xopt_, fopt_, stop_dict = fmin_l_bfgs_b(obj_func, x0, pgtol=1e-8,
@@ -379,6 +388,7 @@ class BayesOpt(object):
             idx = np.argsort(foptima)[::-1]
             optima = [optima[_] for _ in idx]
             foptima = [foptima[_] for _ in idx]
+            
         return optima, foptima
 
     def _check_params(self):
