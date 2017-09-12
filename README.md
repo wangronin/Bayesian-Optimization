@@ -1,1 +1,3 @@
-# Configurator
+=======
+# BayesianOptimization
+Experimental Bayesian Optimization library
