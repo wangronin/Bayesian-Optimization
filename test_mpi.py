@@ -37,7 +37,7 @@ def create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample, seed):
     return opt
 
 dims = [2]
-n_step = 2
+n_step = 20
 n_init_sample = 10
 benchmarkfunctions = {
                 #"schwefel":benchmarks.schwefel,
@@ -53,6 +53,9 @@ benchmarkfunctions = {
 if rank == 0:
     np.random.seed(1)
     seed = np.random.randint(0, 65535, runs)
+
+    if not os.path.exists('./data'):
+        os.makedirs('./data')
 else:
     seed = None
 

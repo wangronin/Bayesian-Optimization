@@ -24,6 +24,7 @@ class Criteria(object):
 
 class EI(Criteria):
     def __call__(self, X, dx=False):
+        X = np.atleast_2d(X)
         y_hat, sd2 = self.model.predict(X, eval_MSE=True)
         sd = sqrt(sd2)
 

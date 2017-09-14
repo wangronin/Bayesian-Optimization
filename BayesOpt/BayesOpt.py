@@ -16,7 +16,9 @@ import numpy as np
 from numpy.random import randint, rand
 from scipy.optimize import fmin_l_bfgs_b
 
+# from GaussianProcess.trend import constant_trend
 from GaussianProcess import GaussianProcess_extra as GaussianProcess
+
 from criteria import EI
 from MIES import MIES
 from cma_es import cma_es
@@ -61,12 +63,18 @@ class BayesOpt(object):
         self.N_i = len(self.int_)
         self.bounds = self._extract_bounds()
         
-        if self.N_d == 0 and self.N_i == 0 and 11 < 2:
-            self._optimizer = 'BFGS'
+        if self.N_d == 0 and self.N_i == 0 and 1 < 2:
             lb, ub = self.bounds[0, :], self.bounds[1, :]
             thetaL = 1e-3 * (ub - lb) * np.ones(self.dim)
             thetaU = 10 * (ub - lb) * np.ones(self.dim)
             theta0 = np.random.rand(self.dim) * (thetaU - thetaL) + thetaL
+
+            # mean = constant_trend(self.dim, beta=None)
+            # self.surrogate = GaussianProcess(mean=mean, corr='matern', 
+            #                                  theta0=theta0, thetaL=thetaL, thetaU=thetaU,
+            #                                  nugget=1e-5, noise_estim=False, optimizer='BFGS',
+            #                                  wait_iter=5, random_start=30, likelihood='restricted',
+            #                                  eval_budget=200)
 
             self.surrogate = GaussianProcess(regr='constant', corr='matern',
                                              theta0=theta0, thetaL=thetaL,
@@ -75,9 +83,8 @@ class BayesOpt(object):
                                              verbose=False, random_start=15 * self.dim,
                                              random_state=random_seed)
         else:
-            # self.surrogate = RrandomForest()
-            self.surrogate = None
-            pass
+            self.surrogate = RrandomForest()
+            # self.surrogate = None
         if self.verbose:
             print 'The chosen surrogate model is ', self.surrogate.__class__
         self._optimizer = 'MIES'
