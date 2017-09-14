@@ -20,7 +20,7 @@ from GaussianProcess import GaussianProcess_extra as GaussianProcess
 from criteria import EI
 from MIES import MIES
 from cma_es import cma_es
-# from surrogate import RrandomForest
+from surrogate import RrandomForest
 
 from sklearn.metrics import r2_score
 
@@ -61,7 +61,7 @@ class BayesOpt(object):
         self.N_i = len(self.int_)
         self.bounds = self._extract_bounds()
         
-        if self.N_d == 0 and self.N_i == 0:
+        if self.N_d == 0 and self.N_i == 0 and 11 < 2:
             self._optimizer = 'BFGS'
             lb, ub = self.bounds[0, :], self.bounds[1, :]
             thetaL = 1e-3 * (ub - lb) * np.ones(self.dim)
@@ -77,6 +77,8 @@ class BayesOpt(object):
         else:
             # self.surrogate = RrandomForest()
             pass
+        if self.verbose:
+            print 'The chosen surrogate model is ', self.surrogate.__class__
         self._optimizer = 'MIES'
 
         # parameter: objective evaluation

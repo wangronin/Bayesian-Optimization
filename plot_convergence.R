@@ -1,11 +1,15 @@
-library(ggplot2)
-library(magrittr)
-library(dplyr)
-library(reshape2)
+#!/usr/bin/Rscript
+
+options(warn = -1)
+suppressMessages(library(ggplot2))
+suppressMessages(library(magrittr))
+suppressMessages(library(dplyr))
+suppressMessages(library(reshape2))
+options(warn = 0)
 
 # plot the convergence of Bayesian Optimization algorithms
 
-setwd('~/Dropbox/code_base/Configurator/data')
+setwd('~/Dropbox/code_base/BayesOpt/data')
 
 if (11 < 2) {
   colors <- c('#FF4F33', '#335EFF', '#FFE633', '#33FFDD')
@@ -33,10 +37,12 @@ if (11 < 2) {
 }
 
 data <- NULL
+
 for (file in system('ls *csv', intern = TRUE)) {
 
   name <- strsplit(file, '\\.')[[1]][1]
-  print(name)
+  cat(name, '\n')
+
   df <- read.csv(file) %>%
     tbl_df %>%
     mutate(algorithm = name) %>%
@@ -56,8 +62,7 @@ p <- ggplot(data, aes(x = step, y = objective, colour = algorithm)) +
   stat_summary(geom = 'ribbon', aes(fill = algorithm), colour = NA,
                fun.ymin = function(x) mean(x) - sd(x) / sqrt(length(x)),
                fun.ymax = function(x) mean(x) + sd(x) / sqrt(length(x)), 
-               alpha = 0.15)
-p <- p + theme(legend.position = "bottom")
+               alpha = 0.2)
+p <- p + theme(legend.position = "bottom") + scale_y_log10()
 
-# ggsave('test.pdf', p, device = cairo_pdf(), height = 8, width = 12)
-print(p)
+ggsave('plot.pdf', p, device = cairo_pdf(), height = 8, width = 12, dpi = 500)

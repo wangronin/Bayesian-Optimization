@@ -16,10 +16,44 @@ from rpy2.robjects import pandas2ri
 from rpy2.robjects import numpy2ri
 
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.utils.validation import check_is_fitted
+from sklearn.ensemble.base import _partition_estimators
+from joblib import Parallel, delayed
 
 # numpy and pandas data type conversion to R
 numpy2ri.activate()
 pandas2ri.activate()
+
+def save_prediction(predict, X, index, out):
+    out[:, index] = predict(X, check_input=False)
+
+class RandomForest(RandomForestRegressor):
+    """
+    Python wrapper for the R 'randomForest' library
+    """
+    def predict(self, X, eval_MSE=False):
+        check_is_fitted(self, 'estimators_')
+        # Check data
+        X = self._validate_X_predict(X)
+        
+        # Assign chunk of trees to jobs
+        n_jobs, _, _ = _partition_estimators(self.n_estimators, self.n_jobs)
+
+        # avoid storing the output of every estimator by summing them here
+        if self.n_outputs_ > 1:
+            y_hat_all = np.zeros((X.shape[0], self.n_outputs_, self.n_estimators), dtype=np.float64)
+        else:
+            y_hat_all = np.zeros((X.shape[0], self.n_estimators), dtype=np.float64)
+
+        # Parallel loop
+        Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
+            delayed(save_prediction)(e.predict, X, i, y_hat_all) for i, e in enumerate(self.estimators_))
+
+        y_hat = np.mean(y_hat_all, axis=1).flatten()
+        if eval_MSE:
+            sigma2 = np.std(y_hat_all, axis=1, ddof=1) ** 2.
+            sigma2 = sigma2.flatten()
+        return (y_hat, sigma2) if eval_MSE else y_hat
 
 class RrandomForest(object):
     """
@@ -34,9 +68,10 @@ class RrandomForest(object):
         self.n_sample, self.n_feature = X.shape
         # if not isinstance(y, np.ndarray):
         #     y = np.array(y)
+        leaf_size = max(1, int(self.n_sample / 20.))
         self.rf = self.pkg.randomForest(x=X, y=y, ntree=100,
                                         mtry=ceil(self.n_feature * 5 / 6.),
-                                        nodesize=10)
+                                        nodesize=leaf_size)
         return self
 
     def predict(self, X, eval_MSE=False):
@@ -62,5 +97,14 @@ class RrandomForest(object):
             return y_hat, mse
         else:
             return array(_)[:n_sample]
+
+if __name__ == '__main__':
+    X = np.random.randn(100, 2)
+    y = np.sum(X ** 2., axis=1)
+
+    rf = RandomForest()
+    rf.fit(X,y)
+
+    print rf.predict(X[:2, ], eval_MSE=True)
         
         
