@@ -20,7 +20,7 @@ from GaussianProcess import GaussianProcess_extra as GaussianProcess
 from criteria import EI
 from MIES import MIES
 from cma_es import cma_es
-from surrogate import RrandomForest
+from surrogate import RrandomForest, RandomForest
 
 from sklearn.metrics import r2_score
 
@@ -69,13 +69,14 @@ class BayesOpt(object):
             theta0 = np.random.rand(self.dim) * (thetaU - thetaL) + thetaL
 
             self.surrogate = GaussianProcess(regr='constant', corr='matern',
-                        theta0=theta0, thetaL=thetaL,
-                        thetaU=thetaU, nugget=1e-5,
-                        nugget_estim=False, normalize=False,
-                        verbose=False, random_start = 15 * self.dim,
-                        random_state=random_seed)
+                                             theta0=theta0, thetaL=thetaL,
+                                             thetaU=thetaU, nugget=1e-5,
+                                             nugget_estim=False, normalize=False,
+                                             verbose=False, random_start=15 * self.dim,
+                                             random_state=random_seed)
         else:
             # self.surrogate = RrandomForest()
+            self.surrogate = None
             pass
         if self.verbose:
             print 'The chosen surrogate model is ', self.surrogate.__class__
@@ -150,6 +151,13 @@ class BayesOpt(object):
     def fit_and_assess(self):
         # build the surrogate model
         X, perf = self.data[self.var_names], self.data['perf']
+
+        if self.surrogate is None:
+            min_samples_leaf = max(1, int(X.shape[0] / 20.))
+            max_features = int(np.ceil(self.dim * 5 / 6.))
+            self.surrogate = RandomForest(n_estimators=100,
+                                          max_features=max_features,
+                                          min_samples_leaf=min_samples_leaf)
         self.surrogate.fit(X, perf)
         
         self.is_updated = True
@@ -354,7 +362,7 @@ class BayesOpt(object):
         fopt = -np.inf
         optima, foptima = [], []
         wait_count = 0
-
+        # TODO: add IPOP-CMA-ES here for testing
         for iteration in range(self.random_start_acquisition):
             # make sure the all the solutions are stored as list
             x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]

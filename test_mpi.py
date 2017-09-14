@@ -16,15 +16,11 @@ from deap import benchmarks
 from GaussianProcess import GaussianProcess_extra as GaussianProcess
 from BayesOpt import BayesOpt
 
-np.random.seed(1)
-
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 runs = comm.Get_size()
 
-def create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample):
-    
-    seed = int(os.getpid())
+def create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample, seed):
     x1 = {'name' : "x1",
           'type' : 'R',
           'bounds': [-6, 6]}
@@ -33,12 +29,12 @@ def create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample):
           'type' : 'R',
           'bounds': [-6, 6]}
     
+    np.random.seed(seed)
     search_space = [x1, x2]
     opt = BayesOpt(search_space, fitness, max_iter=n_step, random_seed=seed,
-                        n_init_sample=n_init_sample, minimize=True)
+                   n_init_sample=n_init_sample, minimize=True)
     
     return opt
-
 
 dims = [2]
 n_step = 2
@@ -52,6 +48,16 @@ benchmarkfunctions = {
                 "himmelblau": benchmarks.himmelblau
                 }
 
+
+# generate, distribute and set the random seeds for reproducibility
+if rank == 0:
+    np.random.seed(1)
+    seed = np.random.randint(0, 65535, runs)
+else:
+    seed = None
+
+seed = comm.scatter(seed, root=0)
+
 for dim in dims:
     lb = np.array([-6] * dim)
     ub = np.array([6] * dim)
@@ -64,7 +70,7 @@ for dim in dims:
         y_hist_best = np.zeros((n_step, runs))
         
         csv_name = './data/{}D-{}N-{}.csv'.format(dim, n_init_sample, func_name)
-        opt = create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample)
+        opt = create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample, seed)
         opt.optimize()
         hist_perf = opt.hist_perf
 

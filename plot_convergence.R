@@ -11,6 +11,7 @@ options(warn = 0)
 
 setwd('~/Dropbox/code_base/BayesOpt/data')
 
+# plot a single algorithm
 if (11 < 2) {
   colors <- c('#FF4F33', '#335EFF', '#FFE633', '#33FFDD')
   i <- 1
@@ -63,6 +64,9 @@ p <- ggplot(data, aes(x = step, y = objective, colour = algorithm)) +
                fun.ymin = function(x) mean(x) - sd(x) / sqrt(length(x)),
                fun.ymax = function(x) mean(x) + sd(x) / sqrt(length(x)), 
                alpha = 0.2)
-p <- p + theme(legend.position = "bottom") + scale_y_log10()
+p <- p + theme(legend.position = "bottom",
+               legend.title = element_blank()) + 
+    scale_y_log10() +
+    labs(y = 'objective value')
 
 ggsave('plot.pdf', p, device = cairo_pdf(), height = 8, width = 12, dpi = 500)

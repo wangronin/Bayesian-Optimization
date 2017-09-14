@@ -34,6 +34,7 @@ class RandomForest(RandomForestRegressor):
     def predict(self, X, eval_MSE=False):
         check_is_fitted(self, 'estimators_')
         # Check data
+        X = np.atleast_2d(X)
         X = self._validate_X_predict(X)
         
         # Assign chunk of trees to jobs
