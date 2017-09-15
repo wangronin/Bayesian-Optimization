@@ -184,7 +184,6 @@ class MIES(object):
         if self.eval_count > self.max_eval:
             self.stop_dict['max_eval'] = True
 
-        # TODO: improve the restart criteria
         if self.eval_count != 0:
             # TODO: implement more stop criteria
             # if (sigma < 1e-16) or (sigma > 1e6):

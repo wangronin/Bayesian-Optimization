@@ -32,8 +32,8 @@ class BayesOpt(object):
     """
     Generic Bayesian optimization algorithm
     """
-    def __init__(self, conf_space, obj_func, eval_budget=None,
-                 max_iter=None, minimize=True, noisy=False,  
+    def __init__(self, conf_space, obj_func, eval_budget,
+                 minimize=True, noisy=False, max_iter=None, 
                  wait_iter=3, n_init_sample=None, n_restart=None, 
                  verbose=False, random_seed=None):
 
@@ -43,13 +43,12 @@ class BayesOpt(object):
         self.conf_space = conf_space
         self.var_names = [conf['name'] for conf in self.conf_space]
         self.obj_func = obj_func
-        assert hasattr(self.obj_func, '__call__')
-        
-        # to handle the noisy objective functions
         self.noisy = noisy
 
+        assert hasattr(self.obj_func, '__call__')
+
         # random forest is used as the surrogate for now
-        # TODO: add Gaussian process (OWCK) as surrogate here
+        # TODO: add Gaussian process (OWCK) to here
         self.minimize = minimize
         self.dim = len(self.conf_space)
 
@@ -90,10 +89,8 @@ class BayesOpt(object):
         self._optimizer = 'BFGS'
 
         # parameter: objective evaluation
-        if (not eval_budget) and (not max_iter):
-            raise ValueError('eval_budget and max_iter can not be both None')
-        self.max_eval = int(eval_budget) if eval_budget else np.inf 
-        self.max_iter = int(max_iter) if max_iter else np.inf 
+        self.max_eval = int(eval_budget)
+        self.max_iter = int(max_iter)
         self.random_start = int(30 * self.dim) if n_restart is None else n_restart
         self.eval_count = 0
         self.eval_hist = []
@@ -313,11 +310,10 @@ class BayesOpt(object):
                 # create the initial data set
         self.data = self.sampling(self.n_init_sample)
 
+        print 'evaluating the initial design sites...'
         for i, conf in self.data.iterrows():
             self.data.loc[i] = self.evaluate(conf, runs=self.init_n_eval)
-
-            if self.verbose:
-                print conf.to_frame().T
+            print conf.to_frame().T
         
         # set the initial incumbent
         self.data.perf = pd.to_numeric(self.data.perf)
@@ -347,10 +343,10 @@ class BayesOpt(object):
         return self.incumbent
 
     def stop(self):
-        if self.iter_count >= self.max_iter:
+        if self.iter_count > self.max_iter:
             self.stop_dict['max_iter'] = True
 
-        if self.eval_count >= self.max_eval:
+        if self.eval_count > self.max_eval:
             self.stop_dict['max_eval'] = True
 
         return len(self.stop_dict)

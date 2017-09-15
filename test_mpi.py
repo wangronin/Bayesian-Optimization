@@ -31,8 +31,13 @@ def create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample, seed):
     
     np.random.seed(seed)
     search_space = [x1, x2]
+<<<<<<< HEAD
     opt = BayesOpt(search_space, fitness, max_iter=n_step, random_seed=seed,
                    n_init_sample=n_init_sample, minimize=True)
+=======
+    opt = BayesOpt(search_space, fitness, n_step + n_init_sample, random_seed=seed,
+                        n_init_sample=n_init_sample, minimize=True)
+>>>>>>> parent of 05f7b74... fix mpi test file
     
     return opt
 
@@ -78,16 +83,18 @@ for dim in dims:
         hist_perf = opt.hist_perf
 
         comm.Barrier()
-        __ = comm.gather(hist_perf, root=0)
+        __ = comm.gather(fopt, root=0)
 
         if rank == 0:
             data = np.atleast_2d(__)
+            print data
             data = data.T if data.shape[1] != runs else data
-            mean_ = np.mean(data, axis=1)
-            error_ = np.std(data, axis=1, ddof=1) / np.sqrt(runs)
+            mean_ = np.mean(data, axis=0)
+            error_ = np.std(data, axis=0, ddof=1) / np.sqrt(runs)
             print 'mean : ', mean_
             print 'std error: ', error_
             
             # append the new data the csv
+            df = pd.DataFrame(data)
             df = pd.DataFrame(data, columns=['run{}'.format(_+1) for _ in range(runs)])
             df.to_csv(csv_name, mode='w', header=True, index=False)
