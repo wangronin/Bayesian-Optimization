@@ -87,7 +87,7 @@ class BayesOpt(object):
             # self.surrogate = None
         if self.verbose:
             print 'The chosen surrogate model is ', self.surrogate.__class__
-        self._optimizer = 'MIES'
+        self._optimizer = 'BFGS'
 
         # parameter: objective evaluation
         if (not eval_budget) and (not max_iter):
@@ -112,8 +112,8 @@ class BayesOpt(object):
         # parameter: acqusition function maximization
         self.max_eval_acquisition = 1e3 * self.dim
         self.wait_iter = wait_iter
-        self.random_start_acquisition = 10
-
+        self.random_start_acquisition = int(30 * self.dim)
+        
         # stop criteria
         self.stop_dict = {}
         self.hist_perf = []
@@ -231,6 +231,7 @@ class BayesOpt(object):
 
             # if no new design site is found, re-estimate the parameters immediately
             if len(confs_) == 0:
+                pdb.set_trace()
                 if not self.is_update:
                     # Duplication are commonly encountered in the 'corner'
                     self.fit_and_assess()
@@ -366,9 +367,10 @@ class BayesOpt(object):
 
     def arg_max_acquisition(self, plugin=None):
         eval_budget = self.max_eval_acquisition
-        fopt = -np.inf
+        fopt = np.inf
         optima, foptima = [], []
         wait_count = 0
+        
         # TODO: add IPOP-CMA-ES here for testing
         for iteration in range(self.random_start_acquisition):
             # make sure the all the solutions are stored as list
@@ -380,7 +382,8 @@ class BayesOpt(object):
                 xopt_, fopt_, stop_dict = fmin_l_bfgs_b(obj_func, x0, pgtol=1e-8,
                                                         factr=1e6, bounds=self.bounds.T,
                                                         maxfun=eval_budget)
-                # xopt_ = xopt_.flatten().tolist()
+                xopt_ = xopt_.flatten().tolist()
+                fopt_ = fopt_.sum()
                 if stop_dict["warnflag"] != 0 and self.verbose:
                     warnings.warn("L-BFGS-B terminated abnormally with the "
                                   " state: %s" % stop_dict)
@@ -405,10 +408,11 @@ class BayesOpt(object):
             foptima.append(-fopt_)
             if eval_budget <= 0 or wait_count >= self.wait_iter:
                 break
-            # sort the optima in descending order
-            idx = np.argsort(foptima)[::-1]
-            optima = [optima[_] for _ in idx]
-            foptima = [foptima[_] for _ in idx]
+            
+        # sort the optima in descending order
+        idx = np.argsort(foptima)[::-1]
+        optima = [optima[_] for _ in idx]
+        foptima = [foptima[_] for _ in idx]
             
         return optima, foptima
 

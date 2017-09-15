@@ -16,7 +16,7 @@ from BayesOpt import BayesOpt
 np.random.seed(1)
 
 dim = 2
-n_step = 20
+n_step = 21
 n_init_sample = 10
 obj_func = lambda x: benchmarks.himmelblau(x)[0]
 lb = np.array([-6] * dim)
@@ -31,7 +31,7 @@ x2 = {'name' : "x2",
       'bounds': [lb[1], ub[1]]}
     
 search_space = [x1, x2]
-opt = BayesOpt(search_space, obj_func, max_iter=n_step, random_seed=None,
+opt = BayesOpt(search_space, obj_func, max_iter=n_step, random_seed=1,
                n_init_sample=n_init_sample, minimize=True, verbose=True)
                
 opt.optimize()
