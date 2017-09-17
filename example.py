@@ -10,13 +10,13 @@ import pdb
 
 import numpy as np
 from deap import benchmarks
-from GaussianProcess import GaussianProcess_extra as GaussianProcess
+from GaussianProcess_old import GaussianProcess_extra as GaussianProcess
 from BayesOpt import BayesOpt
 
 np.random.seed(1)
 
 dim = 2
-n_step = 21
+n_step = 20
 n_init_sample = 10
 obj_func = lambda x: benchmarks.himmelblau(x)[0]
 lb = np.array([-6] * dim)
@@ -29,9 +29,20 @@ x1 = {'name' : "x1",
 x2 = {'name' : "x2",
       'type' : 'R',
       'bounds': [lb[1], ub[1]]}
-    
+
+thetaL = 1e-3 * (ub - lb) * np.ones(dim)
+thetaU = 10 * (ub - lb) * np.ones(dim)
+theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
+model = GaussianProcess(regr='constant', corr='matern',
+                        theta0=theta0, thetaL=thetaL,
+                        thetaU=thetaU, nugget=None,
+                        nugget_estim=False, normalize=False,
+                        verbose=False, random_start=15 * dim,
+                        random_state=None, optimizer='BFGS')
+
 search_space = [x1, x2]
-opt = BayesOpt(search_space, obj_func, max_iter=n_step, random_seed=1,
-               n_init_sample=n_init_sample, minimize=True, verbose=True)
+opt = BayesOpt(search_space, obj_func, model, max_iter=n_step, random_seed=None,
+               n_init_sample=n_init_sample, minimize=True, verbose=False)
                
 opt.optimize()

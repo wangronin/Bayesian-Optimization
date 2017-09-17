@@ -13,13 +13,18 @@ import random, warnings
 
 import pandas as pd
 import numpy as np
+from numpy import sqrt
+from scipy.stats import norm
+
+normcdf, normpdf = norm.cdf, norm.pdf
+
 from numpy.random import randint, rand
 from scipy.optimize import fmin_l_bfgs_b
 
 # from GaussianProcess.trend import constant_trend
-from GaussianProcess import GaussianProcess_extra as GaussianProcess
+from GaussianProcess_old import GaussianProcess_extra as GaussianProcess
 
-from criteria import EI
+# from criteria import EI
 from MIES import MIES
 from cma_es import cma_es
 from surrogate import RrandomForest, RandomForest
@@ -28,11 +33,93 @@ from sklearn.metrics import r2_score
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
+def ei(model, plugin=None):
+
+    def __ei(X):
+
+        X = np.atleast_2d(X)
+
+        X = X.T if X.shape[1] != model.X.shape[1] else X
+
+        n_sample = X.shape[0]
+
+        if True:
+            #here you did de-standardization? Not needed with OWCK
+            y = model.y # * np.std(model.y) + np.mean(model.y)
+        else:
+            y = model.y * model.y_std + model.y_mean
+
+        fmin = np.min(y) if plugin is None else plugin
+
+        y_pre = []
+        mse = []
+        for sample in X:
+            y_sample, mse_sample = model.predict(sample, eval_MSE=True)
+            y_pre.append(y_sample[0])
+            mse.append(mse_sample[0])
+
+        y_pre = np.array(y_pre)
+        mse = np.array(mse)
+        y_pre = y_pre.reshape(n_sample)
+        mse = mse.reshape(n_sample)
+
+        sigma = sqrt(mse)
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error')
+            try:
+                value = (fmin - y_pre) * normcdf((fmin - y_pre) / sigma) + \
+                    sigma * normpdf((fmin - y_pre) / sigma)
+            except Warning:
+                value = 0.
+
+        return value
+
+    return __ei
+
+
+def ei_dx(model, plugin=None):
+
+    def __ei_dx(X):
+
+        X = np.atleast_2d(X)
+
+        X = X.T if X.shape[1] != model.X.shape[1] else X
+
+        if True:
+            #here you did de-standardization? Not needed with OWCK
+            y = model.y# * np.std(model.y) + np.mean(model.y)
+        else:
+            y = model.y * model.y_std + model.y_mean
+
+        fmin = np.min(y) if plugin is None else plugin
+
+        y, sd2 = model.predict(X, eval_MSE=True)
+        sd = np.sqrt(sd2)
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error')
+            try:
+                y_dx, sd2_dx = model.gradient(X)
+                sd_dx = sd2_dx / (2. * sd)
+
+                xcr = (fmin - y) / sd
+                xcr_prob, xcr_dens = normcdf(xcr), normpdf(xcr)
+
+                grad = -y_dx * xcr_prob + sd_dx * xcr_dens
+
+            except Warning:
+                grad = np.zeros((X.shape[1], 1))
+
+        return grad
+
+    return __ei_dx
+
 class BayesOpt(object):
     """
     Generic Bayesian optimization algorithm
     """
-    def __init__(self, conf_space, obj_func, eval_budget,
+    def __init__(self, conf_space, obj_func, surrogate, eval_budget=None,
                  minimize=True, noisy=False, max_iter=None, 
                  wait_iter=3, n_init_sample=None, n_restart=None, 
                  verbose=False, random_seed=None):
@@ -61,36 +148,20 @@ class BayesOpt(object):
         self.N_d = len(self.cat_)
         self.N_i = len(self.int_)
         self.bounds = self._extract_bounds()
+        self.surrogate = surrogate
         
-        if self.N_d == 0 and self.N_i == 0 and 1 < 2:
-            lb, ub = self.bounds[0, :], self.bounds[1, :]
-            thetaL = 1e-3 * (ub - lb) * np.ones(self.dim)
-            thetaU = 10 * (ub - lb) * np.ones(self.dim)
-            theta0 = np.random.rand(self.dim) * (thetaU - thetaL) + thetaL
-
-            # mean = constant_trend(self.dim, beta=None)
-            # self.surrogate = GaussianProcess(mean=mean, corr='matern', 
-            #                                  theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-            #                                  nugget=1e-5, noise_estim=False, optimizer='BFGS',
-            #                                  wait_iter=5, random_start=30, likelihood='restricted',
-            #                                  eval_budget=200)
-
-            self.surrogate = GaussianProcess(regr='constant', corr='matern',
-                                             theta0=theta0, thetaL=thetaL,
-                                             thetaU=thetaU, nugget=1e-5,
-                                             nugget_estim=False, normalize=False,
-                                             verbose=False, random_start=15 * self.dim,
-                                             random_state=random_seed)
-        else:
-            self.surrogate = RrandomForest()
+        # if self.N_d == 0 and self.N_i == 0 and 1 < 2:
+            
+        # else:
+            # self.surrogate = RrandomForest()
             # self.surrogate = None
         if self.verbose:
             print 'The chosen surrogate model is ', self.surrogate.__class__
         self._optimizer = 'BFGS'
 
         # parameter: objective evaluation
-        self.max_eval = int(eval_budget)
-        self.max_iter = int(max_iter)
+        self.max_eval = int(eval_budget) if eval_budget else np.inf
+        self.max_iter = int(max_iter) if max_iter else np.inf
         self.random_start = int(30 * self.dim) if n_restart is None else n_restart
         self.eval_count = 0
         self.eval_hist = []
@@ -228,7 +299,6 @@ class BayesOpt(object):
 
             # if no new design site is found, re-estimate the parameters immediately
             if len(confs_) == 0:
-                pdb.set_trace()
                 if not self.is_update:
                     # Duplication are commonly encountered in the 'corner'
                     self.fit_and_assess()
@@ -313,7 +383,6 @@ class BayesOpt(object):
         print 'evaluating the initial design sites...'
         for i, conf in self.data.iterrows():
             self.data.loc[i] = self.evaluate(conf, runs=self.init_n_eval)
-            print conf.to_frame().T
         
         # set the initial incumbent
         self.data.perf = pd.to_numeric(self.data.perf)
@@ -335,6 +404,7 @@ class BayesOpt(object):
             self.iter_count += 1
             self.hist_perf.append(self.data.loc[self.incumbent, 'perf'])
 
+            print self.iter_count, self.data.iloc[-1, 0:2].values, np.random.get_state()[2]
             if self.verbose:
                 print 'iteration {}, current incumbent is:'.format(self.iter_count)
                 print self.data.loc[[self.incumbent]]
@@ -343,10 +413,10 @@ class BayesOpt(object):
         return self.incumbent
 
     def stop(self):
-        if self.iter_count > self.max_iter:
+        if self.iter_count >= self.max_iter:
             self.stop_dict['max_iter'] = True
 
-        if self.eval_count > self.max_eval:
+        if self.eval_count >= self.max_eval:
             self.stop_dict['max_eval'] = True
 
         return len(self.stop_dict)
@@ -355,10 +425,13 @@ class BayesOpt(object):
         if plugin is None:
             plugin = np.min(self.data.perf) if self.minimize else np.max(self.data.perf)
             
-        acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
+        # acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
+        acquisition_func = ei(self.surrogate, plugin)
+        acquisition_func_dx = ei_dx(self.surrogate, plugin)
         def func(x):
-            res = acquisition_func(x, dx=dx)
-            return (-res[0], -res[1]) if dx else -res
+            res = acquisition_func(x)
+            __  =acquisition_func_dx(x)
+            return (-res, -__) if dx else -res
         return func
 
     def arg_max_acquisition(self, plugin=None):
@@ -370,7 +443,8 @@ class BayesOpt(object):
         # TODO: add IPOP-CMA-ES here for testing
         for iteration in range(self.random_start_acquisition):
             # make sure the all the solutions are stored as list
-            x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]
+            # x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]
+            x0 = np.random.uniform(self.bounds[0, :], self.bounds[1, :])
             
             # TODO: when the surrogate is GP, implement a GA-BFGS 
             if self._optimizer == 'BFGS':
@@ -404,7 +478,8 @@ class BayesOpt(object):
             foptima.append(-fopt_)
             if eval_budget <= 0 or wait_count >= self.wait_iter:
                 break
-            
+        
+        # pdb.set_trace()
         # sort the optima in descending order
         idx = np.argsort(foptima)[::-1]
         optima = [optima[_] for _ in idx]
