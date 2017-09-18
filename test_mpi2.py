@@ -13,7 +13,8 @@ from mpi4py import MPI
 import numpy as np
 
 from deap import benchmarks
-from GaussianProcess_old import GaussianProcess_extra as GaussianProcess
+from GaussianProcess import GaussianProcess
+from GaussianProcess.trend import constant_trend
 from BayesOpt import BayesOpt, RandomForest, RrandomForest
 
 comm = MPI.COMM_WORLD
@@ -34,12 +35,18 @@ def create_optimizer(dim, fitness, n_step, n_init_sample, model_type):
         thetaU = 10 * (ub - lb) * np.ones(dim)
         theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
     
-        model = GaussianProcess(regr='constant', corr='matern',
-                                theta0=theta0, thetaL=thetaL,
-                                thetaU=thetaU, nugget=1e-5,
-                                nugget_estim=False, normalize=False,
-                                verbose=False, random_start = 15*dim,
-                                random_state=None)
+        mean = constant_trend(dim, beta=None)
+        model = GaussianProcess(mean=mean,
+                                corr='matern',
+                                theta0=theta0,
+                                thetaL=thetaL,
+                                thetaU=thetaU,
+                                nugget=1e-5,
+                                noise_estim=False,
+                                random_start=15 * dim,
+                                likelihood='concentrated',
+                                random_state=None,
+                                eval_budget=100 * dim)
                                 
     elif model_type == 'sklearn-RF':
         min_samples_leaf = max(1, int(n_init_sample / 20.))
@@ -52,7 +59,7 @@ def create_optimizer(dim, fitness, n_step, n_init_sample, model_type):
         model = RrandomForest()
 
     opt = BayesOpt(search_space, fitness, model, max_iter=n_step, random_seed=None,
-                   n_init_sample=n_init_sample, minimize=True, optimizer='MIES')
+                   n_init_sample=n_init_sample, minimize=True, optimizer='BFGS')
     
     return opt
 
