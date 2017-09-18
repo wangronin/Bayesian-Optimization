@@ -24,7 +24,7 @@ from scipy.optimize import fmin_l_bfgs_b
 # from GaussianProcess.trend import constant_trend
 from GaussianProcess_old import GaussianProcess_extra as GaussianProcess
 
-# from criteria import EI
+from criteria import EI
 from MIES import MIES
 from cma_es import cma_es
 from surrogate import RrandomForest, RandomForest
@@ -134,8 +134,6 @@ class BayesOpt(object):
 
         assert hasattr(self.obj_func, '__call__')
 
-        # random forest is used as the surrogate for now
-        # TODO: add Gaussian process (OWCK) to here
         self.minimize = minimize
         self.dim = len(self.conf_space)
 
@@ -150,11 +148,6 @@ class BayesOpt(object):
         self.bounds = self._extract_bounds()
         self.surrogate = surrogate
         
-        # if self.N_d == 0 and self.N_i == 0 and 1 < 2:
-            
-        # else:
-            # self.surrogate = RrandomForest()
-            # self.surrogate = None
         if self.verbose:
             print 'The chosen surrogate model is ', self.surrogate.__class__
         self._optimizer = 'BFGS'
@@ -380,7 +373,8 @@ class BayesOpt(object):
                 # create the initial data set
         self.data = self.sampling(self.n_init_sample)
 
-        print 'evaluating the initial design sites...'
+        if self.verbose:
+            print 'evaluating the initial design sites...'
         for i, conf in self.data.iterrows():
             self.data.loc[i] = self.evaluate(conf, runs=self.init_n_eval)
         
@@ -404,7 +398,9 @@ class BayesOpt(object):
             self.iter_count += 1
             self.hist_perf.append(self.data.loc[self.incumbent, 'perf'])
 
-            print self.iter_count, self.data.iloc[-1, 0:2].values, np.random.get_state()[2]
+            tmp = np.array([_ for _ in self.data.iloc[-1, 0:2].values])
+            np.set_printoptions(precision=30)
+            print self.iter_count, tmp, np.random.get_state()[2]
             if self.verbose:
                 print 'iteration {}, current incumbent is:'.format(self.iter_count)
                 print self.data.loc[[self.incumbent]]
@@ -425,13 +421,10 @@ class BayesOpt(object):
         if plugin is None:
             plugin = np.min(self.data.perf) if self.minimize else np.max(self.data.perf)
             
-        # acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
-        acquisition_func = ei(self.surrogate, plugin)
-        acquisition_func_dx = ei_dx(self.surrogate, plugin)
+        acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
         def func(x):
-            res = acquisition_func(x)
-            __  =acquisition_func_dx(x)
-            return (-res, -__) if dx else -res
+            res = acquisition_func(x, dx=dx)
+            return (-res[0], -res[1]) if dx else -res
         return func
 
     def arg_max_acquisition(self, plugin=None):
@@ -441,12 +434,13 @@ class BayesOpt(object):
         wait_count = 0
         
         # TODO: add IPOP-CMA-ES here for testing
+        np.set_printoptions(precision=40)
         for iteration in range(self.random_start_acquisition):
             # make sure the all the solutions are stored as list
             # x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]
             x0 = np.random.uniform(self.bounds[0, :], self.bounds[1, :])
             
-            # TODO: when the surrogate is GP, implement a GA-BFGS 
+            # TODO: when the surrogate is GP, implement a GA-BFGS hybrid algorithm
             if self._optimizer == 'BFGS':
                 obj_func = self._acquisition_func(plugin, dx=True)
                 xopt_, fopt_, stop_dict = fmin_l_bfgs_b(obj_func, x0, pgtol=1e-8,
@@ -454,9 +448,11 @@ class BayesOpt(object):
                                                         maxfun=eval_budget)
                 xopt_ = xopt_.flatten().tolist()
                 fopt_ = fopt_.sum()
+                
                 if stop_dict["warnflag"] != 0 and self.verbose:
                     warnings.warn("L-BFGS-B terminated abnormally with the "
                                   " state: %s" % stop_dict)
+                                  
             elif self._optimizer == 'MIES':
                 obj_func = self._acquisition_func(plugin, dx=False)
                 mies = MIES(obj_func, x0, self.bounds, self.levels,
@@ -479,7 +475,6 @@ class BayesOpt(object):
             if eval_budget <= 0 or wait_count >= self.wait_iter:
                 break
         
-        # pdb.set_trace()
         # sort the optima in descending order
         idx = np.argsort(foptima)[::-1]
         optima = [optima[_] for _ in idx]

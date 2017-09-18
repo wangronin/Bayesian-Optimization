@@ -29,7 +29,8 @@ def save_prediction(predict, X, index, out):
 
 class RandomForest(RandomForestRegressor):
     """
-    Python wrapper for the R 'randomForest' library
+    Extension for the sklearn RandomForestRegressor class
+    Added functionality: empirical MSE of predictions
     """
     def predict(self, X, eval_MSE=False):
         check_is_fitted(self, 'estimators_')

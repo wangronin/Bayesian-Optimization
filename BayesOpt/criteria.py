@@ -5,6 +5,7 @@ Created on Mon Sep  4 21:44:21 2017
 @author: wangronin
 """
 
+import pdb
 import warnings
 import numpy as np
 from numpy import sqrt
@@ -31,10 +32,12 @@ class EI(Criteria):
         with warnings.catch_warnings():
             warnings.filterwarnings('error')
             try:
-                xcr = self.plugin - y_hat if self.minimize else y_hat - self.plugin
-                xcr /= sd
+                # TODO: I have save xcr_ becasue xcr * sd != xcr_ numerically
+                # find out the cause of such an error, probably representation error...
+                xcr_ = self.plugin - y_hat if self.minimize else y_hat - self.plugin
+                xcr = xcr_ / sd
                 xcr_prob, xcr_dens = normcdf(xcr), normpdf(xcr)
-                value = sd * xcr * xcr_prob + sd * xcr_dens
+                value = xcr_ * xcr_prob + sd * xcr_dens
             except Warning: # in case of numerical errors
                 # TODO: find out which warning is generated and remove try...except
                 value = 0
