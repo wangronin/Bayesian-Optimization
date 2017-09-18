@@ -33,97 +33,16 @@ from sklearn.metrics import r2_score
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
-def ei(model, plugin=None):
-
-    def __ei(X):
-
-        X = np.atleast_2d(X)
-
-        X = X.T if X.shape[1] != model.X.shape[1] else X
-
-        n_sample = X.shape[0]
-
-        if True:
-            #here you did de-standardization? Not needed with OWCK
-            y = model.y # * np.std(model.y) + np.mean(model.y)
-        else:
-            y = model.y * model.y_std + model.y_mean
-
-        fmin = np.min(y) if plugin is None else plugin
-
-        y_pre = []
-        mse = []
-        for sample in X:
-            y_sample, mse_sample = model.predict(sample, eval_MSE=True)
-            y_pre.append(y_sample[0])
-            mse.append(mse_sample[0])
-
-        y_pre = np.array(y_pre)
-        mse = np.array(mse)
-        y_pre = y_pre.reshape(n_sample)
-        mse = mse.reshape(n_sample)
-
-        sigma = sqrt(mse)
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings('error')
-            try:
-                value = (fmin - y_pre) * normcdf((fmin - y_pre) / sigma) + \
-                    sigma * normpdf((fmin - y_pre) / sigma)
-            except Warning:
-                value = 0.
-
-        return value
-
-    return __ei
-
-
-def ei_dx(model, plugin=None):
-
-    def __ei_dx(X):
-
-        X = np.atleast_2d(X)
-
-        X = X.T if X.shape[1] != model.X.shape[1] else X
-
-        if True:
-            #here you did de-standardization? Not needed with OWCK
-            y = model.y# * np.std(model.y) + np.mean(model.y)
-        else:
-            y = model.y * model.y_std + model.y_mean
-
-        fmin = np.min(y) if plugin is None else plugin
-
-        y, sd2 = model.predict(X, eval_MSE=True)
-        sd = np.sqrt(sd2)
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings('error')
-            try:
-                y_dx, sd2_dx = model.gradient(X)
-                sd_dx = sd2_dx / (2. * sd)
-
-                xcr = (fmin - y) / sd
-                xcr_prob, xcr_dens = normcdf(xcr), normpdf(xcr)
-
-                grad = -y_dx * xcr_prob + sd_dx * xcr_dens
-
-            except Warning:
-                grad = np.zeros((X.shape[1], 1))
-
-        return grad
-
-    return __ei_dx
-
 class BayesOpt(object):
     """
     Generic Bayesian optimization algorithm
     """
-    def __init__(self, conf_space, obj_func, surrogate, eval_budget=None,
-                 minimize=True, noisy=False, max_iter=None, 
-                 wait_iter=3, n_init_sample=None, n_restart=None, 
-                 verbose=False, random_seed=None):
+    def __init__(self, conf_space, obj_func, surrogate, 
+                 eval_budget=None, max_iter=None, minimize=True, 
+                 noisy=False, wait_iter=3, n_init_sample=None, 
+                 n_restart=None, verbose=False, random_seed=None, debug=False):
 
+        self.debug = debug
         self._check_params()
         self.verbose = verbose
         self.init_n_eval = 1
@@ -131,6 +50,7 @@ class BayesOpt(object):
         self.var_names = [conf['name'] for conf in self.conf_space]
         self.obj_func = obj_func
         self.noisy = noisy
+        self.surrogate = surrogate
 
         assert hasattr(self.obj_func, '__call__')
 
@@ -146,7 +66,6 @@ class BayesOpt(object):
         self.N_d = len(self.cat_)
         self.N_i = len(self.int_)
         self.bounds = self._extract_bounds()
-        self.surrogate = surrogate
         
         if self.verbose:
             print 'The chosen surrogate model is ', self.surrogate.__class__
@@ -156,10 +75,11 @@ class BayesOpt(object):
         self.max_eval = int(eval_budget) if eval_budget else np.inf
         self.max_iter = int(max_iter) if max_iter else np.inf
         self.random_start = int(30 * self.dim) if n_restart is None else n_restart
-        self.eval_count = 0
         self.eval_hist = []
         self.eval_hist_id = []
         self.bath_eval = False
+        self.iter_count = 0
+        self.eval_count = 0
 
         # optimization settings
         self.max_iter = np.inf if max_iter is None else int(max_iter)
@@ -171,7 +91,7 @@ class BayesOpt(object):
         self.levels = [k['levels'] for k in self.conf_space if k['type'] == 'D']
 
         # parameter: acqusition function maximization
-        self.max_eval_acquisition = 1e3 * self.dim
+        self.max_eval_acquisition = int(1e3 * self.dim)
         self.wait_iter = wait_iter
         self.random_start_acquisition = int(30 * self.dim)
         
@@ -217,7 +137,7 @@ class BayesOpt(object):
         return conf
 
     def fit_and_assess(self):
-        # build the surrogate model
+        # fit the surrogate model
         X, perf = self.data[self.var_names], self.data['perf']
 
         if self.surrogate is None:
@@ -282,7 +202,7 @@ class BayesOpt(object):
         # always generate mu + 1 candidate solutions
         while True:
             confs_, acqui_opts_ = self.arg_max_acquisition()
-            if 1 < 2:
+            if 1 < 2: # only use the best acquisition point 
                 confs_ = [confs_[0]]
             N = self.data.shape[0]
             confs_ = pd.DataFrame([conf + [0, None] for i, conf in enumerate(confs_)],
@@ -366,49 +286,50 @@ class BayesOpt(object):
                 self.data.loc[i] = self.evaluate(conf, r)
                 print self.conf.to_frame().T
                 extra_run += r
+    
+    def step(self):
+        if not hasattr(self, 'data'):
+            if self.verbose:
+                print 'building the initial design of experiemnts...'
+            self.data = self.sampling(self.n_init_sample)
 
-    def optimize(self):
-        if self.verbose:
-            print 'building the initial design of experiemnts...'
-                # create the initial data set
-        self.data = self.sampling(self.n_init_sample)
-
-        if self.verbose:
-            print 'evaluating the initial design sites...'
-        for i, conf in self.data.iterrows():
-            self.data.loc[i] = self.evaluate(conf, runs=self.init_n_eval)
-        
-        # set the initial incumbent
-        self.data.perf = pd.to_numeric(self.data.perf)
-        perf = np.array(self.data.perf)
-        self.incumbent = np.nonzero(perf == np.min(perf))[0][0]
-        self.fit_and_assess()
-
-        self.iter_count = 0
-        while not self.stop():
-            ids = self.select_candidate()
-            if self.noisy:
-                self.incumbent = self.intensify(ids)
-            else:
-                perf = np.array(self.data.perf)
-                self.incumbent = np.nonzero(perf == np.min(perf))[0][0]
-
-            # model re-training
+            for i, conf in self.data.iterrows():
+                self.data.loc[i] = self.evaluate(conf, runs=self.init_n_eval)
+            
+            # set the initial incumbent
+            self.data.perf = pd.to_numeric(self.data.perf)
+            perf = np.array(self.data.perf)
+            self.incumbent = np.nonzero(perf == np.min(perf))[0][0]
             self.fit_and_assess()
-            self.iter_count += 1
-            self.hist_perf.append(self.data.loc[self.incumbent, 'perf'])
+        
+        ids = self.select_candidate()
+        if self.noisy:
+            self.incumbent = self.intensify(ids)
+        else:
+            perf = np.array(self.data.perf)
+            self.incumbent = np.nonzero(perf == np.min(perf))[0][0]
 
+        # model re-training
+        self.fit_and_assess()
+        self.iter_count += 1
+        self.hist_perf.append(self.data.loc[self.incumbent, 'perf'])
+        
+        if self.debug:
             tmp = np.array([_ for _ in self.data.iloc[-1, 0:2].values])
             np.set_printoptions(precision=30)
             print self.iter_count, tmp, np.random.get_state()[2]
-            if self.verbose:
-                print 'iteration {}, current incumbent is:'.format(self.iter_count)
-                print self.data.loc[[self.incumbent]]
-        
+            
+        if self.verbose:
+            print 'iteration {}, current incumbent is:'.format(self.iter_count)
+            print self.data.loc[[self.incumbent]]
+
+    def run(self):
+        while not self.check_stop():
+            self.step()
         self.stop_dict['n_eval'] = self.eval_count
         return self.incumbent
 
-    def stop(self):
+    def check_stop(self):
         if self.iter_count >= self.max_iter:
             self.stop_dict['max_iter'] = True
 
@@ -434,7 +355,6 @@ class BayesOpt(object):
         wait_count = 0
         
         # TODO: add IPOP-CMA-ES here for testing
-        np.set_printoptions(precision=40)
         for iteration in range(self.random_start_acquisition):
             # make sure the all the solutions are stored as list
             # x0 = [_ for _ in self.sampling(1)[self.var_names].values[0]]
@@ -455,7 +375,7 @@ class BayesOpt(object):
                                   
             elif self._optimizer == 'MIES':
                 obj_func = self._acquisition_func(plugin, dx=False)
-                mies = MIES(obj_func, x0, self.bounds, self.levels,
+                mies = MIES(obj_func, x0.tolist(), self.bounds, self.levels,
                             self.param_type, eval_budget, minimize=True, 
                             verbose=False)                            
                 xopt_, fopt_, stop_dict = mies.optimize()
@@ -472,6 +392,7 @@ class BayesOpt(object):
             eval_budget -= stop_dict['funcalls']
             optima.append(xopt_)
             foptima.append(-fopt_)
+            
             if eval_budget <= 0 or wait_count >= self.wait_iter:
                 break
         

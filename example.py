@@ -43,6 +43,6 @@ model = GaussianProcess(regr='constant', corr='matern',
 
 search_space = [x1, x2]
 opt = BayesOpt(search_space, obj_func, model, max_iter=n_step, random_seed=None,
-               n_init_sample=n_init_sample, minimize=True, verbose=False)
+               n_init_sample=n_init_sample, minimize=True, verbose=False, debug=True)
                
-opt.optimize()
+opt.run()

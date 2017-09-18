@@ -66,3 +66,6 @@ class GEI(object):
 class UCB(object):
     def __call__(self, X):
         pass
+
+class MGF(Criteria):
+    pass

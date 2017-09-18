@@ -13,31 +13,35 @@ from mpi4py import MPI
 import numpy as np
 
 from deap import benchmarks
-from GaussianProcess import GaussianProcess_extra as GaussianProcess
+from GaussianProcess_old import GaussianProcess_extra as GaussianProcess
 from BayesOpt import BayesOpt
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 runs = comm.Get_size()
 
-def create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample, seed):
+def create_optimizer(dim, fitness, n_step, n_init_sample):
     x1 = {'name' : "x1",
           'type' : 'R',
           'bounds': [-6, 6]}
-
     x2 = {'name' : "x2",
           'type' : 'R',
           'bounds': [-6, 6]}
-    
-    np.random.seed(seed)
     search_space = [x1, x2]
-<<<<<<< HEAD
-    opt = BayesOpt(search_space, fitness, max_iter=n_step, random_seed=seed,
+
+    thetaL = 1e-3 * (ub - lb) * np.ones(dim)
+    thetaU = 10 * (ub - lb) * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+   
+    model = GaussianProcess(regr='constant', corr='matern',
+                            theta0=theta0, thetaL=thetaL,
+                            thetaU=thetaU, nugget=1e-5,
+                            nugget_estim=False, normalize=False,
+                            verbose=False, random_start = 15*dim,
+                            random_state=None)
+
+    opt = BayesOpt(search_space, fitness, model, max_iter=n_step, random_seed=None,
                    n_init_sample=n_init_sample, minimize=True)
-=======
-    opt = BayesOpt(search_space, fitness, n_step + n_init_sample, random_seed=seed,
-                        n_init_sample=n_init_sample, minimize=True)
->>>>>>> parent of 05f7b74... fix mpi test file
     
     return opt
 
@@ -63,8 +67,8 @@ if rank == 0:
         os.makedirs('./data')
 else:
     seed = None
-
 seed = comm.scatter(seed, root=0)
+np.random.seed(seed)
 
 for dim in dims:
     lb = np.array([-6] * dim)
@@ -78,19 +82,18 @@ for dim in dims:
         y_hist_best = np.zeros((n_step, runs))
         
         csv_name = './data/{}D-{}N-{}.csv'.format(dim, n_init_sample, func_name)
-        opt = create_optimizer(dim, fitness, lb, ub, n_step, n_init_sample, seed)
-        opt.optimize()
+        opt = create_optimizer(dim, fitness, n_step, n_init_sample)
+        opt.run()
         hist_perf = opt.hist_perf
 
         comm.Barrier()
-        __ = comm.gather(fopt, root=0)
+        __ = comm.gather(hist_perf, root=0)
 
         if rank == 0:
             data = np.atleast_2d(__)
-            print data
             data = data.T if data.shape[1] != runs else data
-            mean_ = np.mean(data, axis=0)
-            error_ = np.std(data, axis=0, ddof=1) / np.sqrt(runs)
+            mean_ = np.mean(data, axis=1)
+            error_ = np.std(data, axis=1, ddof=1) / np.sqrt(runs)
             print 'mean : ', mean_
             print 'std error: ', error_
             
