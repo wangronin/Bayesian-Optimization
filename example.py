@@ -11,7 +11,7 @@ import pdb
 import numpy as np
 from deap import benchmarks
 from GaussianProcess_old import GaussianProcess_extra as GaussianProcess
-from BayesOpt import BayesOpt
+from BayesOpt import BayesOpt, RandomForest, RrandomForest
 
 np.random.seed(1)
 
@@ -41,8 +41,17 @@ model = GaussianProcess(regr='constant', corr='matern',
                         verbose=False, random_start=15 * dim,
                         random_state=None, optimizer='BFGS')
 
+# min_samples_leaf = max(1, int(n_init_sample / 20.))
+# max_features = int(np.ceil(dim * 5 / 6.))
+# model = RandomForest(n_estimators=100,
+#                      max_features=max_features,
+#                      min_samples_leaf=min_samples_leaf)
+
+# model = RrandomForest()
+
 search_space = [x1, x2]
 opt = BayesOpt(search_space, obj_func, model, max_iter=n_step, random_seed=None,
-               n_init_sample=n_init_sample, minimize=True, verbose=False, debug=True)
+               n_init_sample=n_init_sample, minimize=True, verbose=False, debug=True,
+               optimizer='MIES')
                
 opt.run()

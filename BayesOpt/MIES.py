@@ -16,6 +16,7 @@ from numpy.random import randint, rand, randn, geometric
 
 from constraint import boundary_handling
 
+# TODO: improve efficiency, e.g. compile it with cython
 class MIES(object):
     def __init__(self, obj_func, x0, bounds, levels, param_type, max_eval,
                  minimize=True, mu_=4, lambda_=28, sigma0=1, eta0=0.05, P0=0.4,

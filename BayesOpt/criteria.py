@@ -13,7 +13,7 @@ from scipy.stats import norm
 
 normcdf, normpdf = norm.cdf, norm.pdf
 
-class Criteria(object):
+class InfillCriteria(object):
     def __init__(self, model, plugin=None, minimize=True):
         assert hasattr(model, 'predict')
         self.model = model
@@ -23,7 +23,10 @@ class Criteria(object):
     def __call__(self, X):
         pass
 
-class EI(Criteria):
+class EI(InfillCriteria):
+    """
+    Expected Improvement
+    """
     def __call__(self, X, dx=False):
         X = np.atleast_2d(X)
         y_hat, sd2 = self.model.predict(X, eval_MSE=True)
@@ -54,18 +57,41 @@ class EI(Criteria):
             return value, grad 
         return value
 
+class PI(InfillCriteria):
+    """
+    Probability of Improvement
+    """
+    def __call__(self, X, dx=False):
+        X = np.atleast_2d(X)
+        y_hat, sd2 = self.model.predict(X, eval_MSE=True)
+        sd = sqrt(sd2)
+
+        xcr_ = self.plugin - y_hat if self.minimize else y_hat - self.plugin
+        xcr = xcr_ / sd
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error')
+            try:
+                value = normcdf((fmin - y_pre) / sigma)
+            except Warning:
+                value = 0.
+
+        if dx:
+            assert hasattr(self.model, 'gradient')
+            y_dx, sd2_dx = self.model.gradient(X)
+            sd_dx = sd2_dx / (2. * sd)
+
+            grad = -(y_dx + xcr * sd_dx) * normpdf(xcr) / sd
+            return value, grad 
+        return value
+
 # TODO: implement infill_criteria for noisy functions and MGF-based ceiterion
-class PI(object):
+class GEI(InfillCriteria):
     def __call__(self, X):
         pass
 
-class GEI(object):
+class UCB(InfillCriteria):
     def __call__(self, X):
         pass
 
-class UCB(object):
-    def __call__(self, X):
-        pass
-
-class MGF(Criteria):
+class MGF(InfillCriteria):
     pass

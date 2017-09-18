@@ -40,7 +40,8 @@ class BayesOpt(object):
     def __init__(self, conf_space, obj_func, surrogate, 
                  eval_budget=None, max_iter=None, minimize=True, 
                  noisy=False, wait_iter=3, n_init_sample=None, 
-                 n_restart=None, verbose=False, random_seed=None, debug=False):
+                 n_restart=None, verbose=False, random_seed=None, 
+                 optimizer='MIES', debug=False):
 
         self.debug = debug
         self._check_params()
@@ -67,9 +68,7 @@ class BayesOpt(object):
         self.N_i = len(self.int_)
         self.bounds = self._extract_bounds()
         
-        if self.verbose:
-            print 'The chosen surrogate model is ', self.surrogate.__class__
-        self._optimizer = 'BFGS'
+        self._optimizer = optimizer
 
         # parameter: objective evaluation
         self.max_eval = int(eval_budget) if eval_budget else np.inf
@@ -92,8 +91,8 @@ class BayesOpt(object):
 
         # parameter: acqusition function maximization
         self.max_eval_acquisition = int(1e3 * self.dim)
-        self.wait_iter = wait_iter
         self.random_start_acquisition = int(30 * self.dim)
+        self.wait_iter = int(wait_iter)
         
         # stop criteria
         self.stop_dict = {}
@@ -139,13 +138,6 @@ class BayesOpt(object):
     def fit_and_assess(self):
         # fit the surrogate model
         X, perf = self.data[self.var_names], self.data['perf']
-
-        if self.surrogate is None:
-            min_samples_leaf = max(1, int(X.shape[0] / 20.))
-            max_features = int(np.ceil(self.dim * 5 / 6.))
-            self.surrogate = RandomForest(n_estimators=100,
-                                          max_features=max_features,
-                                          min_samples_leaf=min_samples_leaf)
         self.surrogate.fit(X, perf)
         
         self.is_updated = True
@@ -349,6 +341,9 @@ class BayesOpt(object):
         return func
 
     def arg_max_acquisition(self, plugin=None):
+        """
+        Global Optimization on the acqusition function 
+        """
         eval_budget = self.max_eval_acquisition
         fopt = np.inf
         optima, foptima = [], []

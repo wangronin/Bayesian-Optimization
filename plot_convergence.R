@@ -69,4 +69,4 @@ p <- p + theme(legend.position = "bottom",
     scale_y_log10() +
     labs(y = 'objective value')
 
-ggsave('plot.pdf', p, device = cairo_pdf(), height = 8, width = 12, dpi = 500)
+ggsave('../plot.pdf', p, device = cairo_pdf(), height = 8, width = 12, dpi = 500)

@@ -68,8 +68,6 @@ class RrandomForest(object):
         self.columns = X.columns
         self.X = X
         self.n_sample, self.n_feature = X.shape
-        # if not isinstance(y, np.ndarray):
-        #     y = np.array(y)
         leaf_size = max(1, int(self.n_sample / 20.))
         self.rf = self.pkg.randomForest(x=X, y=y, ntree=100,
                                         mtry=ceil(self.n_feature * 5 / 6.),
