@@ -28,7 +28,7 @@ class EI(InfillCriteria):
     Expected Improvement
     """
     def __call__(self, X, dx=False):
-        X = np.atleast_2d(X)
+        # do not convert X into numpy array as X might be a mixture of various types
         y_hat, sd2 = self.model.predict(X, eval_MSE=True)
         sd = sqrt(sd2)
 
@@ -71,7 +71,8 @@ class PI(InfillCriteria):
         with warnings.catch_warnings():
             warnings.filterwarnings('error')
             try:
-                value = normcdf((fmin - y_pre) / sigma)
+                # TODO: remove the warning handling here
+                value = normcdf(xcr)
             except Warning:
                 value = 0.
 

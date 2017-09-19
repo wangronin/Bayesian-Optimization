@@ -186,15 +186,21 @@ class MIES(object):
             self.stop_dict['max_eval'] = True
 
         if self.eval_count != 0:
-            # TODO: implement more stop criteria
-            # if (sigma < 1e-16) or (sigma > 1e6):
-                # self.stop_dict['sigma'] = True
-
             fitness = self.pop_mu.fitness
+            
+            # tolerance on fitness in history
             self.histfunval[mod(self.eval_count / self.lambda_ - 1, self.nbin)] = fitness[0]
             if mod(self.eval_count / self.lambda_, self.nbin) == 0 and \
                 (max(self.histfunval) - min(self.histfunval)) < self.tolfun:
                     self.stop_dict['tolfun'] = True
+            
+            # flat fitness within the population
+            if fitness[0] == fitness[int(min(ceil(.1 + self.lambda_ / 4.), self.mu_ - 1))]:
+                self.stop_dict['flatfitness'] = True
+            
+            # TODO: implement more stop criteria
+            # if (sigma < 1e-16) or (sigma > 1e6):
+                # self.stop_dict['sigma'] = True
 
             # if cond(self.C) > 1e14:
             #     if is_stop_on_warning:
@@ -208,8 +214,7 @@ class MIES(object):
             #         self.stop_dict['TolUPX'] = True
             #     else:
             #         self.flg_warning = True
-            if fitness[0] == fitness[int(min(ceil(.1 + self.lambda_ / 4.), self.mu_ - 1))]:
-                self.stop_dict['flatfitness'] = True
+            
 
         return len(self.stop_dict)
 
