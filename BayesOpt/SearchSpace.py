@@ -73,9 +73,11 @@ class ProductSpace(SearchSpace):
         b = self._sub_space2.sampling(N)
         return [a[i] + b[i] for i in range(N)]
 
-class ContinousSpace(SearchSpace):
+class ContinuousSpace(SearchSpace):
+    """Continuous search spaces
+    """
     def __init__(self, var_name, bounds):
-        super(ContinousSpace, self).__init__(var_name, bounds)
+        super(ContinuousSpace, self).__init__(var_name, bounds)
         self.var_type = np.array(['C'] * self.dim)
         self._bounds = np.atleast_2d(self.bounds).T
         assert all(self._bounds[0, :] < self._bounds[1, :])
@@ -85,6 +87,8 @@ class ContinousSpace(SearchSpace):
         return ((ub - lb) * rand(N, self.dim) + lb).tolist()
 
 class NominalSpace(SearchSpace):
+    """Nominal search spaces
+    """
     def __init__(self, var_name, levels):
         super(NominalSpace, self).__init__(var_name, levels)
         self.var_type = np.array(['N'] * self.dim)
@@ -98,6 +102,8 @@ class NominalSpace(SearchSpace):
         return res.tolist()
             
 class OrdinalSpace(SearchSpace):
+    """Ordinal (Integer) the search spaces
+    """
     def __init__(self, var_name, bounds):
         super(OrdinalSpace, self).__init__(var_name, bounds)
         self.var_type = np.array(['O'] * self.dim)
@@ -112,7 +118,7 @@ class OrdinalSpace(SearchSpace):
 
 if __name__ == '__main__':
 
-    C = ContinousSpace(['x1', 'x2'], [[-5, 5], [-5, 5]])
+    C = ContinuousSpace(['x1', 'x2'], [[-5, 5], [-5, 5]])
     I = OrdinalSpace(['x3'], [-100, 100])
     N = NominalSpace(['x4'], ['OK', 'A', 'B', 'C', 'D', 'E'])
 

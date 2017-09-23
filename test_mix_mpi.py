@@ -15,7 +15,7 @@ import numpy as np
 from deap import benchmarks
 from GaussianProcess import GaussianProcess_extra as GaussianProcess
 from BayesOpt import BayesOpt, RandomForest, RrandomForest
-from BayesOpt.SearchSpace import ContinousSpace, NominalSpace, OrdinalSpace
+from BayesOpt.SearchSpace import ContinuousSpace, NominalSpace, OrdinalSpace
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -44,7 +44,7 @@ def create_optimizer(dim, fitness, n_step, n_init_sample, model_type):
     #       'levels': ['OK', 'A', 'B', 'C', 'D', 'E']}
     # search_space = [x1, x2, x3, x4]
 
-    C = ContinousSpace(['x1', 'x2'], [[-5, 5], [-5, 5]])
+    C = ContinuousSpace(['x1', 'x2'], [[-5, 5], [-5, 5]])
     I = OrdinalSpace(['x3'], [-100, 100])
     N = NominalSpace(['x4'], ['OK', 'A', 'B', 'C', 'D', 'E'])
 

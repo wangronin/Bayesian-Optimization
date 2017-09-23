@@ -14,7 +14,7 @@ from deap import benchmarks
 from GaussianProcess import GaussianProcess
 from GaussianProcess.trend import constant_trend
 from BayesOpt import BayesOpt, RandomForest, RrandomForest
-from BayesOpt.SearchSpace import ContinousSpace
+from BayesOpt.SearchSpace import ContinuousSpace
 
 np.random.seed(1)
 
@@ -25,7 +25,7 @@ obj_func = lambda x: benchmarks.himmelblau(x)[0]
 lb = np.array([-6] * dim)
 ub = np.array([6] * dim)
 
-search_space = ContinousSpace(['x1', 'x2'], zip(lb, ub))
+search_space = ContinuousSpace(['x1', 'x2'], zip(lb, ub))
 
 thetaL = 1e-3 * (ub - lb) * np.ones(dim)
 thetaU = 10 * (ub - lb) * np.ones(dim)

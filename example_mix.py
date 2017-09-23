@@ -9,9 +9,8 @@ Created on Fri Aug  4 15:57:47 2017
 import pdb
 
 import numpy as np
-from GaussianProcess_old import GaussianProcess_extra as GaussianProcess
 from BayesOpt import BayesOpt, RandomForest, RrandomForest
-from BayesOpt.SearchSpace import ContinousSpace, NominalSpace, OrdinalSpace
+from BayesOpt.SearchSpace import ContinuousSpace, NominalSpace, OrdinalSpace
 
 np.random.seed(1)
 
@@ -27,7 +26,7 @@ def obj_func(x):
        tmp = 1
    return np.sum(x_r ** 2.) + abs(x_i - 10) / 123. + tmp * 2.
 
-C = ContinousSpace(['x1', 'x2'], [[-5, 5], [-5, 5]])
+C = ContinuousSpace(['x1', 'x2'], [[-5, 5], [-5, 5]])
 I = OrdinalSpace(['x3'], [-100, 100])
 N = NominalSpace(['x4'], ['OK', 'A', 'B', 'C', 'D', 'E'])
 

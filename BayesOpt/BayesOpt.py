@@ -66,13 +66,13 @@ class BayesOpt(object):
         self.eval_count = 0
 
         # paramter: acquisition function optimziation
+        mask = np.nonzero(self._space.C_mask | self._space.O_mask)[0]
+        self._bounds = np.array([self._space.bounds[i] for i in mask])
+        self._levels = self._space.get_levels()
         self._optimizer = optimizer
         self._max_eval = int(5e2 * self.dim) 
         self._random_start = int(10 * self.dim) if n_restart is None else n_restart
         self._wait_iter = int(wait_iter)    # maximal restarts when optimal value does not change
-        mask = np.nonzero(self._space.C_mask | self._space.O_mask)[0]
-        self._bounds = np.array([self._space.bounds[i] for i in mask])
-        self._levels = self._space.get_levels()
 
         # Intensify: the number of potential configuations compared against the current best
         # self.mu = int(np.ceil(self.n_init_sample / 3))
