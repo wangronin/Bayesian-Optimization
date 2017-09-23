@@ -29,7 +29,7 @@ class BayesOpt(object):
     """
     Generic Bayesian optimization algorithm
     """
-    def __init__(self, conf_space, obj_func, surrogate, 
+    def __init__(self, search_space, obj_func, surrogate, 
                  eval_budget=None, max_iter=None, n_init_sample=None, 
                  minimize=True, noisy=False, wait_iter=3, 
                  n_restart=None, optimizer='MIES', 
@@ -37,26 +37,26 @@ class BayesOpt(object):
 
         self.debug = debug
         self.verbose = verbose
-        self.conf_space = conf_space
-        self.var_names = [conf['name'] for conf in self.conf_space]
+        self._space = search_space
+        self.var_names = search_space.var_name
         self.obj_func = obj_func
         self.noisy = noisy
         self.surrogate = surrogate
 
         self.minimize = minimize
-        self.dim = len(self.conf_space)
+        self.dim = len(self._space)
 
         # TODO: those should be move to the search space class
-        self.con_ = [k['name'] for k in self.conf_space if k['type'] == 'R']  # continuous
-        self.cat_ = [k['name'] for k in self.conf_space if k['type'] == 'D']  # nominal
-        self.int_ = [k['name'] for k in self.conf_space if k['type'] == 'I']  # ordinal
-        self.param_type = [k['type'] for k in self.conf_space]
+        self.con_ = self._space.get_continous() # continuous
+        self.cat_ = self._space.get_norminal()  # nominal
+        self.int_ = self._space.get_ordinal()  # nominal
+        self.param_type = self._space.var_type
         self.N_r = len(self.con_)
         self.N_d = len(self.cat_)
         self.N_i = len(self.int_)
        
         # parameter: objective evaluation
-        self.init_n_eval = 1
+        self.init_n_eval = 1      # TODO: for noisy objective function, maybe increase the initial evaluations
         self.max_eval = int(eval_budget) if eval_budget else np.inf
         self.max_iter = int(max_iter) if max_iter else np.inf
         self.n_init_sample = self.dim * 20 if n_init_sample is None else int(n_init_sample)
@@ -70,8 +70,9 @@ class BayesOpt(object):
         self._max_eval = int(5e2 * self.dim) 
         self._random_start = int(10 * self.dim) if n_restart is None else n_restart
         self._wait_iter = int(wait_iter)    # maximal restarts when optimal value does not change
-        self._bounds = self._extract_bounds() 
-        self._levels = [k['levels'] for k in self.conf_space if k['type'] == 'D'] 
+        mask = np.nonzero(self._space.C_mask | self._space.O_mask)[0]
+        self._bounds = np.array([self._space.bounds[i] for i in mask])
+        self._levels = self._space.get_levels()
 
         # Intensify: the number of potential configuations compared against the current best
         # self.mu = int(np.ceil(self.n_init_sample / 3))
@@ -93,16 +94,10 @@ class BayesOpt(object):
         get variables from the dataframe
         """
         var_list = lambda row: [_ for _ in row[self.var_names].values]
-        return [var_list(row) for i, row in data.iterrows()]
-
-    def _extract_bounds(self):
-        # extract variable bounds from the configuration space
-        # TODO: this function should also be part of search space class
-        bounds = []
-        for k in self.conf_space:
-            if k['type'] in ['I', 'R']:
-                bounds.append(k['bounds'])
-        return np.array(bounds).T
+        if isinstance(data, pd.DataFrame):
+            return [var_list(row) for i, row in data.iterrows()]
+        elif isinstance(data, pd.Series):
+            return var_list(data)
 
     def _compare(self, perf1, perf2):
         if self.minimize:
@@ -128,10 +123,11 @@ class BayesOpt(object):
 
     def evaluate(self, conf, runs=1):
         perf_, n_eval = conf.perf, conf.n_eval
-        try:
+        # TODO: handle the evaluation in a better way
+        try:    # for dictionary input
             __ = [self.obj_func(conf[self.var_names].to_dict()) for i in range(runs)]
-        except:
-            __ = [self.obj_func(conf[self.var_names].as_matrix()) for i in range(runs)]
+        except: # for list input
+            __ = [self.obj_func(self._get_var(conf)) for i in range(runs)]
         perf = np.sum(__)
 
         conf.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
@@ -157,27 +153,9 @@ class BayesOpt(object):
         return r2
 
     def sampling(self, N):
-        # TODO: think how to do LHS for integer and categorical variable
-        # use uniform random sampling for now
-        data = []
-        for subspace in self.conf_space:
-            type_ = subspace['type']
-            # TODO: move the sampling to the Search space class
-            if  type_ == 'D':
-                n_levels = len(subspace['levels'])
-                idx = randint(0, n_levels, N)
-                data.append(np.array(subspace['levels'])[idx])
-            elif type_ == 'I':
-                data.append(randint(subspace['bounds'][0], subspace['bounds'][1], N))
-            elif type_ == 'R':
-                lb, ub = subspace['bounds']
-                data.append((ub - lb) * rand(N) + lb)
-
-        data.append([0] * N)         # No. of evaluations for each solution
-        data.append([None] * N)      # the corresponding objective value
-
-        data = np.atleast_2d(data).T
-        data = pd.DataFrame(data, columns=self.var_names + ['n_eval', 'perf'])
+        data = self._space.sampling(N)
+        data = pd.DataFrame(np.c_[data, [0] * N, [None] * N], 
+                            columns=self.var_names + ['n_eval', 'perf'])
 
         data[self.con_] = data[self.con_].apply(pd.to_numeric)
         data[self.int_] = data[self.int_].apply(pd.to_numeric)
@@ -276,6 +254,7 @@ class BayesOpt(object):
     
     def _initialize(self):
         if self.verbose:
+            print 'selected surrogate model:', self.surrogate.__class__ 
             print 'building the initial design of experiemnts...'
 
         self.data = self.sampling(self.n_init_sample)
@@ -304,6 +283,7 @@ class BayesOpt(object):
         self.iter_count += 1
         self.hist_perf.append(self.data.loc[self.incumbent, 'perf'])
         
+        # only for debug purpose
         if self.debug:
             tmp = np.array([_ for _ in self.data.iloc[-1, 0:2].values])
             np.set_printoptions(precision=30)
@@ -312,6 +292,7 @@ class BayesOpt(object):
         if self.verbose:
             print 'iteration {}, current incumbent is:'.format(self.iter_count)
             print self.data.loc[[self.incumbent]]
+            print 
 
     def run(self):
         while not self.check_stop():
@@ -319,7 +300,7 @@ class BayesOpt(object):
 
         self.stop_dict['n_eval'] = self.eval_count
         self.stop_dict['n_iter'] = self.iter_count
-        return self.incumbent
+        return self.incumbent, self.stop_dict
 
     def check_stop(self):
         # TODO: add more stop criteria
@@ -334,7 +315,8 @@ class BayesOpt(object):
     def _acquisition_func(self, plugin=None, dx=False):
         if plugin is None:
             plugin = np.min(self.data.perf) if self.minimize else np.max(self.data.perf)
-            
+        
+        # TODO: add other criteria as options
         acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
         def func(x):
             res = acquisition_func(x, dx=dx)
@@ -349,6 +331,9 @@ class BayesOpt(object):
         fopt = np.inf
         optima, foptima = [], []
         wait_count = 0
+
+        if self.verbose:
+            print 'acquisition function optimziation...'
         
         # TODO: add IPOP-CMA-ES here for testing
         for iteration in range(self._random_start):
@@ -358,7 +343,7 @@ class BayesOpt(object):
             if self._optimizer == 'BFGS':
                 obj_func = self._acquisition_func(plugin, dx=True)
                 xopt_, fopt_, stop_dict = fmin_l_bfgs_b(obj_func, x0, pgtol=1e-8,
-                                                        factr=1e6, bounds=self._bounds.T,
+                                                        factr=1e6, bounds=self._bounds,
                                                         maxfun=eval_budget)
                 xopt_ = xopt_.flatten().tolist()
                 fopt_ = fopt_.sum()
@@ -369,7 +354,7 @@ class BayesOpt(object):
                                   
             elif self._optimizer == 'MIES':
                 obj_func = self._acquisition_func(plugin, dx=False)
-                mies = MIES(obj_func, x0, self._bounds, self._levels,
+                mies = MIES(obj_func, x0, self._bounds.T, self._levels,
                             self.param_type, eval_budget, minimize=True, 
                             verbose=False)                            
                 xopt_, fopt_, stop_dict = mies.optimize()

@@ -33,9 +33,9 @@ class MIES(object):
         self.levels = levels
 
         # index of each type of variables in the dataframe
-        self.id_r = nonzero(np.array(self.param_type) == 'R')[0]
-        self.id_i = nonzero(np.array(self.param_type) == 'I')[0]
-        self.id_d = nonzero(np.array(self.param_type) == 'D')[0]
+        self.id_r = nonzero(np.array(self.param_type) == 'C')[0]
+        self.id_i = nonzero(np.array(self.param_type) == 'O')[0]
+        self.id_d = nonzero(np.array(self.param_type) == 'N')[0]
 
         # the number of variables per each type
         self.N_r = len(self.id_r)
@@ -128,11 +128,16 @@ class MIES(object):
         self.pop_mu.index = range(self.mu_)
 
     def evaluate(self, pop):
-        for i, individual in pop.iterrows():
-            par = individual[self.par_id]
-            value = np.sum(self.obj_func(par)) # in case a 1-length array is returned
-            pop.loc[i, 'fitness'] = value
-            self.eval_count += 1
+        try:
+            pars = pop.iloc[:, self.par_id].values.tolist()
+            pop.fitness  = self.obj_func(pars)
+            self.eval_count += pop.shape[0]
+        except:
+            for i, individual in pop.iterrows():
+                par = individual[self.par_id].values
+                value = np.sum(self.obj_func(par)) # in case a 1-length array is returned
+                pop.loc[i, 'fitness'] = value
+                self.eval_count += 1
 
     def mutate(self, individual):
         if self.N_r:

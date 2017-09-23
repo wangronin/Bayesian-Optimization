@@ -23,13 +23,19 @@ class InfillCriteria(object):
     def __call__(self, X):
         pass
 
+    def check_X(self, X):
+        return [X] if not hasattr(X[0], '__iter__') else X
+
 class EI(InfillCriteria):
     """
     Expected Improvement
     """
     def __call__(self, X, dx=False):
-        # do not convert X into numpy array as X might be a mixture of various types
-        y_hat, sd2 = self.model.predict(X, eval_MSE=True)
+        X = self.check_X(X)
+        try:
+            y_hat, sd2 = self.model.predict(X, eval_MSE=True)
+        except:
+            pdb.set_trace()
         sd = sqrt(sd2)
 
         with warnings.catch_warnings():
@@ -62,7 +68,7 @@ class PI(InfillCriteria):
     Probability of Improvement
     """
     def __call__(self, X, dx=False):
-        X = np.atleast_2d(X)
+        X = self.check_X(X)
         y_hat, sd2 = self.model.predict(X, eval_MSE=True)
         sd = sqrt(sd2)
 

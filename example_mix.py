@@ -11,6 +11,7 @@ import pdb
 import numpy as np
 from GaussianProcess_old import GaussianProcess_extra as GaussianProcess
 from BayesOpt import BayesOpt, RandomForest, RrandomForest
+from BayesOpt.SearchSpace import ContinousSpace, NominalSpace, OrdinalSpace
 
 np.random.seed(1)
 
@@ -26,18 +27,11 @@ def obj_func(x):
        tmp = 1
    return np.sum(x_r ** 2.) + abs(x_i - 10) / 123. + tmp * 2.
 
-x1 = {'name' : "x1",
-      'type' : 'R',
-      'bounds': [-5, 5]}
-x2 = {'name' : "x2",
-      'type' : 'R',
-      'bounds': [-5, 5]}
-x3 = {'name' : "x3",
-      'type' : 'I',
-      'bounds': [-100, 100]}
-x4 = {'name' : "x4",
-      'type' : 'D',
-      'levels': ['OK', 'A', 'B', 'C', 'D', 'E']}
+C = ContinousSpace(['x1', 'x2'], [[-5, 5], [-5, 5]])
+I = OrdinalSpace(['x3'], [-100, 100])
+N = NominalSpace(['x4'], ['OK', 'A', 'B', 'C', 'D', 'E'])
+
+search_space = C * I * N
 
 # thetaL = 1e-3 * (ub - lb) * np.ones(dim)
 # thetaU = 10 * (ub - lb) * np.ones(dim)
@@ -58,7 +52,6 @@ x4 = {'name' : "x4",
 
 model = RrandomForest()
 
-search_space = [x1, x2, x3, x4]
 opt = BayesOpt(search_space, obj_func, model, max_iter=n_step, random_seed=None,
                n_init_sample=n_init_sample, minimize=True, verbose=True, debug=False,
                optimizer='MIES')
