@@ -49,7 +49,7 @@ search_space = C * I * N
 #                      max_features=max_features,
 #                      min_samples_leaf=min_samples_leaf)
 
-model = RrandomForest()
+model = RrandomForest(1)
 
 opt = BayesOpt(search_space, obj_func, model, max_iter=n_step, random_seed=None,
                n_init_sample=n_init_sample, minimize=True, verbose=True, debug=False,

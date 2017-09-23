@@ -13,7 +13,6 @@ from mpi4py import MPI
 import numpy as np
 
 from deap import benchmarks
-from GaussianProcess import GaussianProcess_extra as GaussianProcess
 from BayesOpt import BayesOpt, RandomForest, RrandomForest
 from BayesOpt.SearchSpace import ContinuousSpace, NominalSpace, OrdinalSpace
 
@@ -30,19 +29,6 @@ def obj_func(x):
    return np.sum(x_r ** 2.) + abs(x_i - 10) / 123. + tmp * 2.
 
 def create_optimizer(dim, fitness, n_step, n_init_sample, model_type):
-    # x1 = {'name' : "x1",
-    #       'type' : 'R',
-    #       'bounds': [-5, 5]}
-    # x2 = {'name' : "x2",
-    #       'type' : 'R',
-    #       'bounds': [-5, 5]}
-    # x3 = {'name' : "x3",
-    #       'type' : 'I',
-    #       'bounds': [-100, 100]}
-    # x4 = {'name' : "x4",
-    #       'type' : 'D',
-    #       'levels': ['OK', 'A', 'B', 'C', 'D', 'E']}
-    # search_space = [x1, x2, x3, x4]
 
     C = ContinuousSpace(['x1', 'x2'], [[-5, 5], [-5, 5]])
     I = OrdinalSpace(['x3'], [-100, 100])

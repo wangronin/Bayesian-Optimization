@@ -146,7 +146,6 @@ class BayesOpt(object):
         self.is_updated = True
         perf_hat = self.surrogate.predict(X)
         r2 = r2_score(perf, perf_hat)
-        
         # TODO: in case r2 is really poor, re-fit the model or transform the input? 
         if self.verbose:
             print 'Surrogate model r2: {}'.format(r2)
@@ -159,7 +158,6 @@ class BayesOpt(object):
 
         data[self.con_] = data[self.con_].apply(pd.to_numeric)
         data[self.int_] = data[self.int_].apply(pd.to_numeric)
-
         return data
 
     def select_candidate(self):

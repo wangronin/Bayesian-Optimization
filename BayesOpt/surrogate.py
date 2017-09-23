@@ -12,8 +12,7 @@ from numpy import ceil, std, array, atleast_2d
 import pandas as pd
 
 from rpy2.robjects.packages import importr
-from rpy2.robjects import pandas2ri
-from rpy2.robjects import numpy2ri
+from rpy2.robjects import r, pandas2ri, numpy2ri
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.utils.validation import check_is_fitted
@@ -62,8 +61,12 @@ class RrandomForest(object):
     """
     Python wrapper for the R 'randomForest' library
     """
-    def __init__(self):
+    def __init__(self, seed=None):
         self.pkg = importr('randomForest')
+
+        # TODO: make R code reproducible, failed...
+        if seed is not None:
+            r['set.seed'](seed)
         
     def _check_X(self, X):
         """
@@ -74,9 +77,11 @@ class RrandomForest(object):
                 X = pd.DataFrame(X)
             else:
                 X = pd.DataFrame([X])
+
         elif isinstance(X, pd.Series):
             X.index = pd.RangeIndex(0, len(X))
             X = pd.DataFrame([X])
+
         elif isinstance(X, np.ndarray):
             if hasattr(self, 'columns'):
                 if X.shape[1] != len(self.columns):
