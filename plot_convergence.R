@@ -8,15 +8,17 @@ suppressMessages(library(reshape2))
 options(warn = 0)
 
 # plot the convergence of Bayesian Optimization algorithms
+setwd('~/Dropbox/code_base/BayesOpt')
 
-setwd('~/Dropbox/code_base/BayesOpt/data')
+args <- commandArgs(trailingOnly = TRUE)
+csv <- paste0('ls ', args[1], '/*csv')
 
 # plot a single algorithm
 if (11 < 2) {
   colors <- c('#FF4F33', '#335EFF', '#FFE633', '#33FFDD')
   i <- 1
   
-  for (file in system('ls ./data/*csv', intern = TRUE)) {
+  for (file in system(csv, intern = TRUE)) {
     
     df <- read.csv(file) 
     N <- ncol(df)
@@ -39,11 +41,11 @@ if (11 < 2) {
 
 data <- NULL
 
-for (file in system('ls *csv', intern = TRUE)) {
+for (file in system(csv, intern = TRUE)) {
 
-  name <- strsplit(file, '\\.')[[1]][1]
+  name <- strsplit(basename(file), '\\.')[[1]][1]
   cat(name, '\n')
-
+  
   df <- read.csv(file) %>%
     tbl_df %>%
     mutate(algorithm = name) %>%
@@ -69,4 +71,4 @@ p <- p + theme(legend.position = "bottom",
     scale_y_log10() +
     labs(y = 'objective value')
 
-ggsave('../plot.pdf', p, device = cairo_pdf(), height = 8, width = 12, dpi = 500)
+ggsave('./plot.pdf', p, device = cairo_pdf(), height = 8, width = 12, dpi = 500)
