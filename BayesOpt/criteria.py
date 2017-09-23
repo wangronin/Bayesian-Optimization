@@ -32,10 +32,7 @@ class EI(InfillCriteria):
     """
     def __call__(self, X, dx=False):
         X = self.check_X(X)
-        try:
-            y_hat, sd2 = self.model.predict(X, eval_MSE=True)
-        except:
-            pdb.set_trace()
+        y_hat, sd2 = self.model.predict(X, eval_MSE=True)
         sd = sqrt(sd2)
 
         with warnings.catch_warnings():
