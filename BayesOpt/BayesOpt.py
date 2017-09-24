@@ -17,13 +17,24 @@ import numpy as np
 from numpy.random import randint, rand
 from scipy.optimize import fmin_l_bfgs_b
 
-from criteria import EI
-from MIES import MIES
+from .criteria import EI
+from .MIES import MIES
+from .utils import proportional_selection
 # from cma_es import cma_es
 
 from sklearn.metrics import r2_score
 
 MACHINE_EPSILON = np.finfo(np.double).eps
+
+class Solution(pd.DataFrame):
+    def __init__(self):
+        pass
+    
+    def to_var(self):
+        pass
+    
+    def from_list(self):
+        pass
 
 class BayesOpt(object):
     """
@@ -38,7 +49,7 @@ class BayesOpt(object):
         self.debug = debug
         self.verbose = verbose
         self._space = search_space
-        self.var_names = search_space.var_name
+        self.var_names = self._space.var_name
         self.obj_func = obj_func
         self.noisy = noisy
         self.surrogate = surrogate
@@ -50,6 +61,7 @@ class BayesOpt(object):
         self.con_ = self._space.get_continous() # continuous
         self.cat_ = self._space.get_norminal()  # nominal
         self.int_ = self._space.get_ordinal()  # nominal
+
         self.param_type = self._space.var_type
         self.N_r = len(self.con_)
         self.N_d = len(self.cat_)
@@ -98,6 +110,17 @@ class BayesOpt(object):
             return [var_list(row) for i, row in data.iterrows()]
         elif isinstance(data, pd.Series):
             return var_list(data)
+    
+    def _to_dataframe(self, var, index=0):
+        if not hasattr(var[0], '__iter__'):
+            var = [var]
+        N = len(var)
+        df = pd.DataFrame(np.c_[var, [0] * N, [None] * N],
+                          columns=self.var_names + ['n_eval', 'perf'])
+        df[self.con_] = df[self.con_].apply(pd.to_numeric)
+        df[self.int_] = df[self.int_].apply(pd.to_numeric)
+        df.index = range(index, index + df.shape[0])
+        return df
 
     def _compare(self, perf1, perf2):
         if self.minimize:
@@ -119,24 +142,35 @@ class BayesOpt(object):
             CAT = np.all(X[self.cat_] == x[self.cat_], axis=1)
             if not any(CON & INT & CAT):
                 idx.append(i)
-        return confs.iloc[idx, :]
+        return confs.loc[idx]
 
-    def evaluate(self, conf, runs=1):
-        perf_, n_eval = conf.perf, conf.n_eval
-        # TODO: handle the evaluation in a better way
-        try:    # for dictionary input
-            __ = [self.obj_func(conf[self.var_names].to_dict()) for i in range(runs)]
-        except: # for list input
-            __ = [self.obj_func(self._get_var(conf)) for i in range(runs)]
-        perf = np.sum(__)
+    def evaluate(self, data, runs=1):
+        """ Evaluate the candidate points and update evaluation info in the dataframe
+        """
+        def eval(x):
+            # TODO: parallel execution 
+            perf_, n_eval = x.perf, x.n_eval
+            # TODO: handle the evaluation in a better way
+            try:    # for dictionary input
+                __ = [self.obj_func(x[self.var_names].to_dict()) for i in range(runs)]
+            except: # for list input
+                __ = [self.obj_func(self._get_var(x)) for i in range(runs)]
+            perf = np.sum(__)
 
-        conf.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
-        conf.n_eval += runs
+            x.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
+            x.n_eval += runs
 
-        self.eval_count += runs
-        self.eval_hist += __
-        self.eval_hist_id += [conf.index] * runs
-        return conf
+            self.eval_count += runs
+            self.eval_hist += __
+            self.eval_hist_id += [x.index] * runs
+        
+        if isinstance(data, pd.Series):
+            eval(data)
+        
+        elif isinstance(data, pd.DataFrame): 
+            for k, row in data.iterrows():
+                eval(row)
+                data.loc[k, ['n_eval', 'perf']] = row[['n_eval', 'perf']]
 
     def fit_and_assess(self):
         # fit the surrogate model
@@ -151,27 +185,16 @@ class BayesOpt(object):
             print 'Surrogate model r2: {}'.format(r2)
         return r2
 
-    def sampling(self, N):
-        data = self._space.sampling(N)
-        data = pd.DataFrame(np.c_[data, [0] * N, [None] * N], 
-                            columns=self.var_names + ['n_eval', 'perf'])
-
-        data[self.con_] = data[self.con_].apply(pd.to_numeric)
-        data[self.int_] = data[self.int_].apply(pd.to_numeric)
-        return data
-
     def select_candidate(self):
         self.is_updated = False
         # always generate mu + 1 candidate solutions
         while True:
             confs_, acqui_opts_ = self.arg_max_acquisition()
             if 1 < 2: # only use the best acquisition point 
-                confs_ = [confs_[0]]
-            N = self.data.shape[0]
-            confs_ = pd.DataFrame([conf + [0, None] for i, conf in enumerate(confs_)],
-                                   columns=self.var_names + ['n_eval', 'perf'])
+                confs_ = confs_[0]
+            
+            confs_ = self._to_dataframe(confs_, self.data.shape[0])
             confs_ = self._remove_duplicate(confs_)
-            confs_.index = range(N, N + confs_.shape[0])
 
             # if no new design site is found, re-estimate the parameters immediately
             if len(confs_) == 0:
@@ -187,37 +210,22 @@ class BayesOpt(object):
             else:
                 break
 
-        # proportional selection without replacement
         candidates_id = list(confs_.index)
         if self.noisy:
-            id_curr = self.data[self.data.id != self.incumbent.id].id
+            id_ = self.data[self.data.id != self.incumbent.id].id
             perf = self.data[self.data.id != self.incumbent.id].perf
-            if self.minimize:
-                perf = -perf
-                perf -= np.min(perf)
-
-            idx = np.argsort(perf)
-            perf = perf[idx]
-            id_curr = id_curr[idx]
-
-            for i in range(self.mu):
-                min_ = np.min(perf)
-                prob = np.cumsum((perf - min_) / (np.sum(perf) - min_ * len(perf)))
-                _ = np.nonzero(np.random.rand() <= prob)[0][0]
-
-                candidates_id.append(id_curr[_])
-                perf = np.delete(perf, _)
-                id_curr = np.delete(id_curr, _)
-
-        for i, conf in confs_.iterrows():
-            confs_.loc[i] = self.evaluate(conf, runs=self.init_n_eval)
+            __ = proportional_selection(perf, self.mu, self.minimize, replacement=False)
+            candidates_id.append(id_[__])
+        
+        # TODO: postpone the evaluate to intensify...
+        self.evaluate(confs_, runs=self.init_n_eval)
         self.data = self.data.append(confs_)
         self.data.perf = pd.to_numeric(self.data.perf)
         return candidates_id
 
     def intensify(self, candidates_ids):
         """
-        intensification procedure for noisy observations (SMAC)
+        intensification procedure for noisy observations (from SMAC)
         """
         maxR = 20 # maximal number of the evaluations on the incumbent
         for i, ID in enumerate(candidates_ids):
@@ -251,13 +259,16 @@ class BayesOpt(object):
                 extra_run += r
     
     def _initialize(self):
+        """Generate the initial data set (DOE) and construct the surrogate model
+        """
         if self.verbose:
             print 'selected surrogate model:', self.surrogate.__class__ 
             print 'building the initial design of experiemnts...'
 
-        self.data = self.sampling(self.n_init_sample)
-        for i, conf in self.data.iterrows():
-            self.data.loc[i] = self.evaluate(conf, runs=self.init_n_eval)
+        # self.data = self.sampling(self.n_init_sample)
+        samples = self._space.sampling(self.n_init_sample)
+        self.data = self._to_dataframe(samples)
+        self.evaluate(self.data, runs=self.init_n_eval)
         
         # set the initial incumbent
         self.data.perf = pd.to_numeric(self.data.perf)
@@ -335,7 +346,7 @@ class BayesOpt(object):
         
         # TODO: add IPOP-CMA-ES here for testing
         for iteration in range(self._random_start):
-            x0 = self._get_var(self.sampling(1))[0]
+            x0 = self._space.sampling(1)[0]
             
             # TODO: when the surrogate is GP, implement a GA-BFGS hybrid algorithm
             if self._optimizer == 'BFGS':

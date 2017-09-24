@@ -14,7 +14,7 @@ import numpy as np
 from numpy import exp, nonzero, argsort, ceil, zeros, mod
 from numpy.random import randint, rand, randn, geometric
 
-from constraint import boundary_handling
+from utils import boundary_handling
 
 # TODO: improve efficiency, e.g. compile it with cython
 class MIES(object):

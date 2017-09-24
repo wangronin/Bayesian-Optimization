@@ -17,6 +17,9 @@ class SearchSpace(object):
 
     @abstractmethod
     def sampling(self, N=1):
+        """
+        The output is a list of shape (N, self.dim)
+        """
         pass
 
     def get_continous(self):

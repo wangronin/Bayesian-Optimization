@@ -2,11 +2,41 @@
 """
 Created on Mon May 19 10:17:43 2014
 
-@author: wangronin
+@author: Hao Wang
+@email: wangronin@gmail.com
 """
-
+import pdb
+from copy import copy
 import numpy as np
 from numpy import isfinite, mod, floor, shape, bitwise_and, zeros, newaxis
+
+def proportional_selection(perf, N, minimize=True, replacement=True):
+    def select(perf):
+        perf_min = np.min(perf)
+        interval = np.cumsum((perf - perf_min) / (np.sum(perf) - perf_min * len(perf)))
+        return np.nonzero(np.random.rand() <= interval)[0][0]
+    
+    perf = np.array(perf)
+    if minimize:
+        perf = -perf
+        perf -= np.min(perf)
+
+    if replacement:
+        res = [select(perf) for i in range(N)]
+    else:
+        assert N <= len(perf)
+        perf_ = copy(perf)
+        idx = range(0, len(perf))
+        res = []
+        for i in range(N):
+            if len(perf_) == 1:
+                res.append(idx[0])
+            else:
+                _ = select(perf_)
+                res.append(idx[_])
+                perf_ = np.delete(perf_, _)
+                del idx[_]
+    return res
 
 def boundary_handling(x, lb, ub):
     """
@@ -47,5 +77,10 @@ def boundary_handling(x, lb, ub):
     
     if transpose:
         x = x.T
-        
     return x
+
+if __name__ == '__main__':
+    np.random.seed(1)
+    perf = np.random.randn(20)
+    print perf
+    print proportional_selection(perf, 20, minimize=False, replacement=False)
