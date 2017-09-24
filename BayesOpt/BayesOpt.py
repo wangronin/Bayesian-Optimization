@@ -177,16 +177,16 @@ class BayesOpt(object):
         X, perf = self._get_var(self.data), self.data['perf'].values
         self.surrogate.fit(X, perf)
         
-        self.is_updated = True
+        self.is_update = True
         perf_hat = self.surrogate.predict(X)
-        r2 = r2_score(perf, perf_hat)
+        self.r2 = r2_score(perf, perf_hat)
         # TODO: in case r2 is really poor, re-fit the model or transform the input? 
         if self.verbose:
-            print 'Surrogate model r2: {}'.format(r2)
-        return r2
+            print 'Surrogate model r2: {}'.format(self.r2)
+        return self.r2
 
     def select_candidate(self):
-        self.is_updated = False
+        self.is_update = False
         # always generate mu + 1 candidate solutions
         while True:
             confs_, acqui_opts_ = self.arg_max_acquisition()
@@ -212,8 +212,8 @@ class BayesOpt(object):
 
         candidates_id = list(confs_.index)
         if self.noisy:
-            id_ = self.data[self.data.id != self.incumbent.id].id
-            perf = self.data[self.data.id != self.incumbent.id].perf
+            id_ = self.data[self.data.id != self.incumbent_id.id].id
+            perf = self.data[self.data.id != self.incumbent_id.id].perf
             __ = proportional_selection(perf, self.mu, self.minimize, replacement=False)
             candidates_id.append(id_[__])
         
@@ -234,26 +234,26 @@ class BayesOpt(object):
             self.evaluate(conf, 1)
             print conf.to_frame().T
 
-            if conf.n_eval > self.incumbent.n_eval:
-                self.incumbent = self.evaluate(self.incumbent, 1)
+            if conf.n_eval > self.incumbent_id.n_eval:
+                self.incumbent_id = self.evaluate(self.incumbent_id, 1)
                 extra_run = 0
 
             while True:
-                if self._compare(self.incumbent.perf, conf.perf):
-                    self.incumbent = self.evaluate(self.incumbent, 
-                                                   min(extra_run, maxR - self.incumbent.n_eval))
-                    print self.incumbent.to_frame().T
+                if self._compare(self.incumbent_id.perf, conf.perf):
+                    self.incumbent_id = self.evaluate(self.incumbent_id, 
+                                                   min(extra_run, maxR - self.incumbent_id.n_eval))
+                    print self.incumbent_id.to_frame().T
                     break
-                if conf.n_eval > self.incumbent.n_eval:
-                    self.incumbent = conf
+                if conf.n_eval > self.incumbent_id.n_eval:
+                    self.incumbent_id = conf
                     if self.verbose:
                         print '[DEBUG] iteration %d -- new incumbent selected:' % self.iter_count
-                        print '[DEBUG] {}'.format(self.incumbent)
-                        print '[DEBUG] with performance: {}'.format(self.incumbent.perf)
+                        print '[DEBUG] {}'.format(self.incumbent_id)
+                        print '[DEBUG] with performance: {}'.format(self.incumbent_id.perf)
                         print
                     break
 
-                r = min(2 * r, self.incumbent.n_eval - conf.n_eval)
+                r = min(2 * r, self.incumbent_id.n_eval - conf.n_eval)
                 self.data.loc[i] = self.evaluate(conf, r)
                 print self.conf.to_frame().T
                 extra_run += r
@@ -273,7 +273,7 @@ class BayesOpt(object):
         # set the initial incumbent
         self.data.perf = pd.to_numeric(self.data.perf)
         perf = np.array(self.data.perf)
-        self.incumbent = np.nonzero(perf == np.min(perf))[0][0]
+        self.incumbent_id = np.nonzero(perf == np.min(perf))[0][0]
         self.fit_and_assess()
 
     def step(self):
@@ -282,15 +282,15 @@ class BayesOpt(object):
         
         ids = self.select_candidate()
         if self.noisy:
-            self.incumbent = self.intensify(ids)
+            self.incumbent_id = self.intensify(ids)
         else:
             perf = np.array(self.data.perf)
-            self.incumbent = np.nonzero(perf == np.min(perf))[0][0]
+            self.incumbent_id = np.nonzero(perf == np.min(perf))[0][0]
 
         # model re-training
         self.fit_and_assess()
         self.iter_count += 1
-        self.hist_perf.append(self.data.loc[self.incumbent, 'perf'])
+        self.hist_perf.append(self.data.loc[self.incumbent_id, 'perf'])
         
         # only for debug purpose
         if self.debug:
@@ -300,8 +300,11 @@ class BayesOpt(object):
             
         if self.verbose:
             print 'iteration {}, current incumbent is:'.format(self.iter_count)
-            print self.data.loc[[self.incumbent]]
+            print self.data.loc[[self.incumbent_id]]
             print 
+        
+        incumbent = self.data.loc[[self.incumbent_id]]
+        return self._get_var(incumbent)[0], incumbent.perf.values
 
     def run(self):
         while not self.check_stop():
@@ -309,7 +312,7 @@ class BayesOpt(object):
 
         self.stop_dict['n_eval'] = self.eval_count
         self.stop_dict['n_iter'] = self.iter_count
-        return self.incumbent, self.stop_dict
+        return self.incumbent_id, self.stop_dict
 
     def check_stop(self):
         # TODO: add more stop criteria
@@ -355,7 +358,7 @@ class BayesOpt(object):
                                                         factr=1e6, bounds=self._bounds,
                                                         maxfun=eval_budget)
                 xopt_ = xopt_.flatten().tolist()
-                fopt_ = fopt_.sum()
+                fopt_ = np.sum(fopt_)
                 
                 if stop_dict["warnflag"] != 0 and self.verbose:
                     warnings.warn("L-BFGS-B terminated abnormally with the "

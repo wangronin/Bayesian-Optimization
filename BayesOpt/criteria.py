@@ -56,7 +56,9 @@ class EI(InfillCriteria):
                     sd_dx = sd2_dx / (2. * sd)
                     grad = -y_dx * xcr_prob + sd_dx * xcr_dens
                 except Warning:
-                    grad = np.zeros((X.shape[1], 1))
+                    # TODO: test this
+                    dim = len(X[0])
+                    grad = np.zeros((dim, 1))
             return value, grad 
         return value
 
