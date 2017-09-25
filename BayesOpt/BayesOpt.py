@@ -331,6 +331,7 @@ class BayesOpt(object):
         # TODO: add other criteria as options
         acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
         def func(x):
+            x = [_ for _ in x]
             res = acquisition_func(x, dx=dx)
             return (-res[0], -res[1]) if dx else -res
         return func
@@ -366,7 +367,7 @@ class BayesOpt(object):
                                   
             elif self._optimizer == 'MIES':
                 obj_func = self._acquisition_func(plugin, dx=False)
-                mies = MIES(obj_func, x0, self._bounds.T, self._levels,
+                mies = MIES(x0, obj_func, self._bounds.T, self._levels,
                             self.param_type, eval_budget, minimize=True, 
                             verbose=False)                            
                 xopt_, fopt_, stop_dict = mies.optimize()

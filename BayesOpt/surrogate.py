@@ -108,6 +108,7 @@ class RrandomForest(object):
         n_sample = X.shape[0]
         
         # ad hoc fix for R 'randomForest' package
+        # append: Time cosuming....
         X = X.append(self.X)
         X.reset_index(drop=True, inplace=True)
             

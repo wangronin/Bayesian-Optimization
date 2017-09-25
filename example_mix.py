@@ -12,7 +12,7 @@ import numpy as np
 from BayesOpt import BayesOpt, RandomForest, RrandomForest
 from BayesOpt.SearchSpace import ContinuousSpace, NominalSpace, OrdinalSpace
 
-np.random.seed(1)
+np.random.seed(2)
 
 dim = 2
 n_step = 20
@@ -54,5 +54,5 @@ model = RrandomForest(1)
 opt = BayesOpt(search_space, obj_func, model, max_iter=n_step, random_seed=None,
                n_init_sample=n_init_sample, minimize=True, verbose=True, debug=False,
                optimizer='MIES')
-               
+
 opt.run()
