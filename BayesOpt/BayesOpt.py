@@ -400,4 +400,3 @@ class BayesOpt(object):
 
         if np.isinf(self.max_eval) and np.isinf(self.max_iter):
             raise ValueError('max_eval and max_iter cannot be both infinite')
-
