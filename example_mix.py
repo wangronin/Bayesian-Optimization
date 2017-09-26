@@ -12,7 +12,7 @@ import numpy as np
 from BayesOpt import BayesOpt, RandomForest, RrandomForest
 from BayesOpt.SearchSpace import ContinuousSpace, NominalSpace, OrdinalSpace
 
-np.random.seed(2)
+np.random.seed(123)
 
 dim = 2
 n_step = 20
@@ -26,9 +26,9 @@ def obj_func(x):
        tmp = 1
    return np.sum(x_r ** 2.) + abs(x_i - 10) / 123. + tmp * 2.
 
-C = ContinuousSpace(['x1', 'x2'], [[-5, 5], [-5, 5]])
-I = OrdinalSpace(['x3'], [-100, 100])
-N = NominalSpace(['x4'], ['OK', 'A', 'B', 'C', 'D', 'E'])
+C = ContinuousSpace([-5, 5]) * 2
+I = OrdinalSpace([-100, 100])
+N = NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E'])
 
 search_space = C * I * N
 

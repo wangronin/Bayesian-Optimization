@@ -1,19 +1,19 @@
-import six
-from abc import abstractmethod
 import pdb
+
+import six
 import numpy as np
 from numpy.random import randint, rand
+from abc import abstractmethod
+from pyDOE import lhs
 
 class SearchSpace(object):
-    def __init__(self, var_name, bounds):
-        self.var_name = [var_name] if isinstance(var_name, six.string_types) else var_name
-        self.dim = len(self.var_name)
-
+    def __init__(self, bounds, var_name):
         if not hasattr(bounds[0], '__iter__'):
             self.bounds = [tuple(bounds)]
         else:
             self.bounds = [tuple(b) for b in bounds]
-        assert len(self.bounds) == self.dim
+        self.dim = len(self.bounds)
+        self.var_name = [var_name] if isinstance(var_name, six.string_types) else var_name
 
     @abstractmethod
     def sampling(self, N=1):
@@ -50,7 +50,13 @@ class SearchSpace(object):
         pass
 
     def __mul__(self, space):
-        return ProductSpace(self, space)
+        if isinstance(space, SearchSpace):
+            return ProductSpace(self, space)
+        else:  # all the other types of input should be handled in the derived classes
+            raise ValueError('multiply SearchSpace to an invalid type')
+
+    def __rmul__(self, space):
+        return self.__mul__(space)
 
 class ProductSpace(SearchSpace):
     """Cartesian product of the search spaces
@@ -64,9 +70,9 @@ class ProductSpace(SearchSpace):
         self._sub_space1 = space1
         self._sub_space2 = space2
 
-        self.C_mask = self.var_type == 'C'
-        self.N_mask = self.var_type == 'N'
-        self.O_mask = self.var_type == 'O'
+        self.C_mask = self.var_type == 'C'  # Continuous
+        self.N_mask = self.var_type == 'N'  # Nominal 
+        self.O_mask = self.var_type == 'O'  # Ordinal
         
         id_N = np.nonzero(self.N_mask)[0]
         self._levels = [self.bounds[i] for i in id_N]
@@ -76,27 +82,51 @@ class ProductSpace(SearchSpace):
         b = self._sub_space2.sampling(N)
         return [a[i] + b[i] for i in range(N)]
 
+    def __rmul__(self, space):
+        raise ValueError('Not suppored operation')
+
 class ContinuousSpace(SearchSpace):
-    """Continuous search spaces
+    """Continuous search space
     """
-    def __init__(self, var_name, bounds):
-        super(ContinuousSpace, self).__init__(var_name, bounds)
+    def __init__(self, bounds, var_name=None):
+        super(ContinuousSpace, self).__init__(bounds, var_name)
+        if self.var_name is None:
+            self.var_name = ['r' + str(i) for i in range(self.dim)]
         self.var_type = np.array(['C'] * self.dim)
         self._bounds = np.atleast_2d(self.bounds).T
         assert all(self._bounds[0, :] < self._bounds[1, :])
+    
+    def __mul__(self, N):
+        if isinstance(N, SearchSpace):
+            return super(ContinuousSpace, self).__mul__(N)
+        else: # multiple times the same space
+            self.dim = int(self.dim * N)
+            self.var_type = np.repeat(self.var_type, N)
+            self.var_name = ['r' + str(i) for i in range(self.dim)]
+            self.bounds = self.bounds * N
+            self._bounds = np.tile(self._bounds, (1, N))
+            return self
+    
+    def __rmul__(self, N):
+        return self.__mul__(N)
 
     def sampling(self, N=1, method='uniform'):
         lb, ub = self._bounds
-        return ((ub - lb) * rand(N, self.dim) + lb).tolist()
+        if method == 'uniform':   # uniform random samples
+            return ((ub - lb) * rand(N, self.dim) + lb).tolist()
+        elif method == 'LHS':     # Latin hypercube sampling
+            return ((ub - lb) * lhs(self.dim, samples=N, criterion='cm') + lb).tolist()
 
 class NominalSpace(SearchSpace):
     """Nominal search spaces
     """
-    def __init__(self, var_name, levels):
-        super(NominalSpace, self).__init__(var_name, levels)
+    def __init__(self, levels, var_name=None):
+        super(NominalSpace, self).__init__(levels, var_name)
+        if self.var_name is None:
+            self.var_name = ['d' + str(i) for i in range(self.dim)]
         self.var_type = np.array(['N'] * self.dim)
-        self._levels = np.array(levels)
-        self._n_levels = len(levels)
+        self._levels = np.unique(np.array(levels))
+        self._n_levels = len(self._levels)
     
     def sampling(self, N=1):
         res = np.empty((N, self.dim), dtype=object)
@@ -107,8 +137,10 @@ class NominalSpace(SearchSpace):
 class OrdinalSpace(SearchSpace):
     """Ordinal (Integer) the search spaces
     """
-    def __init__(self, var_name, bounds):
-        super(OrdinalSpace, self).__init__(var_name, bounds)
+    def __init__(self, bounds, var_name=None):
+        super(OrdinalSpace, self).__init__(bounds, var_name)
+        if self.var_name is None:
+            self.var_name = ['i' + str(i) for i in range(self.dim)]
         self.var_type = np.array(['O'] * self.dim)
         self._lb, self._ub = zip(*self.bounds)
         assert all(np.array(self._lb) < np.array(self._ub))
@@ -120,13 +152,16 @@ class OrdinalSpace(SearchSpace):
         return res.tolist()
 
 if __name__ == '__main__':
+    np.random.seed(1)
 
-    C = ContinuousSpace(['x1', 'x2'], [[-5, 5], [-5, 5]])
-    I = OrdinalSpace(['x3'], [-100, 100])
-    N = NominalSpace(['x4'], ['OK', 'A', 'B', 'C', 'D', 'E'])
+    C = ContinuousSpace([[-5, 5]]) * 2  # product of the same space
+    I = OrdinalSpace([-100, 100], 'x3')
+    N = NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E'])
 
-    print C.get_continous()
-    space = C * I * N
+    print C.sampling(3, 'LHS')
+
+    # cartesian product of heterogeneous spaces
+    space = C * I * N 
     print space.sampling(10)
 
     print space.get_continous()

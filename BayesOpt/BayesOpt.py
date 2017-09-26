@@ -327,7 +327,7 @@ class BayesOpt(object):
     def _acquisition_func(self, plugin=None, dx=False):
         if plugin is None:
             plugin = np.min(self.data.perf) if self.minimize else np.max(self.data.perf)
-        
+            
         # TODO: add other criteria as options
         acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
         def func(x):

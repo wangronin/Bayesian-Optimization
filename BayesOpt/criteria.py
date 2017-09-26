@@ -18,8 +18,9 @@ class InfillCriteria(object):
         assert hasattr(model, 'predict')
         self.model = model
         self.minimize = minimize
-        if plugin is None:
-            self.plugin = np.min(model.y) if minimize else np.max(model.y) 
+        self.plugin = plugin
+        if self.plugin is None:
+            self.plugin = np.min(model.y) if minimize else np.max(self.model.y)
     
     def __call__(self, X):
         pass

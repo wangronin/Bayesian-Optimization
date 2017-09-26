@@ -30,9 +30,9 @@ def obj_func(x):
 
 def create_optimizer(dim, fitness, n_step, n_init_sample, model_type):
 
-    C = ContinuousSpace(['x1', 'x2'], [[-5, 5], [-5, 5]])
-    I = OrdinalSpace(['x3'], [-100, 100])
-    N = NominalSpace(['x4'], ['OK', 'A', 'B', 'C', 'D', 'E'])
+    C = ContinuousSpace([-5, 5]) * 2
+    I = OrdinalSpace([-100, 100])
+    N = NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E'])
 
     search_space = C * I * N
     
