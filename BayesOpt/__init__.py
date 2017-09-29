@@ -6,7 +6,8 @@ Created on Fri Nov 13 20:45:21 2015
 """
 
 from .BayesOpt import BayesOpt
-from .criteria import EI
-from .surrogate import RrandomForest, RandomForest
+from . import criteria
+from . import surrogate
+from . import SearchSpace
 
-__all__ = ['BayesOpt', 'EI', 'RrandomForest', 'RandomForest', 'SearchSpace']
+__all__ = ['BayesOpt', 'criteria', 'surrogate', 'SearchSpace']

@@ -7,12 +7,14 @@ Created on Mon Sep  4 21:44:21 2017
 
 import pdb
 import warnings
+from abc import abstractmethod
 import numpy as np
 from numpy import sqrt
 from scipy.stats import norm
 
 normcdf, normpdf = norm.cdf, norm.pdf
 
+# TODO: perphas also enable acquisition function engineering here?
 class InfillCriteria(object):
     def __init__(self, model, plugin=None, minimize=True):
         assert hasattr(model, 'predict')
@@ -22,10 +24,13 @@ class InfillCriteria(object):
         if self.plugin is None:
             self.plugin = np.min(model.y) if minimize else np.max(self.model.y)
     
+    @abstractmethod
     def __call__(self, X):
         pass
 
     def check_X(self, X):
+        """Keep input as '2D' object 
+        """
         return [X] if not hasattr(X[0], '__iter__') else X
 
 class EI(InfillCriteria):
@@ -58,15 +63,13 @@ class EI(InfillCriteria):
                     sd_dx = sd2_dx / (2. * sd)
                     grad = -y_dx * xcr_prob + sd_dx * xcr_dens
                 except Warning:
-                    # TODO: test this
                     dim = len(X[0])
                     grad = np.zeros((dim, 1))
             return value, grad 
         return value
 
 class PI(InfillCriteria):
-    """
-    Probability of Improvement
+    """Probability of Improvement
     """
     def __call__(self, X, dx=False):
         X = self.check_X(X)
@@ -92,14 +95,18 @@ class PI(InfillCriteria):
             return value, grad 
         return value
 
+class MGF(InfillCriteria):
+    """My new acquisition function proposed in SMC'17 paper
+    """
+    pass
+
 # TODO: implement infill_criteria for noisy functions and MGF-based ceiterion
 class GEI(InfillCriteria):
+    """Generalized Expected Improvement 
+    """
     def __call__(self, X):
         pass
 
 class UCB(InfillCriteria):
     def __call__(self, X):
         pass
-
-class MGF(InfillCriteria):
-    pass

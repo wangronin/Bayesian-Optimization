@@ -9,7 +9,8 @@ Created on Fri Aug  4 15:57:47 2017
 import pdb
 
 import numpy as np
-from BayesOpt import BayesOpt, RandomForest, RrandomForest
+from BayesOpt import BayesOpt
+from BayesOpt.surrogate import RrandomForest
 from BayesOpt.SearchSpace import ContinuousSpace, NominalSpace, OrdinalSpace
 
 np.random.seed(123)

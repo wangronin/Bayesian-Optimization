@@ -18,9 +18,8 @@ from numpy.random import randint, rand
 from scipy.optimize import fmin_l_bfgs_b
 
 from .criteria import EI
-from .MIES import MIES
+from .optimizer import mies, cma_es
 from .utils import proportional_selection
-# from cma_es import cma_es
 
 from sklearn.metrics import r2_score
 
@@ -359,10 +358,10 @@ class BayesOpt(object):
                                   
             elif self._optimizer == 'MIES':
                 obj_func = self._acquisition_func(plugin, dx=False)
-                mies = MIES(x0, obj_func, self._bounds.T, self._levels,
-                            self.param_type, eval_budget, minimize=True, 
-                            verbose=False)                            
-                xopt_, fopt_, stop_dict = mies.optimize()
+                opt = mies(x0, obj_func, self._bounds.T, self._levels,
+                           self.param_type, eval_budget, minimize=True, 
+                           verbose=False)                            
+                xopt_, fopt_, stop_dict = opt.optimize()
 
             if fopt_ < fopt:
                 fopt = fopt_

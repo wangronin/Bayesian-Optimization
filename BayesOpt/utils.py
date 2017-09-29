@@ -10,6 +10,7 @@ from copy import copy
 import numpy as np
 from numpy import isfinite, mod, floor, shape, bitwise_and, zeros, newaxis
 
+# TODO: implement this as a C procedure
 def proportional_selection(perf, N, minimize=True, replacement=True):
     def select(perf):
         perf_min = np.min(perf)
@@ -38,6 +39,7 @@ def proportional_selection(perf, N, minimize=True, replacement=True):
                 del idx[_]
     return res
 
+# TODO: double check this one. It causes issues in MIES
 def boundary_handling(x, lb, ub):
     """
     
