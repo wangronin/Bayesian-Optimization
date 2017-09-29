@@ -26,16 +26,7 @@ from sklearn.metrics import r2_score
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
-class Solution(pd.DataFrame):
-    def __init__(self):
-        pass
-    
-    def to_var(self):
-        pass
-    
-    def from_list(self):
-        pass
-
+# TODO: remove the usage of pandas here 
 class BayesOpt(object):
     """
     Generic Bayesian optimization algorithm
@@ -180,6 +171,7 @@ class BayesOpt(object):
         self.is_update = True
         perf_hat = self.surrogate.predict(X)
         self.r2 = r2_score(perf, perf_hat)
+
         # TODO: in case r2 is really poor, re-fit the model or transform the input? 
         if self.verbose:
             print 'Surrogate model r2: {}'.format(self.r2)
