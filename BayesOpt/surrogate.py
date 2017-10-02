@@ -7,35 +7,79 @@ Created on Mon Sep 11 10:48:14 2017
 """
 
 import pdb
+
+import pandas as pd
 import numpy as np
 from numpy import ceil, std, array, atleast_2d
-import pandas as pd
 
+import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 from rpy2.robjects import r, pandas2ri, numpy2ri
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.utils.validation import check_is_fitted
 from sklearn.ensemble.base import _partition_estimators
+from sklearn.preprocessing import OneHotEncoder, LabelEncoder
+from sklearn.metrics import r2_score
+
 from joblib import Parallel, delayed
 
 # numpy and pandas data type conversion to R
 numpy2ri.activate()
 pandas2ri.activate()
 
-def save_prediction(predict, X, index, out):
+# this function has to be globally visible
+def save(predict, X, index, out):
     out[:, index] = predict(X, check_input=False)
 
-# TODO: add support for categorical data
 class RandomForest(RandomForestRegressor):
     """
     Extension for the sklearn RandomForestRegressor class
     Added functionality: empirical MSE of predictions
     """
+    def __init__(self, levels=None, **kwargs):
+        """
+        parameter
+        ---------
+        levels : dict
+            keys: indices of categorical variables
+            values: list of levels of categorical variables
+        """
+        super(RandomForest, self).__init__(**kwargs)
+
+        if levels is not None:
+            assert isinstance(levels, dict)
+            self._levels = levels
+            self._cat_idx = sorted(self._levels.keys())
+            self._n_values = [len(self._levels[i]) for i in self._cat_idx]
+            # encode categorical variables to integer type
+            self._le = [LabelEncoder().fit(self._levels[i]) for i in self._cat_idx]
+            # encode integers to binary
+            _max = max(self._n_values)
+            data = atleast_2d([range(n) * (_max / n) + range(_max % n) for n in self._n_values]).T
+            self._enc = OneHotEncoder(n_values=self._n_values, sparse=False)
+            self._enc.fit(data)
+            # TODO: using such encoding, feature number will increase drastically 
+            # TODO: investigate the upper bound (in the sense of cpu time) 
+            # for categorical levels/variable number
+            # in the future, maybe implement binary/multi-value split 
+            
+    def _check_X(self, X):
+        X_ = array(X, dtype=object)
+        if hasattr(self, '_levels'):
+            X_cat = array([self._le[i].transform(X_[:, k]) for i, k in enumerate(self._cat_idx)]).T
+            X_cat = self._enc.transform(X_cat)
+            X = np.c_[np.delete(X_, self._cat_idx, 1).astype(float), X_cat]
+        return X
+    
+    def fit(self, X, y):
+        X = self._check_X(X)
+        return super(RandomForest, self).fit(X, y)
+
     def predict(self, X, eval_MSE=False):
         check_is_fitted(self, 'estimators_')
         # Check data
-        X = np.atleast_2d(X)
+        X = self._check_X(X)
         X = self._validate_X_predict(X)
         
         # Assign chunk of trees to jobs
@@ -49,7 +93,7 @@ class RandomForest(RandomForestRegressor):
 
         # Parallel loop
         Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
-            delayed(save_prediction)(e.predict, X, i, y_hat_all) for i, e in enumerate(self.estimators_))
+            delayed(save)(e.predict, X, i, y_hat_all) for i, e in enumerate(self.estimators_))
 
         y_hat = np.mean(y_hat_all, axis=1).flatten()
         if eval_MSE:
@@ -59,45 +103,80 @@ class RandomForest(RandomForestRegressor):
 
 class RrandomForest(object):
     """
-    Python wrapper for the R 'randomForest' library
+    Python wrapper for the R 'randomForest' library for regression
+    TODO: verify R randomForest uses CART trees instead of C45...
     """
-    def __init__(self, seed=None):
+    def __init__(self, levels=None, n_estimators=10, max_features='auto', 
+                 min_samples_leaf=1, max_leaf_nodes=None, importance=False, 
+                 nPerm=1, corr_bias=False, seed=None):
+        """
+        parameter
+        ---------
+        levels : dict
+            dict keys: indices of categorical variables
+            dict values: list of levels of categorical variables
+        seed : int, random seed
+        """
+        if max_leaf_nodes is None:
+            max_leaf_nodes = ro.NULL
+            
         self.pkg = importr('randomForest')
+        self._levels = levels
+        self.param = {'ntree' : int(n_estimators),
+                      'mtry' : max_features,
+                      'nodesize' : int(min_samples_leaf),
+                      'maxnodes' : max_leaf_nodes,
+                      'importance' : importance,
+                      'nPerm' : int(nPerm),
+                      'corr_bias' : corr_bias}
 
-        # TODO: make R code reproducible, failed...
+        # make R code reproducible
         if seed is not None:
             r['set.seed'](seed)
         
     def _check_X(self, X):
         """
-        Convert all input types to pandas dataframe
+        Convert all input types to R data.frame
         """
         if isinstance(X, list):
             if isinstance(X[0], list):
-                X = pd.DataFrame(X)
+                X = array(X, dtype=object)
             else:
-                X = pd.DataFrame([X])
-
-        elif isinstance(X, pd.Series):
-            X.index = pd.RangeIndex(0, len(X))
-            X = pd.DataFrame([X])
-
+                X = array([X], dtype=object)
         elif isinstance(X, np.ndarray):
             if hasattr(self, 'columns'):
                 if X.shape[1] != len(self.columns):
                     X = X.T
-            X = pd.DataFrame(X)
-        return X
+        elif isinstance(X, pd.Series) or isinstance(X, pd.DataFrame):
+            X = X.values
+        
+        # carefull categorical columns should be converted as FactorVector
+        to_r = lambda index, column: ro.FloatVector(column) if index not in self._levels.keys() else \
+            ro.FactorVector(column, levels=ro.StrVector(self._levels[index]))
+        d = {'X' + str(i) : to_r(i, X[:, i]) for i in range(X.shape[1])}
+        X_r = ro.DataFrame(d)
+        
+        return X_r
 
     def fit(self, X, y):
         self.X = self._check_X(X)
-        self.columns = self.X.columns
-        n_sample, self.n_feature = self.X.shape
-        leaf_size = max(1, int(n_sample / 20.))
+        y = array(y).astype(float)
         
-        self.rf = self.pkg.randomForest(x=self.X, y=y, ntree=100,
-                                        mtry=ceil(self.n_feature * 5 / 6.),
-                                        nodesize=leaf_size)
+        self.columns = numpy2ri.ri2py(self.X.colnames)
+        n_sample, self.n_feature = self.X.nrow, self.X.ncol
+
+        mtry = self.param['mtry']
+        if mtry == 'auto':
+            self.param['mtry'] = self.n_feature
+        elif mtry == 'sqrt':
+            self.param['mtry'] = int(np.sqrt(self.n_feature))
+        elif mtry == 'log':
+            self.param['mtry'] = int(np.log2(self.n_feature))
+        else:  # user defined expression
+            p = self.n_feature
+            self.param['mtry'] = eval(mtry)
+            
+        self.rf = self.pkg.randomForest(x=self.X, y=y, **self.param)
         return self
 
     def predict(self, X, eval_MSE=False):
@@ -105,35 +184,55 @@ class RrandomForest(object):
         X should be a dataframe
         """
         X = self._check_X(X)
-        n_sample = X.shape[0]
-        
-        # ad hoc fix for R 'randomForest' package
-        # append: Time cosuming....
-        X = X.append(self.X)
-        X.reset_index(drop=True, inplace=True)
-            
         _ = self.pkg.predict_randomForest(self.rf, X, predict_all=eval_MSE)
+        
         if eval_MSE:
-            y_hat = array(_[0])[:n_sample]
-            mse = std(atleast_2d(_[1])[0:n_sample, :], axis=1, ddof=1) ** 2.
+            y_hat = numpy2ri.ri2py(_[0])
+            mse = std(numpy2ri.ri2py(_[1]), axis=1, ddof=1) ** 2.
             return y_hat, mse
         else:
-            return array(_)[:n_sample]
+            return numpy2ri.ri2py(_)
 
 if __name__ == '__main__':
-    X = np.random.randn(100, 2)
-    y = np.sum(X ** 2., axis=1)
+    # simple test for mixed variables...
+    np.random.seed(12)
+    
+    n_sample = 110
+    levels = ['OK', 'A', 'B', 'C', 'D', 'E']
+    X = np.c_[np.random.randn(n_sample, 2).astype(object),
+              np.random.choice(levels, size=(n_sample, 1))]
+    y = np.sum(X[:, 0:-1] ** 2., axis=1) + 5 * (X[:, -1] == 'OK')
+    
+    X_train, y_train = X[:100, :], y[:100]
+    X_test, y_test = X[100:, :], y[100:]
 
     # sklearn-random forest
-    rf = RandomForest()
-    rf.fit(X, y)
+    rf = RandomForest(levels={2: levels})
+    rf.fit(X_train, y_train)
+    y_hat, mse = rf.predict(X_test, eval_MSE=True)
 
-    print rf.predict(X[:2, ], eval_MSE=True)
+    print 'sklearn random forest:'
+    print 'target :', y_test
+    print 'predicted:', y_hat
+    print 'MSE:', mse
+    print 'r2:', r2_score(y_test, y_hat)
+    print
     
     # R randomForest
-    rf = RrandomForest()
-    rf.fit(X, y)
+    rf = RrandomForest(levels={2: levels}, seed=1, max_features='sqrt')
+    rf.fit(X_train, y_train)
+    y_hat, mse = rf.predict(X_test, eval_MSE=True)
 
-    print rf.predict(X[:2, ], eval_MSE=True)
+    print 'R randomForest:'
+    print 'target :', y_test
+    print 'predicted:', y_hat
+    print 'MSE:', mse
+    print 'r2:', r2_score(y_test, y_hat)
+    
+    # TODO: those settings should be in test file as inputs to surroagtes
+    # leaf_size = max(1, int(n_sample / 20.))
+    # ntree=100,
+    # mtry=ceil(self.n_feature * 5 / 6.),
+    # nodesize=leaf_size
         
         

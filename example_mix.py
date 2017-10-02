@@ -10,7 +10,7 @@ import pdb
 
 import numpy as np
 from BayesOpt import BayesOpt
-from BayesOpt.surrogate import RrandomForest
+from BayesOpt.surrogate import RrandomForest, RandomForest
 from BayesOpt.SearchSpace import ContinuousSpace, NominalSpace, OrdinalSpace
 
 np.random.seed(123)
@@ -50,7 +50,8 @@ search_space = C * I * N
 #                      max_features=max_features,
 #                      min_samples_leaf=min_samples_leaf)
 
-model = RrandomForest(1)
+# model = RrandomForest(levels={3: ['OK', 'A', 'B', 'C', 'D', 'E']}, seed=1)
+model = RandomForest(levels={3: ['OK', 'A', 'B', 'C', 'D', 'E']}, seed=1)
 
 opt = BayesOpt(search_space, obj_func, model, max_iter=n_step, random_seed=None,
                n_init_sample=n_init_sample, minimize=True, verbose=True, debug=False,
