@@ -127,6 +127,8 @@ class RrandomForest(object):
             mtry = 'int(np.sqrt(p))'
         elif max_features == 'log':
             mtry = 'int(np.log2(p))'
+        else:
+            mtry = max_features
 
         self.pkg = importr('randomForest')
         self._levels = levels

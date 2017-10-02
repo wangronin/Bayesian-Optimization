@@ -13,7 +13,8 @@ from mpi4py import MPI
 import numpy as np
 
 from deap import benchmarks
-from BayesOpt import BayesOpt, RandomForest, RrandomForest
+from BayesOpt import BayesOpt
+from BayesOpt.surrogate import RrandomForest, RandomForest
 from BayesOpt.SearchSpace import ContinuousSpace, NominalSpace, OrdinalSpace
 
 comm = MPI.COMM_WORLD
