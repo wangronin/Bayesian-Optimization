@@ -11,7 +11,7 @@ import pdb
 
 import pandas as pd
 import numpy as np
-from numpy import ceil, std, array, atleast_2d
+from numpy import std, array, atleast_2d
 
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
@@ -60,11 +60,11 @@ class RandomForest(RandomForestRegressor):
             data = atleast_2d([range(n) * (_max / n) + range(_max % n) for n in self._n_values]).T
             self._enc = OneHotEncoder(n_values=self._n_values, sparse=False)
             self._enc.fit(data)
-            # TODO: using such encoding, feature number will increase drastically 
-            # TODO: investigate the upper bound (in the sense of cpu time) 
+            # TODO: using such encoding, feature number will increase drastically
+            # TODO: investigate the upper bound (in the sense of cpu time)
             # for categorical levels/variable number
-            # in the future, maybe implement binary/multi-value split 
-            
+            # in the future, maybe implement binary/multi-value split
+
     def _check_X(self, X):
         X_ = array(X, dtype=object)
         if hasattr(self, '_levels'):
@@ -72,7 +72,7 @@ class RandomForest(RandomForestRegressor):
             X_cat = self._enc.transform(X_cat)
             X = np.c_[np.delete(X_, self._cat_idx, 1).astype(float), X_cat]
         return X
-    
+
     def fit(self, X, y):
         X = self._check_X(X)
         return super(RandomForest, self).fit(X, y)
@@ -82,7 +82,7 @@ class RandomForest(RandomForestRegressor):
         # Check data
         X = self._check_X(X)
         X = self._validate_X_predict(X)
-        
+
         # Assign chunk of trees to jobs
         n_jobs, _, _ = _partition_estimators(self.n_estimators, self.n_jobs)
 
@@ -107,8 +107,8 @@ class RrandomForest(object):
     Python wrapper for the R 'randomForest' library for regression
     TODO: verify R randomForest uses CART trees instead of C45...
     """
-    def __init__(self, levels=None, n_estimators=10, max_features='auto', 
-                 min_samples_leaf=1, max_leaf_nodes=None, importance=False, 
+    def __init__(self, levels=None, n_estimators=10, max_features='auto',
+                 min_samples_leaf=1, max_leaf_nodes=None, importance=False,
                  nPerm=1, corr_bias=False, seed=None):
         """
         parameter
@@ -120,14 +120,14 @@ class RrandomForest(object):
         """
         if max_leaf_nodes is None:
             max_leaf_nodes = ro.NULL
-        
+
         if max_features == 'auto':
             mtry = 'p'
         elif max_features == 'sqrt':
             mtry = 'int(np.sqrt(p))'
         elif max_features == 'log':
             mtry = 'int(np.log2(p))'
-            
+
         self.pkg = importr('randomForest')
         self._levels = levels
         self.param = {'ntree' : int(n_estimators),
@@ -141,7 +141,7 @@ class RrandomForest(object):
         # make R code reproducible
         if seed is not None:
             r['set.seed'](seed)
-        
+
     def _check_X(self, X):
         """
         Convert all input types to R data.frame
@@ -157,26 +157,26 @@ class RrandomForest(object):
                     X = X.T
         elif isinstance(X, pd.Series) or isinstance(X, pd.DataFrame):
             X = X.values
-        
+
         # carefull categorical columns should be converted as FactorVector
         to_r = lambda index, column: ro.FloatVector(column) if index not in self._levels.keys() else \
             ro.FactorVector(column, levels=ro.StrVector(self._levels[index]))
         d = {'X' + str(i) : to_r(i, X[:, i]) for i in range(X.shape[1])}
         X_r = ro.DataFrame(d)
-        
+
         return X_r
 
     def fit(self, X, y):
         self.X = self._check_X(X)
         y = array(y).astype(float)
-        
+
         self.columns = numpy2ri.ri2py(self.X.colnames)
         n_sample, self.n_feature = self.X.nrow, self.X.ncol
-        
+
         if isinstance(self.param['mtry'], basestring):
             p = self.n_feature
             self.param['mtry'] = eval(self.param['mtry'])
-            
+
         self.rf = self.pkg.randomForest(x=self.X, y=y, **self.param)
         return self
 
@@ -186,7 +186,7 @@ class RrandomForest(object):
         """
         X = self._check_X(X)
         _ = self.pkg.predict_randomForest(self.rf, X, predict_all=eval_MSE)
-        
+
         if eval_MSE:
             y_hat = numpy2ri.ri2py(_[0])
             mse = std(numpy2ri.ri2py(_[1]), axis=1, ddof=1) ** 2.
@@ -197,18 +197,18 @@ class RrandomForest(object):
 if __name__ == '__main__':
     # simple test for mixed variables...
     np.random.seed(12)
-    
+
     n_sample = 110
     levels = ['OK', 'A', 'B', 'C', 'D', 'E']
     X = np.c_[np.random.randn(n_sample, 2).astype(object),
               np.random.choice(levels, size=(n_sample, 1))]
     y = np.sum(X[:, 0:-1] ** 2., axis=1) + 5 * (X[:, -1] == 'OK')
-    
+
     X_train, y_train = X[:100, :], y[:100]
     X_test, y_test = X[100:, :], y[100:]
 
     # sklearn-random forest
-    rf = RandomForest(levels={2: levels})
+    rf = RandomForest(levels={2: levels}, max_features='sqrt')
     rf.fit(X_train, y_train)
     y_hat, mse = rf.predict(X_test, eval_MSE=True)
 
@@ -218,9 +218,9 @@ if __name__ == '__main__':
     print 'MSE:', mse
     print 'r2:', r2_score(y_test, y_hat)
     print
-    
+
     # R randomForest
-    rf = RrandomForest(levels={2: levels}, seed=1, max_features='auto')
+    rf = RrandomForest(levels={2: levels}, seed=1, max_features='sqrt')
     rf.fit(X_train, y_train)
     y_hat, mse = rf.predict(X_test, eval_MSE=True)
 
@@ -229,11 +229,10 @@ if __name__ == '__main__':
     print 'predicted:', y_hat
     print 'MSE:', mse
     print 'r2:', r2_score(y_test, y_hat)
-    
+
     # TODO: those settings should be in test file as inputs to surroagtes
     # leaf_size = max(1, int(n_sample / 20.))
     # ntree=100,
     # mtry=ceil(self.n_feature * 5 / 6.),
     # nodesize=leaf_size
-        
-        
+

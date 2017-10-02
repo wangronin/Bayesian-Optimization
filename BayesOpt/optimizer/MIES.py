@@ -14,7 +14,6 @@ from numpy.random import randint, rand, randn, geometric
 
 from ..utils import boundary_handling
 
-
 class Individual(list):
     """Make it possible to index Python list object using the enumerables
     """

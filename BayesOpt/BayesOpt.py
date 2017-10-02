@@ -8,8 +8,7 @@ Created on Mon Mar 6 15:05:01 2017
 from __future__ import division   # important! for the float division
 
 import pdb
-
-import random, warnings
+import warnings
 
 import pandas as pd
 import numpy as np
@@ -39,7 +38,7 @@ class BayesOpt(object):
         self.debug = debug
         self.verbose = verbose
         self._space = search_space
-        self.var_names = self._space.var_name
+        self.var_names = self._space.var_name.tolist()
         self.obj_func = obj_func
         self.noisy = noisy
         self.surrogate = surrogate
@@ -47,10 +46,10 @@ class BayesOpt(object):
         self.minimize = minimize
         self.dim = len(self._space)
 
-        # TODO: those should be move to the search space class
-        self.con_ = self._space.get_continous() # continuous
-        self.cat_ = self._space.get_norminal()  # nominal
-        self.int_ = self._space.get_ordinal()  # nominal
+        # column names for each variable type
+        self.con_ = self._space.var_name[self._space.id_C].tolist()  # continuous
+        self.cat_ = self._space.var_name[self._space.id_N].tolist()   # categorical
+        self.int_ = self._space.var_name[self._space.id_O].tolist()   # integer
 
         self.param_type = self._space.var_type
         self.N_r = len(self.con_)
@@ -70,7 +69,7 @@ class BayesOpt(object):
         # paramter: acquisition function optimziation
         mask = np.nonzero(self._space.C_mask | self._space.O_mask)[0]
         self._bounds = np.array([self._space.bounds[i] for i in mask])
-        self._levels = self._space.get_levels()
+        self._levels = self._space.levels.values()
         self._optimizer = optimizer
         self._max_eval = int(5e2 * self.dim) 
         self._random_start = int(10 * self.dim) if n_restart is None else n_restart
@@ -88,7 +87,6 @@ class BayesOpt(object):
         # set the random seed
         self.random_seed = random_seed
         if self.random_seed:
-            random.seed(self.random_seed)
             np.random.seed(self.random_seed)
 
     def _get_var(self, data):
@@ -346,6 +344,8 @@ class BayesOpt(object):
             
             # TODO: when the surrogate is GP, implement a GA-BFGS hybrid algorithm
             if self._optimizer == 'BFGS':
+                if self.N_d + self.N_i != 0:
+                    raise ValueError('BFGS is not supported with mixed variable types.')
                 obj_func = self._acquisition_func(plugin, dx=True)
                 xopt_, fopt_, stop_dict = fmin_l_bfgs_b(obj_func, x0, pgtol=1e-8,
                                                         factr=1e6, bounds=self._bounds,

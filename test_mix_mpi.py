@@ -35,6 +35,7 @@ def create_optimizer(dim, fitness, n_step, n_init_sample, model_type):
     N = NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E'])
 
     search_space = C * I * N
+    levels = search_space.levels
     
     if model_type == 'GP':
 #        thetaL = 1e-3 * (ub - lb) * np.ones(dim)
@@ -52,12 +53,16 @@ def create_optimizer(dim, fitness, n_step, n_init_sample, model_type):
     elif model_type == 'sklearn-RF':
         min_samples_leaf = max(1, int(n_init_sample / 20.))
         max_features = int(np.ceil(dim * 5 / 6.))
-        model = RandomForest(n_estimators=100,
+        model = RandomForest(levels=levels, n_estimators=100,
                             max_features=max_features,
                             min_samples_leaf=min_samples_leaf)
 
     elif model_type == 'R-RF':
-        model = RrandomForest()
+        min_samples_leaf = max(1, int(n_init_sample / 20.))
+        max_features = int(np.ceil(dim * 5 / 6.))
+        model = RrandomForest(levels=levels, n_estimators=100, 
+                              max_features=max_features,
+                              min_samples_leaf=min_samples_leaf)
 
     opt = BayesOpt(search_space, fitness, model, max_iter=n_step, random_seed=None,
                    n_init_sample=n_init_sample, minimize=True, optimizer='MIES')
