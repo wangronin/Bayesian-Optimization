@@ -3,7 +3,8 @@
 """
 Created on Mon Sep 11 10:48:14 2017
 
-@author: wangronin
+@author: Hao Wang
+@email: wangronin@gmail.com
 """
 
 import pdb
@@ -119,11 +120,18 @@ class RrandomForest(object):
         """
         if max_leaf_nodes is None:
             max_leaf_nodes = ro.NULL
+        
+        if max_features == 'auto':
+            mtry = 'p'
+        elif max_features == 'sqrt':
+            mtry = 'int(np.sqrt(p))'
+        elif max_features == 'log':
+            mtry = 'int(np.log2(p))'
             
         self.pkg = importr('randomForest')
         self._levels = levels
         self.param = {'ntree' : int(n_estimators),
-                      'mtry' : max_features,
+                      'mtry' : mtry,
                       'nodesize' : int(min_samples_leaf),
                       'maxnodes' : max_leaf_nodes,
                       'importance' : importance,
@@ -164,17 +172,10 @@ class RrandomForest(object):
         
         self.columns = numpy2ri.ri2py(self.X.colnames)
         n_sample, self.n_feature = self.X.nrow, self.X.ncol
-
-        mtry = self.param['mtry']
-        if mtry == 'auto':
-            self.param['mtry'] = self.n_feature
-        elif mtry == 'sqrt':
-            self.param['mtry'] = int(np.sqrt(self.n_feature))
-        elif mtry == 'log':
-            self.param['mtry'] = int(np.log2(self.n_feature))
-        else:  # user defined expression
+        
+        if isinstance(self.param['mtry'], basestring):
             p = self.n_feature
-            self.param['mtry'] = eval(mtry)
+            self.param['mtry'] = eval(self.param['mtry'])
             
         self.rf = self.pkg.randomForest(x=self.X, y=y, **self.param)
         return self
@@ -219,7 +220,7 @@ if __name__ == '__main__':
     print
     
     # R randomForest
-    rf = RrandomForest(levels={2: levels}, seed=1, max_features='sqrt')
+    rf = RrandomForest(levels={2: levels}, seed=1, max_features='auto')
     rf.fit(X_train, y_train)
     y_hat, mse = rf.predict(X_test, eval_MSE=True)
 

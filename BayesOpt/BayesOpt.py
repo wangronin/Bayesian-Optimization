@@ -290,6 +290,7 @@ class BayesOpt(object):
             print self.iter_count, tmp, np.random.get_state()[2]
             
         if self.verbose:
+            print
             print 'iteration {}, current incumbent is:'.format(self.iter_count)
             print self.data.loc[[self.incumbent_id]]
             print 

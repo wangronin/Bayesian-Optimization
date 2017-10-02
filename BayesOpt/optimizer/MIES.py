@@ -299,8 +299,6 @@ class mies(object):
             curr_best = self.pop_mu[0]
             xopt_, fopt_ = curr_best[self._id_var], self.f_mu[0]
             
-            if np.isclose(fopt_, 0):
-                pdb.set_trace()
             self.iter_count += 1
 
             if self._better(fopt_, self.fopt):

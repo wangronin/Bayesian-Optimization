@@ -50,8 +50,8 @@ search_space = C * I * N
 #                      max_features=max_features,
 #                      min_samples_leaf=min_samples_leaf)
 
-# model = RrandomForest(levels={3: ['OK', 'A', 'B', 'C', 'D', 'E']}, seed=1)
-model = RandomForest(levels={3: ['OK', 'A', 'B', 'C', 'D', 'E']}, seed=1)
+#model = RandomForest(levels={3: ['OK', 'A', 'B', 'C', 'D', 'E']})
+model = RrandomForest(levels={3: ['OK', 'A', 'B', 'C', 'D', 'E']}, seed=1, max_features='sqrt')
 
 opt = BayesOpt(search_space, obj_func, model, max_iter=n_step, random_seed=None,
                n_init_sample=n_init_sample, minimize=True, verbose=True, debug=False,
