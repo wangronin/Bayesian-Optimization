@@ -25,6 +25,7 @@ from sklearn.metrics import r2_score
 MACHINE_EPSILON = np.finfo(np.double).eps
 
 # TODO: remove the usage of pandas here 
+# change it to np.ndarray
 class BayesOpt(object):
     """
     Generic Bayesian optimization algorithm
