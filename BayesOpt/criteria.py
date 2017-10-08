@@ -98,7 +98,24 @@ class PI(InfillCriteria):
 class MGF(InfillCriteria):
     """My new acquisition function proposed in SMC'17 paper
     """
-    pass
+    def __call__(self, X, t=1, dx=False):
+        X = self.check_X(X)
+        y_hat, sd2 = self.model.predict(X, eval_MSE=True)
+        sd = sqrt(sd2)
+
+        if self.minimize:
+            y_hat = -y_hat
+
+        y_hat_p = y_hat - t * sd ** 2.
+        beta_p = (self.plugin - y_hat_p) / sd
+        term = t * (self.plugin - y_hat - 1)
+        value = normcdf(beta_p) * exp(term + t ** 2. * s ** 2. / 2.)
+
+        if np.isinf(value):
+            value = 0.
+        
+        if dx:
+            pass
 
 # TODO: implement infill_criteria for noisy functions and MGF-based ceiterion
 class GEI(InfillCriteria):
