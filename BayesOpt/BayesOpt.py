@@ -16,7 +16,7 @@ import numpy as np
 from numpy.random import randint, rand
 from scipy.optimize import fmin_l_bfgs_b
 
-from .criteria import EI
+from .InfillCriteria import EI
 from .optimizer import mies, cma_es
 from .utils import proportional_selection
 

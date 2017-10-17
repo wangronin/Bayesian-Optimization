@@ -39,7 +39,7 @@ def proportional_selection(perf, N, minimize=True, replacement=True):
                 del idx[_]
     return res
 
-# TODO: double check this one. It causes issues in MIES
+# TODO: double check this one. It causes the explosion of step-sizes in MIES
 def boundary_handling(x, lb, ub):
     """
     

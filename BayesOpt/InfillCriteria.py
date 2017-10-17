@@ -15,6 +15,8 @@ from scipy.stats import norm
 normcdf, normpdf = norm.cdf, norm.pdf
 
 # TODO: perphas also enable acquisition function engineering here?
+# meaning the combination of the acquisition functions
+
 class InfillCriteria(object):
     def __init__(self, model, plugin=None, minimize=True):
         assert hasattr(model, 'predict')
