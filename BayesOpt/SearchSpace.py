@@ -91,7 +91,7 @@ class ContinuousSpace(SearchSpace):
         else: # multiple times the same space
             self.dim = int(self.dim * N)
             self.var_type = np.repeat(self.var_type, N)
-            self.var_name = np.array(['r' + str(i) for i in range(self.dim)])
+            self.var_name = ['{}_{}'.format(v, k) for v in self.var_name for k in range(N)]
             self.bounds = self.bounds * N
             self._bounds = np.tile(self._bounds, (1, N))
             return self
@@ -114,17 +114,34 @@ class NominalSpace(SearchSpace):
         if not hasattr(self, 'var_name'):
             self.var_name = np.array(['d' + str(i) for i in range(self.dim)])
         self.var_type = np.array(['N'] * self.dim)
-        self._levels = np.unique(np.array(levels))
-        self._n_levels = len(self._levels)
         # public attribute: dict of levels
         self.levels = OrderedDict([(i, self.bounds[i]) for i in range(self.dim)])
+        self._levels = [np.array(b) for b in self.bounds]
+        self._n_levels = [len(l) for l in self._levels]
+        
+    def __mul__(self, N):
+        if isinstance(N, SearchSpace):
+            return super(NominalSpace, self).__mul__(N)
+        else: # multiple times the same space
+            self.dim = int(self.dim * N)
+            self.var_type = np.repeat(self.var_type, N)
+            self.var_name = ['{}_{}'.format(v, k) for v in self.var_name for k in range(N)]
+            self.bounds = self.bounds * N
+            self.levels = OrderedDict([(i, self.bounds[i]) for i in range(self.dim)])
+            self._levels = self._levels * N
+            self._n_levels = self._n_levels * N
+            return self
+    
+    def __rmul__(self, N):
+        return self.__mul__(N)
     
     def sampling(self, N=1):
         res = np.empty((N, self.dim), dtype=object)
         for i in range(self.dim):
-            res[:, i] = self._levels[randint(0, self._n_levels, N)]
+            res[:, i] = self._levels[i][randint(0, self._n_levels[i], N)]
         return res.tolist()
-            
+
+# TODO: add integer multiplication for OrdinalSpace
 class OrdinalSpace(SearchSpace):
     """Ordinal (Integer) the search spaces
     """
@@ -146,11 +163,14 @@ if __name__ == '__main__':
     np.random.seed(1)
 
     C = ContinuousSpace([[-5, 5]]) * 2  # product of the same space
-    I = OrdinalSpace([-100, 100], 'x3')
-    N = NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E'])
+    I = OrdinalSpace([-100, 100], 'heihei')
+    N = NominalSpace([['OK', 'A', 'B', 'C', 'D', 'E']] * 2, ['x', 'y'])
 
     print C.sampling(3, 'LHS')
 
     # cartesian product of heterogeneous spaces
     space = C * I * N 
     print space.sampling(10)
+
+    print (N * 3).var_name
+    print (N * 3).sampling(2)

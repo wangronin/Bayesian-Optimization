@@ -103,11 +103,12 @@ class BayesOpt(object):
     def _to_dataframe(self, var, index=0):
         if not hasattr(var[0], '__iter__'):
             var = [var]
+        var = np.array(var, dtype=object)
         N = len(var)
         df = pd.DataFrame(np.c_[var, [0] * N, [None] * N],
                           columns=self.var_names + ['n_eval', 'perf'])
         df[self.con_] = df[self.con_].apply(pd.to_numeric)
-        df[self.int_] = df[self.int_].apply(pd.to_numeric)
+        df[self.int_] = df[self.int_].apply(lambda c: pd.to_numeric(c, downcast='integer'))
         df.index = range(index, index + df.shape[0])
         return df
 
@@ -140,10 +141,10 @@ class BayesOpt(object):
             # TODO: parallel execution 
             perf_, n_eval = x.perf, x.n_eval
             # TODO: handle the evaluation in a better way
-            try:    # for dictionary input
-                __ = [self.obj_func(x[self.var_names].to_dict()) for i in range(runs)]
-            except: # for list input
-                __ = [self.obj_func(self._get_var(x)) for i in range(runs)]
+            # try:    # for dictionary input
+            __ = [self.obj_func(x[self.var_names].to_dict()) for i in range(runs)]
+            # except: # for list input
+                # __ = [self.obj_func(self._get_var(x)) for i in range(runs)]
             perf = np.sum(__)
 
             x.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))

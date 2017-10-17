@@ -144,7 +144,7 @@ class mies(object):
             self.tau_p_d = 1 / np.sqrt(2 * np.sqrt(self.N_d))
 
     def keep_in_bound(self, pop):
-        idx = np.r_[self.id_r, self.id_i]
+        idx = np.sort(np.r_[self.id_r, self.id_i])
         X = np.array([var[idx] for var in pop])
         X = boundary_handling(X, self.bounds[0, :], self.bounds[1, :])
 
@@ -244,8 +244,8 @@ class mies(object):
 
         if self.eval_count != 0:
             fitness = self.f_lambda
-#            sigma = np.atleast_2d([__[self._id_sigma] for __ in self.pop_mu]) 
-#            sigma_mean = np.mean(sigma, axis=0)
+            # sigma = np.atleast_2d([__[self._id_sigma] for __ in self.pop_mu]) 
+            # sigma_mean = np.mean(sigma, axis=0)
             
             # tolerance on fitness in history
             self.histfunval[mod(self.eval_count / self.lambda_ - 1, self.nbin)] = fitness[0]
@@ -258,8 +258,8 @@ class mies(object):
                 self.stop_dict['flatfitness'] = True
             
             # TODO: implement more stop criteria
-#            if any(sigma_mean < 1e-10) or any(sigma_mean > 1e10):
-#                self.stop_dict['sigma'] = True
+            # if any(sigma_mean < 1e-10) or any(sigma_mean > 1e10):
+            #     self.stop_dict['sigma'] = True
 
             # if cond(self.C) > 1e14:
             #     if is_stop_on_warning:

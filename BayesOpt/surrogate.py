@@ -160,7 +160,7 @@ class RrandomForest(object):
         elif isinstance(X, pd.Series) or isinstance(X, pd.DataFrame):
             X = X.values
 
-        # carefull categorical columns should be converted as FactorVector
+        # be carefull: categorical columns should be converted as FactorVector
         to_r = lambda index, column: ro.FloatVector(column) if index not in self._levels.keys() else \
             ro.FactorVector(column, levels=ro.StrVector(self._levels[index]))
         d = {'X' + str(i) : to_r(i, X[:, i]) for i in range(X.shape[1])}
@@ -237,4 +237,3 @@ if __name__ == '__main__':
     # ntree=100,
     # mtry=ceil(self.n_feature * 5 / 6.),
     # nodesize=leaf_size
-
