@@ -1,3 +1,7 @@
+"""
+@author: Hao Wang
+"""
+
 import pdb
 
 import six
@@ -91,7 +95,7 @@ class ContinuousSpace(SearchSpace):
         else: # multiple times the same space
             self.dim = int(self.dim * N)
             self.var_type = np.repeat(self.var_type, N)
-            self.var_name = ['{}_{}'.format(v, k) for v in self.var_name for k in range(N)]
+            self.var_name = ['{}_{}'.format(v, k) for k in range(N) for v in self.var_name]
             self.bounds = self.bounds * N
             self._bounds = np.tile(self._bounds, (1, N))
             return self
@@ -122,10 +126,10 @@ class NominalSpace(SearchSpace):
     def __mul__(self, N):
         if isinstance(N, SearchSpace):
             return super(NominalSpace, self).__mul__(N)
-        else: # multiple times the same space
+        else:  # multiple times the same space
             self.dim = int(self.dim * N)
             self.var_type = np.repeat(self.var_type, N)
-            self.var_name = ['{}_{}'.format(v, k) for v in self.var_name for k in range(N)]
+            self.var_name = ['{}_{}'.format(v, k) for k in range(N) for v in self.var_name ]
             self.bounds = self.bounds * N
             self.levels = OrderedDict([(i, self.bounds[i]) for i in range(self.dim)])
             self._levels = self._levels * N
@@ -150,8 +154,24 @@ class OrdinalSpace(SearchSpace):
         if not hasattr(self, 'var_name'):
             self.var_name = np.array(['i' + str(i) for i in range(self.dim)])
         self.var_type = np.array(['O'] * self.dim)
+
+        # internal for the sampling method
         self._lb, self._ub = zip(*self.bounds)
         assert all(np.array(self._lb) < np.array(self._ub))
+
+    def __mul__(self, N):
+        if isinstance(N, SearchSpace):
+            return super(OrdinalSpace, self).__mul__(N)
+        else:  # multiple times the same space
+            self.dim = int(self.dim * N)
+            self.var_type = np.repeat(self.var_type, N)
+            self.var_name = ['{}_{}'.format(v, k) for k in range(N) for v in self.var_name]
+            self.bounds = self.bounds * N
+            self._lb, self._ub = self._lb * N, self._ub * N
+            return self
+    
+    def __rmul__(self, N):
+        return self.__mul__(N)
     
     def sampling(self, N=1):
         res = np.zeros((N, self.dim), dtype=int)
@@ -163,8 +183,12 @@ if __name__ == '__main__':
     np.random.seed(1)
 
     C = ContinuousSpace([[-5, 5]]) * 2  # product of the same space
-    I = OrdinalSpace([-100, 100], 'heihei')
+    I = OrdinalSpace([[-100, 100], [-5, 5]], ['heihei1', 'heihei2'])
     N = NominalSpace([['OK', 'A', 'B', 'C', 'D', 'E']] * 2, ['x', 'y'])
+
+    I3 = I * 3
+    print I3.sampling()
+    print I3.var_name
 
     print C.sampling(3, 'LHS')
 

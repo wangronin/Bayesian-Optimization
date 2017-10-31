@@ -141,10 +141,10 @@ class BayesOpt(object):
             # TODO: parallel execution 
             perf_, n_eval = x.perf, x.n_eval
             # TODO: handle the evaluation in a better way
-            # try:    # for dictionary input
-            __ = [self.obj_func(x[self.var_names].to_dict()) for i in range(runs)]
-            # except: # for list input
-                # __ = [self.obj_func(self._get_var(x)) for i in range(runs)]
+            try:    # for dictionary input
+                __ = [self.obj_func(x[self.var_names].to_dict()) for i in range(runs)]
+            except: # for list input
+                __ = [self.obj_func(self._get_var(x)) for i in range(runs)]
             perf = np.sum(__)
 
             x.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
