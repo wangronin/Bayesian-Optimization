@@ -24,16 +24,14 @@ class Individual(list):
             return Individual([super(Individual, self).__getitem__(int(key)) for key in keys])
     
     def __setitem__(self, index, values):
-        if isinstance(index, int):
-            if hasattr(values, '__iter__'):
-                if len(values) == 1:
-                    values = values[0]
-                else:
-                    values = Individual([_ for _ in values])
-            super(Individual, self).__setitem__(index, values)
-        
-        elif len(index) == 1:
-            index = index[0]
+        # In python3 hasattr(values, '__iter__') returns True for string type...
+        if hasattr(values, '__iter__') and not isinstance(values, str):
+            values = Individual([_ for _ in values])
+        else:
+            values = [values]
+
+        if not hasattr(index, '__iter__'):
+            index = int(index)
             if hasattr(values, '__iter__'):
                 if len(values) == 1:
                     values = values[0]
@@ -41,13 +39,16 @@ class Individual(list):
                     values = Individual([_ for _ in values])
             super(Individual, self).__setitem__(index, values)
         else:
-            if not hasattr(values, '__iter__'):
-                values = [values]
-            try:
+            index = [i for i in index]
+            if len(index) == 1:
+                index = index[0]
+                if len(values) == 1:
+                    values = values[0]
+                super(Individual, self).__setitem__(index, values)
+            else:
+                assert len(index) == len(values)
                 for i, k in enumerate(index):
                     super(Individual, self).__setitem__(k, values[i])
-            except:
-                pdb.set_trace()
 
     def __add__(self, other):
         return Individual(list.__add__(self, other))
@@ -72,7 +73,7 @@ class mies(object):
         self.max_eval = max_eval
         self.param_type = param_type
         self.plus_selection = False
-        self.levels = levels
+        self.levels = list(levels)
 
         # index of each type of variables in the dataframe
         self.id_r = nonzero(np.array(self.param_type) == 'C')[0]
@@ -149,7 +150,7 @@ class mies(object):
         X = boundary_handling(X, self.bounds[0, :], self.bounds[1, :])
 
         for i in range(len(pop)):
-            X[i, self.id_i] = map(int, X[i, self.id_i])
+            X[i, self.id_i] = list(map(int, X[i, self.id_i]))
             pop[i][idx] = X[i, :]
         return pop
 
@@ -184,7 +185,6 @@ class mies(object):
         f = np.zeros(N)
         for i, individual in enumerate(pop):
             var = individual[self._id_var]
-            
             f[i] = np.sum(self.obj_func(var)) # in case a 1-length array is returned
             self.eval_count += 1
         return f
@@ -248,7 +248,7 @@ class mies(object):
             # sigma_mean = np.mean(sigma, axis=0)
             
             # tolerance on fitness in history
-            self.histfunval[mod(self.eval_count / self.lambda_ - 1, self.nbin)] = fitness[0]
+            self.histfunval[int(mod(self.eval_count / self.lambda_ - 1, self.nbin))] = fitness[0]
             if mod(self.eval_count / self.lambda_, self.nbin) == 0 and \
                 (max(self.histfunval) - min(self.histfunval)) < self.tolfun:
                     self.stop_dict['tolfun'] = True
@@ -304,8 +304,8 @@ class mies(object):
                 self.xopt, self.fopt = xopt_, fopt_
 
             if self.verbose:
-                print 'iteration ', self.iter_count + 1
-                print curr_best[self._id_hyperpar], self.fopt
+                print('iteration ', self.iter_count + 1)
+                print(curr_best[self._id_hyperpar], self.fopt)
 
         self.stop_dict['funcalls'] = self.eval_count
         return self.xopt, self.fopt, self.stop_dict
@@ -321,10 +321,6 @@ if __name__ == '__main__':
     #     else:
     #         tmp = 1
     #     return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + tmp * 2
-    
-    def fitness(x):
-        x_r = np.array(x[:2])
-        return np.sum(x_r ** 2) 
 
     # x0 = [2, 1, 80, 'B']
     # bounds = [[-5, -5, -100], [5, 5, 100]]
@@ -334,4 +330,4 @@ if __name__ == '__main__':
     bounds = [[-5, -5], [5, 5]]
 
     opt = mies(x0, fitness, bounds, None, ['C', 'C'], 5e4, verbose=True)
-    print opt.optimize()
+    print(opt.optimize())

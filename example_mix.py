@@ -10,7 +10,7 @@ import pdb
 
 import numpy as np
 from BayesOpt import BayesOpt
-from BayesOpt.Surrogate import RrandomForest, RandomForest
+from BayesOpt.Surrogate import RandomForest
 from BayesOpt.SearchSpace import ContinuousSpace, NominalSpace, OrdinalSpace
 
 np.random.seed(123)

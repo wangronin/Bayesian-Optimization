@@ -70,7 +70,7 @@ class BayesOpt(object):
         # paramter: acquisition function optimziation
         mask = np.nonzero(self._space.C_mask | self._space.O_mask)[0]
         self._bounds = np.array([self._space.bounds[i] for i in mask])
-        self._levels = self._space.levels.values()
+        self._levels = list(self._space.levels.values())
         self._optimizer = optimizer
         self._max_eval = int(5e2 * self.dim) 
         self._random_start = int(10 * self.dim) if n_restart is None else n_restart
@@ -146,7 +146,7 @@ class BayesOpt(object):
             except: # for list input
                 __ = [self.obj_func(self._get_var(x)) for i in range(runs)]
             perf = np.sum(__)
-
+            
             x.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
             x.n_eval += runs
 
@@ -304,7 +304,8 @@ class BayesOpt(object):
 
         self.stop_dict['n_eval'] = self.eval_count
         self.stop_dict['n_iter'] = self.iter_count
-        return self.incumbent_id, self.stop_dict
+        incumbent = self.data.loc[[self.incumbent_id]]
+        return incumbent, self.stop_dict
 
     def check_stop(self):
         # TODO: add more stop criteria
