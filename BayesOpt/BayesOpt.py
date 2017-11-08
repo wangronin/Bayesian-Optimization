@@ -146,7 +146,7 @@ class BayesOpt(object):
             except: # for list input
                 __ = [self.obj_func(self._get_var(x)) for i in range(runs)]
             perf = np.sum(__)
-            
+
             x.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
             x.n_eval += runs
 
