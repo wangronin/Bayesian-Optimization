@@ -82,6 +82,7 @@ def boundary_handling(x, lb, ub):
     return x
 
 if __name__ == '__main__':
+    # TODO: goes to unittest
     np.random.seed(1)
     perf = np.random.randn(20)
     print perf

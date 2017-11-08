@@ -54,7 +54,7 @@ model = RandomForest(levels=search_space.levels)
 # model = RrandomForest(levels=search_space.levels, seed=1, max_features='sqrt')
 
 opt = BayesOpt(search_space, obj_func, model, max_iter=n_step, random_seed=None,
-               n_init_sample=n_init_sample, n_point=3, minimize=True, verbose=True, debug=False,
-               optimizer='MIES')
+               n_init_sample=n_init_sample, n_point=3, n_jobs=3, minimize=True, 
+               verbose=True, debug=False, optimizer='MIES')
 
 opt.run()
