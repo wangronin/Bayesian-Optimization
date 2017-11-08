@@ -16,7 +16,7 @@ import numpy as np
 from numpy.random import randint, rand
 from scipy.optimize import fmin_l_bfgs_b
 
-from .InfillCriteria import EI
+from .InfillCriteria import EI, MGF
 from .optimizer import mies, cma_es
 from .utils import proportional_selection
 
@@ -32,7 +32,7 @@ class BayesOpt(object):
     """
     def __init__(self, search_space, obj_func, surrogate, 
                  eval_budget=None, max_iter=None, n_init_sample=None, 
-                 minimize=True, noisy=False, wait_iter=3, 
+                 n_point=1, minimize=True, noisy=False, wait_iter=3, 
                  n_restart=None, optimizer='MIES', 
                  verbose=False, random_seed=None,  debug=False):
 
@@ -43,6 +43,7 @@ class BayesOpt(object):
         self.obj_func = obj_func
         self.noisy = noisy
         self.surrogate = surrogate
+        self.n_point = n_point
 
         self.minimize = minimize
         self.dim = len(self._space)
@@ -181,7 +182,7 @@ class BayesOpt(object):
         # always generate mu + 1 candidate solutions
         while True:
             confs_, acqui_opts_ = self.arg_max_acquisition()
-            if 1 < 2: # only use the best acquisition point 
+            if self.n_point == 1: # only use the best acquisition point 
                 confs_ = confs_[0]
             
             confs_ = self._to_dataframe(confs_, self.data.shape[0])
@@ -322,7 +323,13 @@ class BayesOpt(object):
             plugin = np.min(self.data.perf) if self.minimize else np.max(self.data.perf)
             
         # TODO: add other criteria as options
-        acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
+        if self.n_point > 1:
+            t = np.exp(np.random.randn())
+            # or UCB here...
+            acquisition_func = MGF(self.surrogate, plugin, minimize=self.minimize, t=t)
+        else:
+            acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
+
         def func(x):
             x = [_ for _ in x]
             res = acquisition_func(x, dx=dx)
@@ -335,60 +342,62 @@ class BayesOpt(object):
         """
         eval_budget = self._max_eval
         fopt = np.inf
-        optima, foptima = [], []
+        candidates, values = [], []
         wait_count = 0
 
         if self.verbose:
             print 'acquisition function optimziation...'
         
         # TODO: add IPOP-CMA-ES here for testing
-        for iteration in range(self._random_start):
-            x0 = self._space.sampling(1)[0]
-            
-            # TODO: when the surrogate is GP, implement a GA-BFGS hybrid algorithm
-            if self._optimizer == 'BFGS':
-                if self.N_d + self.N_i != 0:
-                    raise ValueError('BFGS is not supported with mixed variable types.')
-                obj_func = self._acquisition_func(plugin, dx=True)
-                xopt_, fopt_, stop_dict = fmin_l_bfgs_b(obj_func, x0, pgtol=1e-8,
-                                                        factr=1e6, bounds=self._bounds,
-                                                        maxfun=eval_budget)
-                xopt_ = xopt_.flatten().tolist()
-                fopt_ = np.sum(fopt_)
+        for q in range(self.n_point):
+            optima, foptima = [], []
+            for iteration in range(self._random_start):
+                x0 = self._space.sampling(1)[0]
                 
-                if stop_dict["warnflag"] != 0 and self.verbose:
-                    warnings.warn("L-BFGS-B terminated abnormally with the "
-                                  " state: %s" % stop_dict)
-                                  
-            elif self._optimizer == 'MIES':
-                obj_func = self._acquisition_func(plugin, dx=False)
-                opt = mies(x0, obj_func, self._bounds.T, self._levels,
-                           self.param_type, eval_budget, minimize=True, 
-                           verbose=False)                            
-                xopt_, fopt_, stop_dict = opt.optimize()
+                # TODO: when the surrogate is GP, implement a GA-BFGS hybrid algorithm
+                if self._optimizer == 'BFGS':
+                    if self.N_d + self.N_i != 0:
+                        raise ValueError('BFGS is not supported with mixed variable types.')
+                    obj_func = self._acquisition_func(plugin, dx=True)
+                    xopt_, fopt_, stop_dict = fmin_l_bfgs_b(obj_func, x0, pgtol=1e-8,
+                                                            factr=1e6, bounds=self._bounds,
+                                                            maxfun=eval_budget)
+                    xopt_ = xopt_.flatten().tolist()
+                    fopt_ = np.sum(fopt_)
+                    
+                    if stop_dict["warnflag"] != 0 and self.verbose:
+                        warnings.warn("L-BFGS-B terminated abnormally with the "
+                                    " state: %s" % stop_dict)
+                                    
+                elif self._optimizer == 'MIES':
+                    obj_func = self._acquisition_func(plugin, dx=False)
+                    opt = mies(x0, obj_func, self._bounds.T, self._levels,
+                            self.param_type, eval_budget, minimize=True, 
+                            verbose=False)                            
+                    xopt_, fopt_, stop_dict = opt.optimize()
 
-            if fopt_ < fopt:
-                fopt = fopt_
-                wait_count = 0
-                if self.verbose:
-                    print '[DEBUG] restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
-                        stop_dict['funcalls'], fopt_)
-            else:
-                wait_count += 1
+                if fopt_ < fopt:
+                    fopt = fopt_
+                    wait_count = 0
+                    if self.verbose:
+                        print '[DEBUG] restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
+                            stop_dict['funcalls'], fopt_)
+                else:
+                    wait_count += 1
 
-            eval_budget -= stop_dict['funcalls']
-            optima.append(xopt_)
-            foptima.append(-fopt_)
+                eval_budget -= stop_dict['funcalls']
+                optima.append(xopt_)
+                foptima.append(-fopt_)
+                
+                if eval_budget <= 0 or wait_count >= self._wait_iter:
+                    break
             
-            if eval_budget <= 0 or wait_count >= self._wait_iter:
-                break
-        
-        # sort the optima in descending order
-        idx = np.argsort(foptima)[::-1]
-        optima = [optima[_] for _ in idx]
-        foptima = [foptima[_] for _ in idx]
+            # sort the optima in descending order
+            idx = np.argsort(foptima)[::-1]
+            candidates += [optima[0]]
+            values += [foptima[0]]
             
-        return optima, foptima
+        return candidates, values
 
     def _check_params(self):
         assert hasattr(self.obj_func, '__call__')

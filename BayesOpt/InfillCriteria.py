@@ -9,7 +9,7 @@ import pdb
 import warnings
 from abc import abstractmethod
 import numpy as np
-from numpy import sqrt
+from numpy import sqrt, exp
 from scipy.stats import norm
 
 normcdf, normpdf = norm.cdf, norm.pdf
@@ -170,7 +170,11 @@ class MGF(InfillCriteria):
     """
     My new acquisition function proposed in SMC'17 paper
     """
-    def __call__(self, X, t=1, dx=False):
+    def __init__(self, model, plugin=None, minimize=True, t=1):
+        super(MGF, self).__init__(model, plugin, minimize)
+        self.t = t
+
+    def __call__(self, X, dx=False):
         X = self.check_X(X)
         y_hat, sd2 = self.model.predict(X, eval_MSE=True)
         sd = sqrt(sd2)
@@ -178,16 +182,18 @@ class MGF(InfillCriteria):
         if self.minimize:
             y_hat = -y_hat
 
-        y_hat_p = y_hat - t * sd ** 2.
+        y_hat_p = y_hat - self.t * sd ** 2.
         beta_p = (self.plugin - y_hat_p) / sd
-        term = t * (self.plugin - y_hat - 1)
-        value = normcdf(beta_p) * exp(term + t ** 2. * s ** 2. / 2.)
+        term = self.t * (self.plugin - y_hat - 1)
+        value = normcdf(beta_p) * exp(term + self.t ** 2. * s ** 2. / 2.)
 
         if np.isinf(value):
             value = 0.
-        
+
+        # TODO: implement this
         if dx:
             pass
+        
 
 # TODO: implement infill_criteria for noisy functions and MGF-based ceiterion
 class GEI(InfillCriteria):
