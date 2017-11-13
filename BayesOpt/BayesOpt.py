@@ -11,7 +11,6 @@ from __future__ import print_function
 import pdb
 import warnings, dill, functools, copy_reg, itertools
 from joblib import Parallel, delayed
-import tensorflow as tf
 
 import pandas as pd
 import numpy as np
@@ -31,9 +30,9 @@ class BayesOpt(object):
     Generic Bayesian optimization algorithm
     """
     def __init__(self, search_space, obj_func, surrogate, 
-                 eval_budget=None, max_iter=None, n_init_sample=None, 
-                 n_point=1, n_jobs=1, minimize=True, noisy=False, wait_iter=3, 
-                 n_restart=None, optimizer='MIES', 
+                 minimize=True, noisy=False, eval_budget=None, max_iter=None, 
+                 n_init_sample=None, n_point=1, n_jobs=1, backend='multiprocessing',
+                 n_restart=None, optimizer='MIES', wait_iter=3,
                  verbose=False, random_seed=None,  debug=False):
 
         self.debug = debug
@@ -45,6 +44,7 @@ class BayesOpt(object):
         self.surrogate = surrogate
         self.n_point = n_point
         self.n_jobs = min(self.n_point, n_jobs)
+        self._parallel_backend = backend
 
         self.minimize = minimize
         self.dim = len(self._space)
@@ -139,10 +139,8 @@ class BayesOpt(object):
         return confs.loc[idx]
 
     def _eval(self, x, runs=1):
-        # with tf.device_scope('/gpu:{}'.format(gpu_no)):
-        # TODO: parallel execution 
         perf_, n_eval = x.perf, x.n_eval
-        # TODO: handle the evaluation in a better way
+        # TODO: handle the input type in a better way
         try:    # for dictionary input
             __ = [self.obj_func(x[self.var_names].to_dict()) for i in range(runs)]
         except: # for list input
@@ -165,18 +163,22 @@ class BayesOpt(object):
             self._eval(data)
         
         elif isinstance(data, pd.DataFrame): 
-            # parallel execution using joblib
             if self.n_jobs > 1:
-                res = Parallel(n_jobs=self.n_jobs, verbose=False)(
-                    delayed(self._eval, check_pickle=False)(row) for k, row in data.iterrows())
-                
-                x, runs, hist, hist_id = zip(*res)
-                self.eval_count += sum(runs)
-                self.eval_hist += list(itertools.chain(*hist))
-                self.eval_hist_id += list(itertools.chain(*hist_id))
-                for i, k in enumerate(data.index):
-                    data.loc[k] = x[i]
+                if self._parallel_backend == 'multiprocessing': # parallel execution using joblib
+                    res = Parallel(n_jobs=self.n_jobs, verbose=False)(
+                        delayed(self._eval, check_pickle=False)(row) for k, row in data.iterrows())
                     
+                    x, runs, hist, hist_id = zip(*res)
+                    self.eval_count += sum(runs)
+                    self.eval_hist += list(itertools.chain(*hist))
+                    self.eval_hist_id += list(itertools.chain(*hist_id))
+                    for i, k in enumerate(data.index):
+                        data.loc[k] = x[i]
+                elif self._parallel_backend == 'MPI': # parallel execution using MPI
+                    # TODO: to use InstanceRunner here
+                    pass
+                elif self._parallel_backend == 'Spark': # parallel execution using Spark
+                    pass        
             else:
                 for k, row in data.iterrows():
                     self._eval(row)
@@ -187,9 +189,10 @@ class BayesOpt(object):
 
         # normalization the response for numerical stability
         # e.g., for MGF-based acquisition function
-        perf_min = np.min(perf)
-        perf_max = np.max(perf)
-        perf_ = (perf - perf_min) / (perf_max - perf_min)
+        # perf_min = np.min(perf)
+        # perf_max = np.max(perf)
+        # perf_ = (perf - perf_min) / (perf_max - perf_min)
+        perf_ = perf
 
         # fit the surrogate model
         self.surrogate.fit(X, perf_)
@@ -344,7 +347,8 @@ class BayesOpt(object):
 
     def _acquisition(self, plugin=None, dx=False):
         if plugin is None:
-            plugin = np.min(self.data.perf) if self.minimize else -np.max(self.data.perf)
+            # plugin = np.min(self.data.perf) if self.minimize else -np.max(self.data.perf)
+            plugin = np.min(self.data.perf)
             
         if self.n_point > 1:  # multi-point method
             # create a portofolio of n infill-criteria by 

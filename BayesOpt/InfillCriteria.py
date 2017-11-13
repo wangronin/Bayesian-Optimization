@@ -6,17 +6,19 @@ Created on Mon Sep  4 21:44:21 2017
 """
 
 import pdb
+
 import warnings
-from abc import abstractmethod
 import numpy as np
 from numpy import sqrt, exp, pi
 from scipy.stats import norm
+from abc import ABCMeta, abstractmethod
 
-normcdf, normpdf = norm.cdf, norm.pdf
+# warnings.filterwarnings("error")
 
 # TODO: perphas also enable acquisition function engineering here?
 # meaning the combination of the acquisition functions
-class InfillCriteria(object):
+class InfillCriteria:
+    __metaclass__ = ABCMeta
     def __init__(self, model, plugin=None, minimize=True):
         assert hasattr(model, 'predict')
         self.model = model
@@ -28,13 +30,28 @@ class InfillCriteria(object):
     
     @abstractmethod
     def __call__(self, X):
-        pass
+        raise NotImplementedError
+
+    def _predict(self, X):
+        y_hat, sd2 = self.model.predict(X, eval_MSE=True)
+        sd = sqrt(sd2)
+        if not self.minimize:
+            y_hat = -y_hat
+        return y_hat, sd
+
+    def _gradient(self, X):
+        y_dx, sd2_dx = self.model.gradient(X)
+        sd_dx = sd2_dx / (2. * sd)
+        if not self.minimize:
+            y_dx = -y_dx
+        return y_dx, sd_dx
 
     def check_X(self, X):
         """Keep input as '2D' object 
         """
         return [X] if not hasattr(X[0], '__iter__') else X
 
+# TODO: test UCB implementation
 class UCB(InfillCriteria):
     """
     Upper Confidence Bound 
@@ -45,26 +62,21 @@ class UCB(InfillCriteria):
 
     def __call__(self, X, dx=False):
         X = self.check_X(X)
-        y_hat, sd2 = self.model.predict(X, eval_MSE=True)
-        sd = sqrt(sd2)
+        y_hat, sd = self._predict(X)
 
-        if self.minimize:
-            y_hat = -y_hat
+        try:
+            f_value = y_hat + self.alpha * sd
+        except Exception: # in case of numerical errors
+            f_value = 0
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings('error')
-            try:
-                value = y_hat + self.alpha * sd
-            except Warning: # in case of numerical errors
-                # TODO: find out which warning is generated and remove try...except
-                value = 0
         if dx:
-            assert hasattr(self.model, 'gradient')
-            with warnings.catch_warnings():
-                warnings.filterwarnings('error')
-                grad = None
-            return value, grad 
-        return value
+            y_dx, sd_dx = self._gradient(X)
+            try:
+                f_dx = y_dx + self.alpha * sd_dx
+            except Exception:
+                f_dx = np.zeros((len(X[0]), 1))
+            return f_value, f_dx 
+        return f_value
 
 class EI(InfillCriteria):
     """
@@ -72,109 +84,64 @@ class EI(InfillCriteria):
     """
     def __call__(self, X, dx=False):
         X = self.check_X(X)
-        y_hat, sd2 = self.model.predict(X, eval_MSE=True)
-        sd = sqrt(sd2)
+        y_hat, sd = self._predict(X)
 
-        if not self.minimize:
-            y_hat = -y_hat
+        try:
+            # TODO: I have save xcr_ becasue xcr * sd != xcr_ numerically
+            # find out the cause of such an error, probably representation error...
+            xcr_ = self.plugin - y_hat
+            xcr = xcr_ / sd
+            xcr_prob, xcr_dens = norm.cdf(xcr), norm.pdf(xcr)
+            f_value = xcr_ * xcr_prob + sd * xcr_dens
+        except Exception: # in case of numerical errors
+            f_value = 0
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings('error')
-            try:
-                # TODO: I have save xcr_ becasue xcr * sd != xcr_ numerically
-                # find out the cause of such an error, probably representation error...
-                xcr_ = self.plugin - y_hat
-                xcr = xcr_ / sd
-                xcr_prob, xcr_dens = normcdf(xcr), normpdf(xcr)
-                value = xcr_ * xcr_prob + sd * xcr_dens
-            except Warning: # in case of numerical errors
-                # TODO: find out which warning is generated and remove try...except
-                value = 0
         if dx:
-            assert hasattr(self.model, 'gradient')
-            with warnings.catch_warnings():
-                warnings.filterwarnings('error')
-                try:
-                    y_dx, sd2_dx = self.model.gradient(X)
-                    # TODO: verify this by plotting the gradient field 
-                    if not self.minimize:
-                        y_dx = -y_dx
-                    sd_dx = sd2_dx / (2. * sd)
-                    grad = -y_dx * xcr_prob + sd_dx * xcr_dens
-                except Warning:
-                    dim = len(X[0])
-                    grad = np.zeros((dim, 1))
-            return value, grad 
-        return value
+            y_dx, sd_dx = self._gradient(X)
+            try:
+                f_dx = -y_dx * xcr_prob + sd_dx * xcr_dens
+            except Exception:
+                f_dx = np.zeros((len(X[0]), 1))
+            return f_value, f_dx 
+        return f_value
 
 class EpsilonPI(InfillCriteria):
     """
-    epsilon Probability of Improvement
-    # TODO: implement and validate this
+    epsilon-Probability of Improvement
+    # TODO: verify the implementation
     """
-    def __init__(self, model, plugin=None, epsilon=1e-10, minimize=True):
+    def __init__(self, model, plugin=None, minimize=True, epsilon=1e-10):
         super(EpsilonPI, self).__init__(model, plugin, minimize)
         self.epsilon = epsilon
 
     def __call__(self, X, dx=False):
         X = self.check_X(X)
-        y_hat, sd2 = self.model.predict(X, eval_MSE=True)
-        sd = sqrt(sd2)
+        y_hat, sd = self._predict(X)
 
-        if not self.minimize:
-            y_hat = -y_hat
+        coeff = 1 - self.epsilon if y_hat > 0 else (1 + self.epsilon)
 
-        xcr_ = self.plugin - y_hat 
-        xcr = xcr_ / sd
-        with warnings.catch_warnings():
-            warnings.filterwarnings('error')
-            try:
-                # TODO: remove the warning handling here
-                value = normcdf(xcr)
-            except Warning:
-                value = 0.
+        try:
+            xcr_ = self.plugin - coeff * y_hat 
+            xcr = xcr_ / sd
+            f_value = norm.cdf(xcr)
+        except Exception:
+            f_value = 0.
+
         if dx:
-            assert hasattr(self.model, 'gradient')
-            y_dx, sd2_dx = self.model.gradient(X)
-            if not self.minimize:
-                y_dx = -y_dx
+            y_dx, sd_dx = self._gradient(X)
+            try:
+                f_dx = -(coeff * y_dx + xcr * sd_dx) * norm.pdf(xcr) / sd
+            except Exception:
+                f_dx = np.zeros((len(X[0]), 1))
+            return f_value, f_dx 
+        return f_value
 
-            sd_dx = sd2_dx / (2. * sd)
-            grad = -(y_dx + xcr * sd_dx) * normpdf(xcr) / sd
-            return value, grad 
-        return value
-
-class PI(InfillCriteria):
-    """Probability of Improvement
+class PI(EpsilonPI):
     """
-    def __call__(self, X, dx=False):
-        X = self.check_X(X)
-        y_hat, sd2 = self.model.predict(X, eval_MSE=True)
-        sd = sqrt(sd2)
-
-        if not self.minimize:
-            y_hat = -y_hat
-
-        xcr_ = self.plugin - y_hat 
-        xcr = xcr_ / sd
-        with warnings.catch_warnings():
-            warnings.filterwarnings('error')
-            try:
-                # TODO: remove the warning handling here
-                value = normcdf(xcr)
-            except Warning:
-                value = 0.
-
-        if dx:
-            assert hasattr(self.model, 'gradient')
-            y_dx, sd2_dx = self.model.gradient(X)
-            if not self.minimize:
-                y_dx= -y_dx
-
-            sd_dx = sd2_dx / (2. * sd)
-            grad = -(y_dx + xcr * sd_dx) * normpdf(xcr) / sd
-            return value, grad 
-        return value
+    Probability of Improvement
+    """
+    def __init__(self, model, plugin=None, minimize=True):
+        super(PI, self).__init__(model, plugin, minimize, epsilon=0)
 
 class MGFI(InfillCriteria):
     """
@@ -187,32 +154,30 @@ class MGFI(InfillCriteria):
 
     def __call__(self, X, dx=False):
         X = self.check_X(X)
-
-        # this section can be put into the parent class
-        y_hat, sd2 = self.model.predict(X, eval_MSE=True)
-        sd = sqrt(sd2)
-
-        if not self.minimize:
-            y_hat = -y_hat
+        y_hat, sd = self._predict(X)
 
         y_hat_p = y_hat - self.t * sd ** 2.
         beta_p = (self.plugin - y_hat_p) / sd
         term = self.t * (self.plugin - y_hat - 1)
-        value = normcdf(beta_p) * exp(term + self.t ** 2. * sd ** 2. / 2.)
+        value = norm.cdf(beta_p) * exp(term + self.t ** 2. * sd ** 2. / 2.)
 
         if np.isinf(value):
             value = 0.
 
         # TODO: implement this
         if dx:
-            pass
+            y_dx, sd_dx = self._gradient(X)
         return value
         
-# TODO: implement infill_criteria for noisy functions and MGF-based ceiterion
 class GEI(InfillCriteria):
-    """Generalized Expected Improvement 
     """
-    def __call__(self, X):
+    Generalized Expected Improvement 
+    """
+    def __init__(self, model, plugin=None, minimize=True, g=1):
+        super(GEI, self).__init__(model, plugin, minimize)
+        self.g = g
+
+    def __call__(self, X, dx=False):
         pass
 
 if __name__ == '__main__':
