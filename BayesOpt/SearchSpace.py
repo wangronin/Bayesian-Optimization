@@ -1,7 +1,7 @@
 """
 @author: Hao Wang
 """
-
+from __future__ import print_function
 import pdb
 
 import six
@@ -15,10 +15,12 @@ from pyDOE import lhs
 
 class SearchSpace(object):
     def __init__(self, bounds, var_name):
-        if not hasattr(bounds[0], '__iter__'):
-            self.bounds = [tuple(bounds)]
-        else:
+        # In python3 hasattr(bounds[0], '__iter__') returns True for string type...
+        if hasattr(bounds[0], '__iter__') and not isinstance(bounds[0], str):
             self.bounds = [tuple(b) for b in bounds]
+        else:
+            self.bounds = [tuple(bounds)]
+            
         self.dim = len(self.bounds)
         if var_name is not None:
             var_name = [var_name] if isinstance(var_name, six.string_types) else var_name
@@ -187,14 +189,14 @@ if __name__ == '__main__':
     N = NominalSpace([['OK', 'A', 'B', 'C', 'D', 'E']] * 2, ['x', 'y'])
 
     I3 = I * 3
-    print I3.sampling()
-    print I3.var_name
+    print(I3.sampling())
+    print(I3.var_name)
 
-    print C.sampling(3, 'LHS')
+    print(C.sampling(3, 'LHS'))
 
     # cartesian product of heterogeneous spaces
     space = C * I * N 
-    print space.sampling(10)
+    print(space.sampling(10))
 
-    print (N * 3).var_name
-    print (N * 3).sampling(2)
+    print((N * 3).var_name)
+    print((N * 3).sampling(2))

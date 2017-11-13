@@ -5,6 +5,7 @@ Created on Mon May 19 10:17:43 2014
 @author: Hao Wang
 @email: wangronin@gmail.com
 """
+from __future__ import print_function
 import pdb
 from copy import copy
 import numpy as np
@@ -27,7 +28,7 @@ def proportional_selection(perf, N, minimize=True, replacement=True):
     else:
         assert N <= len(perf)
         perf_ = copy(perf)
-        idx = range(0, len(perf))
+        idx = list(range(0, len(perf)))
         res = []
         for i in range(N):
             if len(perf_) == 1:
@@ -85,5 +86,5 @@ if __name__ == '__main__':
     # TODO: goes to unittest
     np.random.seed(1)
     perf = np.random.randn(20)
-    print perf
-    print proportional_selection(perf, 20, minimize=False, replacement=False)
+    print(perf)
+    print(proportional_selection(perf, 20, minimize=False, replacement=False))

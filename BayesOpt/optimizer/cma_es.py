@@ -358,7 +358,7 @@ class cma_es(object):
         else:
             try:
                 w, e_vector = eigh(C)
-                e_value = sqrt(map(complex, w)).reshape(-1, 1)
+                e_value = sqrt(list(map(complex, w))).reshape(-1, 1)
                 if any(~isreal(e_value)) or any(isinf(e_value)):
                     if self.is_stop_on_warning:
                         self.stop_dict['EigenvalueError'] = True

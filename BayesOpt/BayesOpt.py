@@ -5,35 +5,34 @@ Created on Mon Mar 6 15:05:01 2017
 @author: wangronin
 """
 
-from __future__ import division   # important! for the float division
+from __future__ import division
+from __future__ import print_function
 
 import pdb
-import warnings
-import copy_reg, dill
+import warnings, dill, functools, copy_reg, itertools
 from joblib import Parallel, delayed
+import tensorflow as tf
 
 import pandas as pd
 import numpy as np
 
-from numpy.random import randint, rand
 from scipy.optimize import fmin_l_bfgs_b
 from sklearn.metrics import r2_score
 
-from .InfillCriteria import EI, MGF
-from .optimizer import mies, cma_es
+from .InfillCriteria import EI, MGFI
+from .optimizer import mies
 from .utils import proportional_selection
 
-MACHINE_EPSILON = np.finfo(np.double).eps
+# TODO: remove the usage of pandas here change it to customized np.ndarray
+# TODO: adding logging system
 
-# TODO: remove the usage of pandas here 
-# change it to np.ndarray
 class BayesOpt(object):
     """
     Generic Bayesian optimization algorithm
     """
     def __init__(self, search_space, obj_func, surrogate, 
                  eval_budget=None, max_iter=None, n_init_sample=None, 
-                 n_point=1, n_jobs=2, minimize=True, noisy=False, wait_iter=3, 
+                 n_point=1, n_jobs=1, minimize=True, noisy=False, wait_iter=3, 
                  n_restart=None, optimizer='MIES', 
                  verbose=False, random_seed=None,  debug=False):
 
@@ -92,6 +91,8 @@ class BayesOpt(object):
         self.random_seed = random_seed
         if self.random_seed:
             np.random.seed(self.random_seed)
+            
+        copy_reg.pickle(self._eval, dill.pickles) # for pickling 
 
     def _get_var(self, data):
         """
@@ -112,7 +113,7 @@ class BayesOpt(object):
                           columns=self.var_names + ['n_eval', 'perf'])
         df[self.con_] = df[self.con_].apply(pd.to_numeric)
         df[self.int_] = df[self.int_].apply(lambda c: pd.to_numeric(c, downcast='integer'))
-        df.index = range(index, index + df.shape[0])
+        df.index = list(range(index, index + df.shape[0]))
         return df
 
     def _compare(self, perf1, perf2):
@@ -137,33 +138,49 @@ class BayesOpt(object):
                 idx.append(i)
         return confs.loc[idx]
 
+    def _eval(self, x, runs=1):
+        # with tf.device_scope('/gpu:{}'.format(gpu_no)):
+        # TODO: parallel execution 
+        perf_, n_eval = x.perf, x.n_eval
+        # TODO: handle the evaluation in a better way
+        try:    # for dictionary input
+            __ = [self.obj_func(x[self.var_names].to_dict()) for i in range(runs)]
+        except: # for list input
+            __ = [self.obj_func(self._get_var(x)) for i in range(runs)]
+        perf = np.sum(__)
+
+        x.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
+        x.n_eval += runs
+
+        self.eval_count += runs
+        self.eval_hist += __
+        self.eval_hist_id += [x.name] * runs
+        
+        return x, runs, __, [x.name] * runs
+
     def evaluate(self, data, runs=1):
         """ Evaluate the candidate points and update evaluation info in the dataframe
         """
-        def eval(x):
-            # TODO: parallel execution 
-            perf_, n_eval = x.perf, x.n_eval
-            # TODO: handle the evaluation in a better way
-            try:    # for dictionary input
-                __ = [self.obj_func(x[self.var_names].to_dict()) for i in range(runs)]
-            except: # for list input
-                __ = [self.obj_func(self._get_var(x)) for i in range(runs)]
-            perf = np.sum(__)
-
-            x.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
-            x.n_eval += runs
-
-            self.eval_count += runs
-            self.eval_hist += __
-            self.eval_hist_id += [x.index] * runs
-        
         if isinstance(data, pd.Series):
-            eval(data)
+            self._eval(data)
         
         elif isinstance(data, pd.DataFrame): 
-            for k, row in data.iterrows():
-                eval(row)
-                data.loc[k, ['n_eval', 'perf']] = row[['n_eval', 'perf']]
+            # parallel execution using joblib
+            if self.n_jobs > 1:
+                res = Parallel(n_jobs=self.n_jobs, verbose=False)(
+                    delayed(self._eval, check_pickle=False)(row) for k, row in data.iterrows())
+                
+                x, runs, hist, hist_id = zip(*res)
+                self.eval_count += sum(runs)
+                self.eval_hist += list(itertools.chain(*hist))
+                self.eval_hist_id += list(itertools.chain(*hist_id))
+                for i, k in enumerate(data.index):
+                    data.loc[k] = x[i]
+                    
+            else:
+                for k, row in data.iterrows():
+                    self._eval(row)
+                    data.loc[k, ['n_eval', 'perf']] = row[['n_eval', 'perf']]
 
     def fit_and_assess(self):
         X, perf = self._get_var(self.data), self.data['perf'].values
@@ -183,7 +200,7 @@ class BayesOpt(object):
 
         # TODO: in case r2 is really poor, re-fit the model or transform the input? 
         if self.verbose:
-            print 'Surrogate model r2: {}'.format(self.r2)
+            print('Surrogate model r2: {}'.format(self.r2))
         return self.r2
 
     def select_candidate(self):
@@ -191,9 +208,6 @@ class BayesOpt(object):
         # always generate mu + 1 candidate solutions
         while True:
             confs_, acqui_opts_ = self.arg_max_acquisition()
-            if self.n_point == 1: # only use the best acquisition point 
-                confs_ = confs_[0]
-            
             confs_ = self._to_dataframe(confs_, self.data.shape[0])
             confs_ = self._remove_duplicate(confs_)
 
@@ -233,7 +247,7 @@ class BayesOpt(object):
             r, extra_run = 1, 1
             conf = self.data.loc[i]
             self.evaluate(conf, 1)
-            print conf.to_frame().T
+            print(conf.to_frame().T)
 
             if conf.n_eval > self.incumbent_id.n_eval:
                 self.incumbent_id = self.evaluate(self.incumbent_id, 1)
@@ -243,28 +257,28 @@ class BayesOpt(object):
                 if self._compare(self.incumbent_id.perf, conf.perf):
                     self.incumbent_id = self.evaluate(self.incumbent_id, 
                                                    min(extra_run, maxR - self.incumbent_id.n_eval))
-                    print self.incumbent_id.to_frame().T
+                    print(self.incumbent_id.to_frame().T)
                     break
                 if conf.n_eval > self.incumbent_id.n_eval:
                     self.incumbent_id = conf
                     if self.verbose:
-                        print '[DEBUG] iteration %d -- new incumbent selected:' % self.iter_count
-                        print '[DEBUG] {}'.format(self.incumbent_id)
-                        print '[DEBUG] with performance: {}'.format(self.incumbent_id.perf)
-                        print
+                        print('[DEBUG] iteration %d -- new incumbent selected:' % self.iter_count)
+                        print('[DEBUG] {}'.format(self.incumbent_id))
+                        print('[DEBUG] with performance: {}'.format(self.incumbent_id.perf))
+                        print()
                     break
 
                 r = min(2 * r, self.incumbent_id.n_eval - conf.n_eval)
                 self.data.loc[i] = self.evaluate(conf, r)
-                print self.conf.to_frame().T
+                print(self.conf.to_frame().T)
                 extra_run += r
     
     def _initialize(self):
         """Generate the initial data set (DOE) and construct the surrogate model
         """
         if self.verbose:
-            print 'selected surrogate model:', self.surrogate.__class__ 
-            print 'building the initial design of experiemnts...'
+            print('selected surrogate model:', self.surrogate.__class__) 
+            print('building the initial design of experiemnts...')
 
         # self.data = self.sampling(self.n_init_sample)
         samples = self._space.sampling(self.n_init_sample)
@@ -298,13 +312,13 @@ class BayesOpt(object):
         if self.debug:
             tmp = np.array([_ for _ in self.data.iloc[-1, 0:2].values])
             np.set_printoptions(precision=30)
-            print self.iter_count, tmp, np.random.get_state()[2]
+            print(self.iter_count, tmp, np.random.get_state()[2])
             
         if self.verbose:
-            print
-            print 'iteration {}, current incumbent is:'.format(self.iter_count)
-            print self.data.loc[[self.incumbent_id]]
-            print 
+            print()
+            print('iteration {}, current incumbent is:'.format(self.iter_count))
+            print(self.data.loc[[self.incumbent_id]])
+            print()
         
         incumbent = self.data.loc[[self.incumbent_id]]
         return self._get_var(incumbent)[0], incumbent.perf.values
@@ -328,43 +342,41 @@ class BayesOpt(object):
 
         return len(self.stop_dict)
 
-    def _acquisition_func(self, plugin=None, dx=False):
+    def _acquisition(self, plugin=None, dx=False):
         if plugin is None:
             plugin = np.min(self.data.perf) if self.minimize else -np.max(self.data.perf)
             
-        # TODO: add other criteria as options
-        if self.n_point > 1:
+        if self.n_point > 1:  # multi-point method
+            # create a portofolio of n infill-criteria by 
+            # instantiating n 't' values from the log-normal distribution
+            # exploration and exploitation
+            # TODO: perhaps also introduce cooling schedule for MGF
+            # TODO: other method: niching, UCB, q-EI
             t = np.exp(0.5 * np.random.randn())
-            # or UCB here...
-            acquisition_func = MGF(self.surrogate, plugin, minimize=self.minimize, t=t)
+            acquisition_func = MGFI(self.surrogate, plugin, minimize=self.minimize, t=t)
         elif self.n_point == 1:
             acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
-
-        def func(x):
-            x = [_ for _ in x]
-            res = acquisition_func(x, dx=dx)
-            return (-res[0], -res[1]) if dx else -res
-        return func
+        
+        return functools.partial(acquisition_func, dx=dx)
         
     def arg_max_acquisition(self, plugin=None):
         """
         Global Optimization on the acqusition function 
         """
         if self.verbose:
-            print 'acquisition function optimziation...'
+            print('acquisition function optimziation...')
         
         dx = True if self._optimizer == 'BFGS' else False
-        funcs = [self._acquisition_func(plugin, dx=dx) for i in range(self.n_point)]
+        obj_func = [self._acquisition(plugin, dx=dx) for i in range(self.n_point)]
 
-        # parallel optimization for n points
-        copy_reg.pickle(self._multistart, dill.dumps)
-        res = Parallel(n_jobs=self.n_jobs, verbose=self.verbose)(
-            delayed(self._multistart, check_pickle=False)(func) for func in funcs)
-
-        try:
+        if self.n_point == 1:
+            candidates, values = self._multistart(obj_func[0])
+        else:
+            # parallel optimization for n points approach
+            res = Parallel(n_jobs=self.n_jobs, verbose=self.verbose)(
+                delayed(self._multistart, check_pickle=False)(func) for func in obj_func)
             candidates, values = zip(*res)
-        except:
-            pdb.set_trace()
+            
         return candidates, values
 
     def _multistart(self, obj_func):
@@ -393,7 +405,7 @@ class BayesOpt(object):
                                 
             elif self._optimizer == 'MIES':
                 opt = mies(x0, obj_func, self._bounds.T, self._levels,
-                        self.param_type, eval_budget, minimize=True, 
+                        self.param_type, eval_budget, minimize=False, 
                         verbose=False)                            
                 xopt_, fopt_, stop_dict = opt.optimize()
 
@@ -401,8 +413,8 @@ class BayesOpt(object):
                 fopt = fopt_
                 wait_count = 0
                 if self.verbose:
-                    print '[DEBUG] restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
-                        stop_dict['funcalls'], fopt_)
+                    print('[DEBUG] restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
+                        stop_dict['funcalls'], fopt_))
             else:
                 wait_count += 1
 

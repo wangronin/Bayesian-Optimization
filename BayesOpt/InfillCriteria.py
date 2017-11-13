@@ -62,13 +62,7 @@ class UCB(InfillCriteria):
             assert hasattr(self.model, 'gradient')
             with warnings.catch_warnings():
                 warnings.filterwarnings('error')
-                try:
-                    y_dx, sd2_dx = self.model.gradient(X)
-                    sd_dx = sd2_dx / (2. * sd)
-                    grad = -y_dx * xcr_prob + sd_dx * xcr_dens
-                except Warning:
-                    dim = len(X[0])
-                    grad = np.zeros((dim, 1))
+                grad = None
             return value, grad 
         return value
 
@@ -182,12 +176,13 @@ class PI(InfillCriteria):
             return value, grad 
         return value
 
-class MGF(InfillCriteria):
+class MGFI(InfillCriteria):
     """
+    Moment-Generating Function of Improvement 
     My new acquisition function proposed in SMC'17 paper
     """
     def __init__(self, model, plugin=None, minimize=True, t=1):
-        super(MGF, self).__init__(model, plugin, minimize)
+        super(MGFI, self).__init__(model, plugin, minimize)
         self.t = t
 
     def __call__(self, X, dx=False):
