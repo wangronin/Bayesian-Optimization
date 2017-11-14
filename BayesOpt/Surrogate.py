@@ -76,6 +76,7 @@ class RandomForest(RandomForestRegressor):
 
     def fit(self, X, y):
         X = self._check_X(X)
+        self.y = y
         return super(RandomForest, self).fit(X, y)
 
     def predict(self, X, eval_MSE=False):

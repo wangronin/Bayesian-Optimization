@@ -85,7 +85,6 @@ class EI(InfillCriteria):
     def __call__(self, X, dx=False):
         X = self.check_X(X)
         y_hat, sd = self._predict(X)
-
         try:
             # TODO: I have save xcr_ becasue xcr * sd != xcr_ numerically
             # find out the cause of such an error, probably representation error...

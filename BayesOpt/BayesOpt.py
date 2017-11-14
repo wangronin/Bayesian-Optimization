@@ -9,8 +9,9 @@ from __future__ import division
 from __future__ import print_function
 
 import pdb
-import warnings, dill, functools, copy_reg, itertools
+import warnings, dill, functools, itertools, copy_reg
 from joblib import Parallel, delayed
+# import copyreg as copy_reg
 
 import pandas as pd
 import numpy as np
@@ -189,17 +190,16 @@ class BayesOpt(object):
 
         # normalization the response for numerical stability
         # e.g., for MGF-based acquisition function
-        # perf_min = np.min(perf)
-        # perf_max = np.max(perf)
-        # perf_ = (perf - perf_min) / (perf_max - perf_min)
-        perf_ = perf
+        perf_min = np.min(perf)
+        perf_max = np.max(perf)
+        perf_ = (perf - perf_min) / (perf_max - perf_min)
 
         # fit the surrogate model
         self.surrogate.fit(X, perf_)
         
         self.is_update = True
         perf_hat = self.surrogate.predict(X)
-        self.r2 = r2_score(perf, perf_hat)
+        self.r2 = r2_score(perf_, perf_hat)
 
         # TODO: in case r2 is really poor, re-fit the model or transform the input? 
         if self.verbose:
@@ -348,7 +348,8 @@ class BayesOpt(object):
     def _acquisition(self, plugin=None, dx=False):
         if plugin is None:
             # plugin = np.min(self.data.perf) if self.minimize else -np.max(self.data.perf)
-            plugin = np.min(self.data.perf)
+            # Note that performance are normalized when building the surrogate
+            plugin = 0 if self.minimize else -1
             
         if self.n_point > 1:  # multi-point method
             # create a portofolio of n infill-criteria by 
@@ -378,16 +379,19 @@ class BayesOpt(object):
         else:
             # parallel optimization for n points approach
             res = Parallel(n_jobs=self.n_jobs, verbose=self.verbose)(
-                delayed(self._multistart, check_pickle=False)(func) for func in obj_func)
+                delayed(self._fmin_multistart, check_pickle=False)(func) for func in obj_func)
             candidates, values = zip(*res)
             
         return candidates, values
 
-    def _multistart(self, obj_func):
+    def _fmin_multistart(self, obj_func):
+        # TODO: URGENT, fix this function: decide whether to minimize here or to maximize
         optima, foptima = [], []
         eval_budget = self._max_eval
-        fopt = np.inf
+        fopt = -np.inf
         wait_count = 0
+        # obj_func = lambda x: -func(x)
+
         for iteration in range(self._random_start):
             x0 = self._space.sampling(1)[0]
             
@@ -413,7 +417,7 @@ class BayesOpt(object):
                         verbose=False)                            
                 xopt_, fopt_, stop_dict = opt.optimize()
 
-            if fopt_ < fopt:
+            if fopt_ > fopt:
                 fopt = fopt_
                 wait_count = 0
                 if self.verbose:
