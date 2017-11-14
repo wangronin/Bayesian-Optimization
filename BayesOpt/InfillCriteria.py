@@ -41,10 +41,9 @@ class InfillCriteria:
 
     def _gradient(self, X):
         y_dx, sd2_dx = self.model.gradient(X)
-        sd_dx = sd2_dx / (2. * sd)
         if not self.minimize:
             y_dx = -y_dx
-        return y_dx, sd_dx
+        return y_dx, sd2_dx
 
     def check_X(self, X):
         """Keep input as '2D' object 
@@ -70,7 +69,8 @@ class UCB(InfillCriteria):
             f_value = 0
 
         if dx:
-            y_dx, sd_dx = self._gradient(X)
+            y_dx, sd2_dx = self._gradient(X)
+            sd_dx = sd2_dx / (2. * sd)
             try:
                 f_dx = y_dx + self.alpha * sd_dx
             except Exception:
@@ -96,7 +96,8 @@ class EI(InfillCriteria):
             f_value = 0
 
         if dx:
-            y_dx, sd_dx = self._gradient(X)
+            y_dx, sd2_dx = self._gradient(X)
+            sd_dx = sd2_dx / (2. * sd)
             try:
                 f_dx = -y_dx * xcr_prob + sd_dx * xcr_dens
             except Exception:
@@ -118,7 +119,6 @@ class EpsilonPI(InfillCriteria):
         y_hat, sd = self._predict(X)
 
         coeff = 1 - self.epsilon if y_hat > 0 else (1 + self.epsilon)
-
         try:
             xcr_ = self.plugin - coeff * y_hat 
             xcr = xcr_ / sd
@@ -127,7 +127,8 @@ class EpsilonPI(InfillCriteria):
             f_value = 0.
 
         if dx:
-            y_dx, sd_dx = self._gradient(X)
+            y_dx, sd2_dx = self._gradient(X)
+            sd_dx = sd2_dx / (2. * sd)
             try:
                 f_dx = -(coeff * y_dx + xcr * sd_dx) * norm.pdf(xcr) / sd
             except Exception:
@@ -165,7 +166,8 @@ class MGFI(InfillCriteria):
 
         # TODO: implement this
         if dx:
-            y_dx, sd_dx = self._gradient(X)
+            y_dx, sd2_dx = self._gradient(X)
+            sd_dx = sd2_dx / (2. * sd)
         return value
         
 class GEI(InfillCriteria):

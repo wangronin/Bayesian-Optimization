@@ -11,7 +11,6 @@ from __future__ import print_function
 import pdb
 import warnings, dill, functools, itertools, copy_reg
 from joblib import Parallel, delayed
-# import copyreg as copy_reg
 
 import pandas as pd
 import numpy as np
@@ -51,7 +50,7 @@ class BayesOpt(object):
         self.dim = len(self._space)
 
         # column names for each variable type
-        self.con_ = self._space.var_name[self._space.id_C].tolist()  # continuous
+        self.con_ = self._space.var_name[self._space.id_C].tolist()   # continuous
         self.cat_ = self._space.var_name[self._space.id_N].tolist()   # categorical
         self.int_ = self._space.var_name[self._space.id_O].tolist()   # integer
 
@@ -72,8 +71,9 @@ class BayesOpt(object):
 
         # paramter: acquisition function optimziation
         mask = np.nonzero(self._space.C_mask | self._space.O_mask)[0]
-        self._bounds = np.array([self._space.bounds[i] for i in mask])
-        self._levels = list(self._space.levels.values())
+        self._bounds = np.array([self._space.bounds[i] for i in mask])             # bounds for continuous and integer variable
+        # self._levels = list(self._space.levels.values())
+        self._levels = np.array([self._space.bounds[i] for i in self._space.id_N]) # levels for discrete variable
         self._optimizer = optimizer
         self._max_eval = int(5e2 * self.dim) 
         self._random_start = int(10 * self.dim) if n_restart is None else n_restart
@@ -361,7 +361,6 @@ class BayesOpt(object):
             acquisition_func = MGFI(self.surrogate, plugin, minimize=self.minimize, t=t)
         elif self.n_point == 1:
             acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
-        
         return functools.partial(acquisition_func, dx=dx)
         
     def arg_max_acquisition(self, plugin=None):
@@ -375,22 +374,20 @@ class BayesOpt(object):
         obj_func = [self._acquisition(plugin, dx=dx) for i in range(self.n_point)]
 
         if self.n_point == 1:
-            candidates, values = self._multistart(obj_func[0])
+            candidates, values = self._argmax_multistart(obj_func[0])
         else:
-            # parallel optimization for n points approach
+            # parallelization using joblib
             res = Parallel(n_jobs=self.n_jobs, verbose=self.verbose)(
-                delayed(self._fmin_multistart, check_pickle=False)(func) for func in obj_func)
-            candidates, values = zip(*res)
-            
+                delayed(self._argmax_multistart, check_pickle=False)(func) for func in obj_func)
+            candidates, values = list(zip(*res))
         return candidates, values
 
-    def _fmin_multistart(self, obj_func):
-        # TODO: URGENT, fix this function: decide whether to minimize here or to maximize
-        optima, foptima = [], []
+    def _argmax_multistart(self, obj_func):
+        # keep the list of optima in each restart for future usage
+        xopt, fopt = [], []  
         eval_budget = self._max_eval
-        fopt = -np.inf
+        best = -np.inf
         wait_count = 0
-        # obj_func = lambda x: -func(x)
 
         for iteration in range(self._random_start):
             x0 = self._space.sampling(1)[0]
@@ -400,25 +397,26 @@ class BayesOpt(object):
             if self._optimizer == 'BFGS':
                 if self.N_d + self.N_i != 0:
                     raise ValueError('BFGS is not supported with mixed variable types.')
-                
-                xopt_, fopt_, stop_dict = fmin_l_bfgs_b(obj_func, x0, pgtol=1e-8,
+                # TODO: somehow this local lambda function can be pickled...
+                # for minimization
+                func = lambda x: tuple(map(lambda x: -1. * x, obj_func(x)))
+                xopt_, fopt_, stop_dict = fmin_l_bfgs_b(func, x0, pgtol=1e-8,
                                                         factr=1e6, bounds=self._bounds,
                                                         maxfun=eval_budget)
                 xopt_ = xopt_.flatten().tolist()
-                fopt_ = np.sum(fopt_)
+                fopt_ = -np.sum(fopt_)
                 
                 if stop_dict["warnflag"] != 0 and self.verbose:
                     warnings.warn("L-BFGS-B terminated abnormally with the "
-                                " state: %s" % stop_dict)
+                                  " state: %s" % stop_dict)
                                 
             elif self._optimizer == 'MIES':
-                opt = mies(x0, obj_func, self._bounds.T, self._levels,
-                        self.param_type, eval_budget, minimize=False, 
-                        verbose=False)                            
+                opt = mies(x0, obj_func, self._bounds.T, self._levels, self.param_type, 
+                           eval_budget, minimize=False, verbose=False)                            
                 xopt_, fopt_, stop_dict = opt.optimize()
 
-            if fopt_ > fopt:
-                fopt = fopt_
+            if fopt_ > best:
+                best = fopt_
                 wait_count = 0
                 if self.verbose:
                     print('[DEBUG] restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
@@ -427,15 +425,14 @@ class BayesOpt(object):
                 wait_count += 1
 
             eval_budget -= stop_dict['funcalls']
-            optima.append(xopt_)
-            foptima.append(fopt_)
+            xopt.append(xopt_)
+            fopt.append(fopt_)
             
             if eval_budget <= 0 or wait_count >= self._wait_iter:
                 break
-
-        # sort the optima in descending order
-        idx = np.argsort(foptima)[::-1]
-        return optima[idx[0]], foptima[idx[0]]
+        # maximization: sort the optima in descending order
+        idx = np.argsort(fopt)[::-1]
+        return xopt[idx[0]], fopt[idx[0]]
 
     def _check_params(self):
         assert hasattr(self.obj_func, '__call__')

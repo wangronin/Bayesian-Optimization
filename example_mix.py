@@ -33,30 +33,9 @@ N = NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E'])
 
 search_space = C * I * N
 
-# thetaL = 1e-3 * (ub - lb) * np.ones(dim)
-# thetaU = 10 * (ub - lb) * np.ones(dim)
-# theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
-# model = GaussianProcess(regr='constant', corr='matern',
-#                         theta0=theta0, thetaL=thetaL,
-#                         thetaU=thetaU, nugget=None,
-#                         nugget_estim=False, normalize=False,
-#                         verbose=False, random_start=15 * dim,
-#                         random_state=None, optimizer='BFGS')
-
-# min_samples_leaf = max(1, int(n_init_sample / 20.))
-# max_features = int(np.ceil(dim * 5 / 6.))
-# model = RandomForest(n_estimators=100,
-#                      max_features=max_features,
-#                      min_samples_leaf=min_samples_leaf)
-
 model = RandomForest(levels=search_space.levels)
-# model = RrandomForest(levels=search_space.levels, seed=1, max_features='sqrt')
-
 opt = BayesOpt(search_space, obj_func, model, max_iter=n_step, random_seed=None,
                n_init_sample=n_init_sample, n_point=3, n_jobs=3, minimize=True, 
                verbose=True, debug=False, optimizer='MIES')
 
 opt.run()
-
-pdb.set_trace()

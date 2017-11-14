@@ -32,6 +32,15 @@ class SearchSpace(object):
         The output is a list of shape (N, self.dim)
         """
         pass
+    
+    def _set_index(self):
+        self.C_mask = self.var_type == 'C'  # Continuous
+        self.O_mask = self.var_type == 'O'  # Ordinal
+        self.N_mask = self.var_type == 'N'  # Nominal 
+
+        self.id_C = np.nonzero(self.C_mask)[0]
+        self.id_O = np.nonzero(self.O_mask)[0]
+        self.id_N = np.nonzero(self.N_mask)[0]
 
     def __len__(self):
         return self.dim
@@ -49,7 +58,8 @@ class SearchSpace(object):
         return self.__mul__(space)
 
 class ProductSpace(SearchSpace):
-    """Cartesian product of the search spaces
+    """
+    Cartesian product of the search spaces
     """
     def __init__(self, space1, space2):
         # TODO: avoid recursion here
@@ -60,15 +70,7 @@ class ProductSpace(SearchSpace):
         self.var_type = np.r_[space1.var_type, space2.var_type]
         self._sub_space1 = deepcopy(space1)
         self._sub_space2 = deepcopy(space2)
-
-        self.C_mask = self.var_type == 'C'  # Continuous
-        self.O_mask = self.var_type == 'O'  # Ordinal
-        self.N_mask = self.var_type == 'N'  # Nominal 
-
-        self.id_C = np.nonzero(self.C_mask)[0]
-        self.id_O = np.nonzero(self.O_mask)[0]
-        self.id_N = np.nonzero(self.N_mask)[0]
-        
+        self._set_index()
         self.levels = OrderedDict([(i, self.bounds[i]) for i in self.id_N])
     
     def sampling(self, N=1):
@@ -81,7 +83,8 @@ class ProductSpace(SearchSpace):
         raise ValueError('Not suppored operation')
 
 class ContinuousSpace(SearchSpace):
-    """Continuous search space
+    """
+    Continuous search space
     """
     def __init__(self, bounds, var_name=None):
         super(ContinuousSpace, self).__init__(bounds, var_name)
@@ -90,6 +93,7 @@ class ContinuousSpace(SearchSpace):
         self.var_type = np.array(['C'] * self.dim)
         self._bounds = np.atleast_2d(self.bounds).T
         assert all(self._bounds[0, :] < self._bounds[1, :])
+        self._set_index()
     
     def __mul__(self, N):
         if isinstance(N, SearchSpace):
@@ -120,10 +124,9 @@ class NominalSpace(SearchSpace):
         if not hasattr(self, 'var_name'):
             self.var_name = np.array(['d' + str(i) for i in range(self.dim)])
         self.var_type = np.array(['N'] * self.dim)
-        # public attribute: dict of levels
-        self.levels = OrderedDict([(i, self.bounds[i]) for i in range(self.dim)])
         self._levels = [np.array(b) for b in self.bounds]
         self._n_levels = [len(l) for l in self._levels]
+        self._set_index()
         
     def __mul__(self, N):
         if isinstance(N, SearchSpace):
@@ -131,9 +134,9 @@ class NominalSpace(SearchSpace):
         else:  # multiple times the same space
             self.dim = int(self.dim * N)
             self.var_type = np.repeat(self.var_type, N)
-            self.var_name = ['{}_{}'.format(v, k) for k in range(N) for v in self.var_name ]
+            self.var_name = ['{}_{}'.format(v, k) for k in range(N) for v in self.var_name]
             self.bounds = self.bounds * N
-            self.levels = OrderedDict([(i, self.bounds[i]) for i in range(self.dim)])
+            # self.levels = OrderedDict([(i, self.bounds[i]) for i in range(self.dim)])
             self._levels = self._levels * N
             self._n_levels = self._n_levels * N
             return self
@@ -160,6 +163,7 @@ class OrdinalSpace(SearchSpace):
         # internal for the sampling method
         self._lb, self._ub = zip(*self.bounds)
         assert all(np.array(self._lb) < np.array(self._ub))
+        self._set_index()
 
     def __mul__(self, N):
         if isinstance(N, SearchSpace):
