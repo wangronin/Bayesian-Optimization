@@ -428,7 +428,7 @@ class BayesOpt(object):
 
             eval_budget -= stop_dict['funcalls']
             optima.append(xopt_)
-            foptima.append(-fopt_)
+            foptima.append(fopt_)
             
             if eval_budget <= 0 or wait_count >= self._wait_iter:
                 break
