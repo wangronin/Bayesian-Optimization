@@ -291,6 +291,7 @@ class mies(object):
             
             # TODO: the constraint handling method here will (by chance) turn really bad cadidates
             # (the one with huge sigmas) to good ones and hence making the step size explode
+            # TODO: implement the idea I had: repair the sigma of the infeasible solution 
             self.keep_in_bound(self.pop_lambda)
             self.f_lambda = self.evaluate(self.pop_lambda)
             self.select()

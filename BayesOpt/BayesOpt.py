@@ -4,7 +4,6 @@ Created on Mon Mar 6 15:05:01 2017
 
 @author: wangronin
 """
-
 from __future__ import division
 from __future__ import print_function
 
@@ -33,9 +32,38 @@ class BayesOpt(object):
                  minimize=True, noisy=False, eval_budget=None, max_iter=None, 
                  n_init_sample=None, n_point=1, n_jobs=1, backend='multiprocessing',
                  n_restart=None, optimizer='MIES', wait_iter=3,
-                 verbose=False, random_seed=None,  debug=False):
-
-        self.debug = debug
+                 verbose=False, random_seed=None):
+        """
+        parameter
+        ---------
+            search_space : instance of SearchSpace type
+            obj_func : callable,
+                the objective function to optimize
+            surrogate: surrogate model, currently support either GPR or random forest
+            minimize : bool,
+                minimize or maximize
+            noisy : bool,
+                is the objective stochastic or not?
+            eval_budget : int,
+                maximal number of evaluations on the objective function
+            max_iter : int,
+                maximal iteration
+            n_init_sample : int,
+                the size of inital Design of Experiment (DoE),
+                default: 20 * dim
+            n_point : int,
+                the number of candidate solutions proposed using infill-criteria,
+                default : 1
+            n_jobs : int,
+                the number of jobs scheduled for parallelizing the evaluation. 
+                Only Effective when n_point > 1 
+            backend : str, 
+                the parallelization backend, supporting: 'multiprocessing', 'MPI', 'SPARC'
+            optimizer: str,
+                the optimization algorithm for infill-criteria,
+                supported options: 'MIES' (Mixed-Integer Evolution Strategy for random forest), 
+                                   'BFGS' (quasi-Newtion for GPR)
+        """
         self.verbose = verbose
         self._space = search_space
         self.var_names = self._space.var_name.tolist()
@@ -202,6 +230,7 @@ class BayesOpt(object):
         self.r2 = r2_score(perf_, perf_hat)
 
         # TODO: in case r2 is really poor, re-fit the model or transform the input? 
+        # consider the performance metric transformation in SMAC
         if self.verbose:
             print('Surrogate model r2: {}'.format(self.r2))
         return self.r2
@@ -311,12 +340,6 @@ class BayesOpt(object):
         self.iter_count += 1
         self.hist_perf.append(self.data.loc[self.incumbent_id, 'perf'])
         
-        # only for debug purpose
-        if self.debug:
-            tmp = np.array([_ for _ in self.data.iloc[-1, 0:2].values])
-            np.set_printoptions(precision=30)
-            print(self.iter_count, tmp, np.random.get_state()[2])
-            
         if self.verbose:
             print()
             print('iteration {}, current incumbent is:'.format(self.iter_count))
@@ -397,7 +420,7 @@ class BayesOpt(object):
             if self._optimizer == 'BFGS':
                 if self.N_d + self.N_i != 0:
                     raise ValueError('BFGS is not supported with mixed variable types.')
-                # TODO: somehow this local lambda function can be pickled...
+                # TODO: find out why: somehow this local lambda function can be pickled...
                 # for minimization
                 func = lambda x: tuple(map(lambda x: -1. * x, obj_func(x)))
                 xopt_, fopt_, stop_dict = fmin_l_bfgs_b(func, x0, pgtol=1e-8,

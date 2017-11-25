@@ -42,7 +42,7 @@ class RandomForest(RandomForestRegressor):
         """
         parameter
         ---------
-        levels : dict
+        levels : dict, for categorical inputs
             keys: indices of categorical variables
             values: list of levels of categorical variables
         """
@@ -199,6 +199,7 @@ class RandomForest(RandomForestRegressor):
 #             return numpy2ri.ri2py(_)
 
 if __name__ == '__main__':
+    # TODO: this part goes into test 
     # simple test for mixed variables...
     np.random.seed(12)
 

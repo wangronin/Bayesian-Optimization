@@ -118,9 +118,9 @@ class EpsilonPI(InfillCriteria):
         X = self.check_X(X)
         y_hat, sd = self._predict(X)
 
-        coeff = 1 - self.epsilon if y_hat > 0 else (1 + self.epsilon)
+        coef = 1 - self.epsilon if y_hat > 0 else (1 + self.epsilon)
         try:
-            xcr_ = self.plugin - coeff * y_hat 
+            xcr_ = self.plugin - coef * y_hat 
             xcr = xcr_ / sd
             f_value = norm.cdf(xcr)
         except Exception:
@@ -130,7 +130,7 @@ class EpsilonPI(InfillCriteria):
             y_dx, sd2_dx = self._gradient(X)
             sd_dx = sd2_dx / (2. * sd)
             try:
-                f_dx = -(coeff * y_dx + xcr * sd_dx) * norm.pdf(xcr) / sd
+                f_dx = -(coef * y_dx + xcr * sd_dx) * norm.pdf(xcr) / sd
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
             return f_value, f_dx 
@@ -156,19 +156,34 @@ class MGFI(InfillCriteria):
         X = self.check_X(X)
         y_hat, sd = self._predict(X)
 
-        y_hat_p = y_hat - self.t * sd ** 2.
-        beta_p = (self.plugin - y_hat_p) / sd
-        term = self.t * (self.plugin - y_hat - 1)
-        value = norm.cdf(beta_p) * exp(term + self.t ** 2. * sd ** 2. / 2.)
+        try:
+            y_hat_p = y_hat - self.t * sd ** 2.
+            beta_p = (self.plugin - y_hat_p) / sd
+            term = self.t * (self.plugin - y_hat - 1)
+            f_ = norm.cdf(beta_p) * exp(term + self.t ** 2. * sd ** 2. / 2.)
+        except Exception: # in case of numerical errors
+            f_ = 0
 
-        if np.isinf(value):
-            value = 0.
+        if np.isinf(f_):
+            f_ = 0.
 
-        # TODO: implement this
+        # TODO: verify this
         if dx:
             y_dx, sd2_dx = self._gradient(X)
             sd_dx = sd2_dx / (2. * sd)
-        return value
+
+            try:
+                term <- exp(self.t * (self.plugin + self.t * sd ** 2 / 2 - y_hat - 1))
+                m_prime_dx <- y_dx - 2 * self.t * sd * sd_dx
+                beta_p_dx <- -(m_prime_dx + beta_p * sd_dx) / sd
+        
+                dx = term * (norm.pdf(beta_p) * beta_p_dx + \
+                    norm.cdf(beta_p) * ((self.t ** 2) * sd * sd_dx - self.t * y_dx))
+            except Exception:
+                f_dx = np.zeros((len(X[0]), 1))
+            
+            return f_, f_dx
+        return f_
         
 class GEI(InfillCriteria):
     """
