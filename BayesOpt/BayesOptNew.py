@@ -25,13 +25,38 @@ from .utils import proportional_selection
 
 # TODO: remove the usage of pandas here change it to customized np.ndarray
 # TODO: finalize the logging system
-
+class Solution(np.ndarray):
+    def __new__(cls, x, fitness=None, n_eval=0, index=None, var_name=None):
+        obj = np.asarray(x, dtype='object').view(cls)
+        obj.fitness = fitness
+        obj.n_eval = n_eval
+        obj.index = index
+        obj.var_name = var_name
+        return obj
+    
+    def __array_finalize__(self, obj):
+        if obj is None: return
+        # Needed for array slicing
+        self.fitness = getattr(obj, 'fitness', None)
+        self.n_eval = getattr(obj, 'n_eval', None)
+        self.index = getattr(obj, 'index', None)
+        self.var_name = getattr(obj, 'var_name', None)
+    
+    def to_dict(self):
+        if self.var_name is None: return
+        return {k : self[i] for i, k in enumerate(self.var_name)}     
+    
+    def __str__(self):
+        return self.to_dict()
+    
+    
 class BayesOpt(object):
     """
     Generic Bayesian optimization algorithm
     """
     def __init__(self, search_space, obj_func, surrogate, ftarget=None,
-                 minimize=True, noisy=False, max_eval=None, max_iter=None, infill='EI',
+                 minimize=True, noisy=False, max_eval=None, max_iter=None, 
+                 infill='EI', t0=2, tf=1e-1, schedule=None,
                  n_init_sample=None, n_point=1, n_job=1, backend='multiprocessing',
                  n_restart=None, max_infill_eval=None, wait_iter=3, optimizer='MIES', 
                  log_file=None, data_file=None, verbose=False, random_seed=None):
@@ -63,7 +88,7 @@ class BayesOpt(object):
                 the parallelization backend, supporting: 'multiprocessing', 'MPI', 'SPARC'
             optimizer: str,
                 the optimization algorithm for infill-criteria,
-                supported options: 'MIES' (Mixed-Integer Evolution Strategy for random forest), 
+                supported options: 'MIES' (Mixed-Integer Evolution Strategy), 
                                    'BFGS' (quasi-Newtion for GPR)
         """
         self.verbose = verbose
@@ -79,22 +104,22 @@ class BayesOpt(object):
         self._parallel_backend = backend
         self.ftarget = ftarget 
         self.infill = infill
-
         self.minimize = minimize
         self.dim = len(self._space)
+        self._best = min if self.minimize else max
         
-        # column names for each variable type
-        self.con_ = self._space.var_name[self._space.id_C].tolist()   # continuous
-        self.cat_ = self._space.var_name[self._space.id_N].tolist()   # categorical
-        self.int_ = self._space.var_name[self._space.id_O].tolist()   # integer
+        self.r_index = self._space.id_C       # index of continuous variable
+        self.i_index = self._space.id_O       # index of integer variable
+        self.d_index = self._space.id_N       # index of categorical variable
 
         self.param_type = self._space.var_type
-        self.N_r = len(self.con_)
-        self.N_d = len(self.cat_)
-        self.N_i = len(self.int_)
+        self.N_r = len(self.r_index)
+        self.N_i = len(self.i_index)
+        self.N_d = len(self.d_index)
        
         # parameter: objective evaluation
-        self.init_n_eval = 1      # TODO: for noisy objective function, maybe increase the initial evaluations
+        # TODO: for noisy objective function, maybe increase the initial evaluations
+        self.init_n_eval = 1      
         self.max_eval = int(max_eval) if max_eval else np.inf
         self.max_iter = int(max_iter) if max_iter else np.inf
         self.n_init_sample = self.dim * 20 if n_init_sample is None else int(n_init_sample)
@@ -102,6 +127,25 @@ class BayesOpt(object):
         self.eval_hist_id = []
         self.iter_count = 0
         self.eval_count = 0
+        
+        # setting up cooling schedule
+        if self.infill == 'MGFI':
+            self.t0 = t0
+            self.tf = tf
+            self.t = t0
+            self.schedule = schedule
+            
+            # TODO: find a nicer way to integrate this part
+            # cooling down to 1e-1
+            max_iter = self.max_eval - self.n_init_sample
+            if self.schedule == 'exp':                         # exponential
+                self.alpha = (self.tf / t0) ** (1. / max_iter) 
+            elif self.schedule == 'linear':
+                self.eta = (t0 - self.tf) / max_iter           # linear
+            elif self.schedule == 'log':
+                self.c = self.tf * np.log(max_iter + 1)        # logarithmic 
+            elif self.schedule == 'self-adaptive':
+                raise NotImplementedError
 
         # paramter: acquisition function optimziation
         mask = np.nonzero(self._space.C_mask | self._space.O_mask)[0]
@@ -111,7 +155,7 @@ class BayesOpt(object):
         self._optimizer = optimizer
         # TODO: set this number smaller when using L-BFGS and larger for MIES
         self._max_eval = int(5e2 * self.dim) if max_infill_eval is None else max_infill_eval
-        self._random_start = int(10 * self.dim) if n_restart is None else n_restart
+        self._random_start = int(5 * self.dim) if n_restart is None else n_restart
         self._wait_iter = int(wait_iter)    # maximal restarts when optimal value does not change
 
         # Intensify: the number of potential configuations compared against the current best
@@ -120,7 +164,7 @@ class BayesOpt(object):
         
         # stop criteria
         self.stop_dict = {}
-        self.hist_perf = []
+        self.hist_f = []
         self._check_params()
 
         # set the random seed
@@ -131,7 +175,7 @@ class BayesOpt(object):
         self._get_logger(self.log_file)
         
         # allows for pickling the objective function 
-        copyreg.pickle(self._eval, dill.pickles) 
+        copyreg.pickle(self._eval_one, dill.pickles) 
     
     def _get_logger(self, logfile):
         """
@@ -140,7 +184,7 @@ class BayesOpt(object):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(logging.DEBUG)
         formatter = logging.Formatter('- %(asctime)s [%(levelname)s] -- '
-                                      '[%(process)d - %(name)s] %(message)s')
+                                      '[- %(process)d - %(name)s] %(message)s')
 
         # create console handler and set level to warning
         ch = logging.StreamHandler()
@@ -155,155 +199,162 @@ class BayesOpt(object):
             fh.setFormatter(formatter)
             self.logger.addHandler(fh)
 
-    def _get_var(self, data):
-        """
-        get variables from the dataframe
-        """
-        var_list = lambda row: [_ for _ in row[self.var_names].values]
-        if isinstance(data, pd.DataFrame):
-            return [var_list(row) for i, row in data.iterrows()]
-        elif isinstance(data, pd.Series):
-            return var_list(data)
-    
-    def _to_dataframe(self, var, index=0):
-        if not hasattr(var[0], '__iter__'):
-            var = [var]
-        var = np.array(var, dtype=object)
-        N = len(var)
-        df = pd.DataFrame(np.c_[var, [0] * N, [None] * N],
-                          columns=self.var_names + ['n_eval', 'perf'])
-        df[self.con_] = df[self.con_].apply(pd.to_numeric)
-        df[self.int_] = df[self.int_].apply(lambda c: pd.to_numeric(c, downcast='integer'))
-        df.index = list(range(index, index + df.shape[0]))
-        return df
-
-    def _compare(self, perf1, perf2):
+    def _compare(self, f1, f2):
         """
         Test if perf1 is better than perf2
         """
         if self.minimize:
-            return perf1 < perf2
+            return f1 < f2
         else:
-            return perf1 > perf2
+            return f2 > f2
     
-    def _remove_duplicate(self, confs):
+    def _remove_duplicate(self, data):
         """
         check for the duplicated solutions, as it is not allowed
         for noiseless objective functions
         """
-        idx = []
-        X = self.data[self.var_names]
-        for i, x in confs.iterrows():
-            x_ = pd.to_numeric(x[self.con_])
-            CON = np.all(np.isclose(X[self.con_].values, x_), axis=1)
-            INT = np.all(X[self.int_] == x[self.int_], axis=1)
-            CAT = np.all(X[self.cat_] == x[self.cat_], axis=1)
+        ans = []
+        X = np.array([s.tolist() for s in self.data], dtype='object')
+        for i, x in enumerate(data):
+            CON = np.all(np.isclose(np.asarray(X[:, self.r_index], dtype='float'),
+                                    np.asarray(x[self.r_index], dtype='float')), axis=1)
+            INT = np.all(X[:, self.i_index] == x[self.i_index], axis=1)
+            CAT = np.all(X[:, self.d_index] == x[self.d_index], axis=1)
             if not any(CON & INT & CAT):
-                idx.append(i)
-        return confs.loc[idx]
+                ans.append(x)
+        return ans
 
-    def _eval(self, x, runs=1):
-        perf_, n_eval = x.perf, x.n_eval
-        # TODO: handle the input type in a better way
-        # try:    # for dictionary input
-            # __ = [self.obj_func(x[self.var_names].to_dict()) for i in range(runs)]
-        # except: # for list input
-        __ = [self.obj_func(self._get_var(x)) for i in range(runs)]
-        perf = np.sum(__)
+    def _eval_one(self, x, runs=1):
+        """
+        evaluate one solution
+        """
+        # TODO: sometimes the obj_func take a dictionary as input...
+        fitness_, n_eval = x.fitness, x.n_eval
+        # try:
+            # ans = [self.obj_func(x.tolist()) for i in range(runs)]
+        # except:
+        ans = [self.obj_func(x.to_dict()) for i in range(runs)]
+        fitness = np.sum(ans)
 
-        x.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
         x.n_eval += runs
+        x.fitness = fitness / runs if fitness_ is None else (fitness_ * n_eval + fitness) / x.n_eval
 
         self.eval_count += runs
-        self.eval_hist += __
-        self.eval_hist_id += [x.name] * runs
+        self.eval_hist += ans
+        self.eval_hist_id += [x.index] * runs
         
-        return x, runs, __, [x.name] * runs
+        return x, runs, ans, [x.index] * runs
 
     def evaluate(self, data, runs=1):
         """ Evaluate the candidate points and update evaluation info in the dataframe
         """
-        if isinstance(data, pd.Series):
-            self._eval(data)
+        if isinstance(data, Solution):
+            self._eval_one(data)
         
-        elif isinstance(data, pd.DataFrame): 
+        elif isinstance(data, list): 
             if self.n_jobs > 1:
                 if self._parallel_backend == 'multiprocessing': # parallel execution using joblib
                     res = Parallel(n_jobs=self.n_jobs, verbose=False)(
-                        delayed(self._eval, check_pickle=False)(row) for k, row in data.iterrows())
+                        delayed(self._eval_one, check_pickle=False)(x) for x in data)
                     
                     x, runs, hist, hist_id = zip(*res)
                     self.eval_count += sum(runs)
                     self.eval_hist += list(itertools.chain(*hist))
                     self.eval_hist_id += list(itertools.chain(*hist_id))
-                    for i, k in enumerate(data.index):
-                        data.loc[k] = x[i]
+                    for i, k in enumerate(data):
+                        data[i] = x[i].copy()
                 elif self._parallel_backend == 'MPI': # parallel execution using MPI
                     # TODO: to use InstanceRunner here
                     pass
                 elif self._parallel_backend == 'Spark': # parallel execution using Spark
                     pass        
             else:
-                for k, row in data.iterrows():
-                    self._eval(row)
-                    data.loc[k, ['n_eval', 'perf']] = row[['n_eval', 'perf']]
+                for x in data:
+                    self._eval_one(x)
 
     def fit_and_assess(self):
-        # TODO: change var name 'perf'
-        X, perf = self._get_var(self.data), self.data['perf'].values
+        X = np.atleast_2d([s.tolist() for s in self.data])
+        fitness = np.array([s.fitness for s in self.data])
 
         # normalization the response for numerical stability
         # e.g., for MGF-based acquisition function
-        perf_min = np.min(perf)
-        perf_max = np.max(perf)
-        perf_ = (perf - perf_min) / (perf_max - perf_min)
+        _min, _max = np.min(fitness), np.max(fitness)
+        fitness_scaled = (fitness - _min) / (_max - _min)
 
         # fit the surrogate model
-        self.surrogate.fit(X, perf_)
+        self.surrogate.fit(X, fitness_scaled)
         
         self.is_update = True
-        perf_hat = self.surrogate.predict(X)
-        self.r2 = r2_score(perf_, perf_hat)
+        fitness_hat = self.surrogate.predict(X)
+        r2 = r2_score(fitness_scaled, fitness_hat)
 
         # TODO: in case r2 is really poor, re-fit the model or transform the input? 
         # consider the performance metric transformation in SMAC
-        self.logger.info('Surrogate model r2: {}'.format(self.r2))
-        return self.r2
+        self.logger.info('Surrogate model r2: {}'.format(r2))
+        return r2
 
     def select_candidate(self):
-        self.is_update = False
         # always generate mu + 1 candidate solutions
-        while True:
-            confs_, acqui_opts_ = self.arg_max_acquisition()
-            confs_ = self._to_dataframe(confs_, self.data.shape[0])
-            confs_ = self._remove_duplicate(confs_)
+        # while True:
+        #     X, infill_value = self.arg_max_acquisition()
+            
+        #     if self.n_point > 1:
+        #         X = [Solution(x, name=len(self.data) + i) for i, x in enumerate(X)]
+        #     else:
+        #         X = [Solution(X, name=len(self.data))]
+        #     X = self._remove_duplicate(X)
 
-            # if no new design site is found, re-estimate the parameters immediately
-            if len(confs_) == 0:
-                if not self.is_update:
-                    # Duplication are commonly encountered in the 'corner'
-                    self.fit_and_assess()
-                else:
-                    self.logger.warn("iteration {}: duplicated solution found" 
-                                     "by optimization! New points is taken from random"
-                                     "design".format(self.iter_count))
-                    confs_ = self._space.sampling(N=1, method='uniform')
-                    confs_ = self._to_dataframe(confs_, self.data.shape[0])
-                    break
-            else:
-                break
-
-        candidates_id = list(confs_.index)
+        #     # if no new design site is found, re-estimate the parameters immediately
+        #     # TODO: maybe remove this rule
+        #     if len(X) < self.n_point:
+        #         if not self.is_update:
+        #             # Duplication are commonly encountered in the 'corner'
+        #             self.fit_and_assess()
+        #         else:
+        #             self.logger.warn("iteration {}: duplicated solution found " 
+        #                              "by optimization! New points is taken from random "
+        #                              "design".format(self.iter_count))
+        #             N = self.n_point - len(X)
+        #             if N > 1:
+        #                 X = self._space.sampling(N=N, method='LHS')
+        #             else:  # To generate a single sample, only uniform sampling is allowed
+        #                 X = self._space.sampling(N=1, method='uniform')
+        #             X = [Solution(x, name=len(self.data) + i) for i, x in enumerate(X)]
+        #             break
+        #     else:
+        #         break
+        self.is_update = False
+        X, infill_value = self.arg_max_acquisition()
+        
+        if self.n_point > 1:
+            X = [Solution(x, index=len(self.data) + i, var_name=self.var_names) for i, x in enumerate(X)]
+        else:
+            X = [Solution(X, index=len(self.data), var_name=self.var_names)]
+            
+        X = self._remove_duplicate(X)
+        # if the number of new design sites obtained is less than required,
+        # draw the remaining ones randomly
+        if len(X) < self.n_point:
+            self.logger.warn("iteration {}: duplicated solution found " 
+                                "by optimization! New points is taken from random "
+                                "design".format(self.iter_count))
+            N = self.n_point - len(X)
+            if N > 1:
+                s = self._space.sampling(N=N, method='LHS')
+            else:      # To generate a single sample, only uniform sampling is feasible
+                s = self._space.sampling(N=1, method='uniform')
+            X += [Solution(x, index=len(self.data) + i, var_name=self.var_names) for i, x in enumerate(s)]
+        
+        candidates_id = [x.index for x in X]
+        # for noisy fitness: perform a proportional selection from the evaluated ones   
         if self.noisy:
-            id_ = self.data[self.data.id != self.incumbent_id.id].id
-            perf = self.data[self.data.id != self.incumbent_id.id].perf
-            __ = proportional_selection(perf, self.mu, self.minimize, replacement=False)
+            id_, fitness = zip([(i, d.fitness) for i, d in enumerate(self.data) if i != self.incumbent_id])
+            __ = proportional_selection(fitness, self.mu, self.minimize, replacement=False)
             candidates_id.append(id_[__])
         
         # TODO: postpone the evaluate to intensify...
-        self.evaluate(confs_, runs=self.init_n_eval)
-        self.data = self.data.append(confs_)
-        self.data.perf = pd.to_numeric(self.data.perf)
+        self.evaluate(X, runs=self.init_n_eval)
+        self.data += X
         return candidates_id
 
     def intensify(self, candidates_ids):
@@ -349,18 +400,17 @@ class BayesOpt(object):
         self.logger.info('building the initial design of experiemnts...')
 
         samples = self._space.sampling(self.n_init_sample)
-        self.data = self._to_dataframe(samples)
+        self.data = [Solution(s, index=k, var_name=self.var_names) for k, s in enumerate(samples)]
         self.evaluate(self.data, runs=self.init_n_eval)
         
         # set the initial incumbent
-        self.data.perf = pd.to_numeric(self.data.perf)
-        perf = np.array(self.data.perf)
+        fitness = np.array([s.fitness for s in self.data])
 
-        self.incumbent_id = np.nonzero(perf == np.min(perf))[0][0]
+        self.incumbent_id = np.nonzero(fitness == self._best(fitness))[0][0]
         self.fit_and_assess()
 
         # record the incumbent in iteration 0
-        self.data.loc[[self.incumbent_id]].to_csv(self.data_file, header=True, index=False, mode='w')
+        # self.data.loc[[self.incumbent_id]].to_csv(self.data_file, header=True, index=False, mode='w')
 
     def step(self):
         if not hasattr(self, 'data'):
@@ -370,23 +420,25 @@ class BayesOpt(object):
         if self.noisy:
             self.incumbent_id = self.intensify(ids)
         else:
-            perf = np.array(self.data.perf)
-            self.incumbent_id = np.nonzero(perf == np.min(perf))[0][0]
+            fitness = np.array([s.fitness for s in self.data])
+            self.incumbent_id = np.nonzero(fitness == self._best(fitness))[0][0]
 
+        self.incumbent = self.data[self.incumbent_id]
+        
         # model re-training
+        # TODO: test more control rules on model refitting
+        # if self.eval_count % 2 == 0:
+            # self.fit_and_assess()
         self.fit_and_assess()
         self.iter_count += 1
-        self.hist_perf.append(self.data.loc[self.incumbent_id, 'perf'])
-        
-        self.incumbent = self.data.loc[[self.incumbent_id]]
+        self.hist_f.append(self.incumbent.fitness)
 
         self.logger.info('iteration {}, current incumbent is:'.format(self.iter_count))
-        self.logger.info(str(self.incumbent))
+        self.logger.info(self.incumbent.to_dict())
         
         # save the iterative data configuration to csv
-        self.incumbent.to_csv(self.data_file, header=False, index=False, mode='a')
-        
-        return self._get_var(self.incumbent)[0], self.incumbent.perf.values
+        # self.incumbent.to_csv(self.data_file, header=False, index=False, mode='a')
+        return self.incumbent, self.incumbent.fitness
 
     def run(self):
         while not self.check_stop():
@@ -425,6 +477,7 @@ class BayesOpt(object):
             # TODO: other method: niching, UCB, q-EI
             tt = np.exp(0.5 * np.random.randn())
             acquisition_func = MGFI(self.surrogate, plugin, minimize=self.minimize, t=tt)
+            
         elif self.n_point == 1: # sequential mode
             
             if self.infill == 'EI':
@@ -433,8 +486,20 @@ class BayesOpt(object):
                 acquisition_func = PI(self.surrogate, plugin, minimize=self.minimize)
             elif self.infill == 'MGFI':
                 acquisition_func = MGFI(self.surrogate, plugin, minimize=self.minimize, t=self.t)
+                self._annealling()
+            elif self.infill == 'UCB':
+                raise NotImplementedError
                 
         return functools.partial(acquisition_func, dx=dx)
+        
+    def _annealling(self):
+        if self.schedule == 'exp':  
+             self.t *= self.alpha
+        elif self.schedule == 'linear':
+            self.t -= self.eta
+        elif self.schedule == 'log':
+            # TODO: verify this
+            self.t = self.c / np.log(self.iter_count + 1 + 1)
         
     def arg_max_acquisition(self, plugin=None):
         """
@@ -477,7 +542,7 @@ class BayesOpt(object):
                                                         factr=1e6, bounds=self._bounds,
                                                         maxfun=eval_budget)
                 xopt_ = xopt_.flatten().tolist()
-                fopt_ = -np.sum(fopt_)
+                fopt_ = -np.asscalar(fopt_)
                 
                 if stop_dict["warnflag"] != 0 and self.verbose:
                     self.logger.warn("L-BFGS-B terminated abnormally with the "

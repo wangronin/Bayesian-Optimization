@@ -5,7 +5,7 @@ Created on Fri Nov 13 20:45:21 2015
 @author: wangronin
 """
 
-from .BayesOpt import BayesOpt
+from .BayesOptNew import BayesOpt
 from . import InfillCriteria
 from . import Surrogate
 from . import SearchSpace

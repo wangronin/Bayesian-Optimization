@@ -48,7 +48,8 @@ class InfillCriteria:
     def check_X(self, X):
         """Keep input as '2D' object 
         """
-        return [X] if not hasattr(X[0], '__iter__') else X
+        return np.atleast_2d(X)
+        # return [X] if not hasattr(X[0], '__iter__') else X
 
 # TODO: test UCB implementation
 class UCB(InfillCriteria):
@@ -82,9 +83,16 @@ class EI(InfillCriteria):
     """
     Expected Improvement
     """
+    # perhaps separate the gradient computation here
     def __call__(self, X, dx=False):
         X = self.check_X(X)
         y_hat, sd = self._predict(X)
+        # if the Kriging variance is to small
+        # TODO: check the rationale of 1e-6 and why the ratio if intended
+        # TODO: implement a counterpart of 'sigma2' for randomforest
+        if hasattr(self.model, 'sigma2'):
+            if sd / np.sqrt(self.model.sigma2) < 1e-6:
+                return (np.array([0.]),  np.zeros((len(X[0]), 1))) if dx else 0.
         try:
             # TODO: I have save xcr_ becasue xcr * sd != xcr_ numerically
             # find out the cause of such an error, probably representation error...
@@ -93,7 +101,8 @@ class EI(InfillCriteria):
             xcr_prob, xcr_dens = norm.cdf(xcr), norm.pdf(xcr)
             f_value = xcr_ * xcr_prob + sd * xcr_dens
         except Exception: # in case of numerical errors
-            f_value = 0
+            # IMPORTANT: always keep the output in the same type
+            f_value = np.array([0.])
 
         if dx:
             y_dx, sd2_dx = self._gradient(X)
@@ -155,6 +164,11 @@ class MGFI(InfillCriteria):
     def __call__(self, X, dx=False):
         X = self.check_X(X)
         y_hat, sd = self._predict(X)
+        
+        # if the Kriging variance is to small
+        # TODO: check the rationale of 1e-6 and why the ratio if intended
+        if np.isclose(sd, 0):
+            return (np.array([0.]), np.zeros((len(X[0]), 1))) if dx else 0.
 
         try:
             y_hat_p = y_hat - self.t * sd ** 2.
@@ -162,26 +176,24 @@ class MGFI(InfillCriteria):
             term = self.t * (self.plugin - y_hat - 1)
             f_ = norm.cdf(beta_p) * exp(term + self.t ** 2. * sd ** 2. / 2.)
         except Exception: # in case of numerical errors
-            f_ = 0
+            f_ = np.array([0.])
 
         if np.isinf(f_):
-            f_ = 0.
-
-        # TODO: verify this
+            f_ = np.array([0.])
+            
         if dx:
             y_dx, sd2_dx = self._gradient(X)
             sd_dx = sd2_dx / (2. * sd)
 
             try:
-                term <- exp(self.t * (self.plugin + self.t * sd ** 2 / 2 - y_hat - 1))
-                m_prime_dx <- y_dx - 2 * self.t * sd * sd_dx
-                beta_p_dx <- -(m_prime_dx + beta_p * sd_dx) / sd
+                term = exp(self.t * (self.plugin + self.t * sd ** 2. / 2 - y_hat - 1))
+                m_prime_dx = y_dx - 2. * self.t * sd * sd_dx
+                beta_p_dx = -(m_prime_dx + beta_p * sd_dx) / sd
         
-                dx = term * (norm.pdf(beta_p) * beta_p_dx + \
+                f_dx = term * (norm.pdf(beta_p) * beta_p_dx + \
                     norm.cdf(beta_p) * ((self.t ** 2) * sd * sd_dx - self.t * y_dx))
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
-            
             return f_, f_dx
         return f_
         
@@ -198,35 +210,29 @@ class GEI(InfillCriteria):
 
 if __name__ == '__main__':
 
-    # TODO: test for the gradient of Infill-Criteria
+    # TODO: diagnostic plot for the gradient of Infill-Criteria
     # goes to unittest
-    from GaussianProcess.trend import linear_trend
+    from GaussianProcess.trend import linear_trend, constant_trend
     from GaussianProcess import GaussianProcess
     from GaussianProcess.utils import plot_contour_gradient
     import matplotlib.pyplot as plt
-
+    import matplotlib.gridspec as gridspec
     from deap import benchmarks
 
     np.random.seed(123)
-    plt.ioff()
-    fig_width = 21.5
-    fig_height = fig_width / 3.2
-
-    # def branin(xx, a=1, b=5.1/(4*pi**2.), c=5/pi, r=6, s=10, t=1/(8*pi)):
-    #     x1, x2 = xx[:, 0], xx[:, 1]
-    #     term1 = a * (x2 - b * x1 ** 2. + c * x1 - r) ** 2.
-    #     term2 = s * (1 - t) * np.cos(x1)
-    #     y = term1 + term2 + s
-    #     return y
     
+    plt.ioff()
+    fig_width = 16
+    fig_height = 16
+    
+    noise_var = 0.
     def fitness(X):
         X = np.atleast_2d(X)
-        return np.array([benchmarks.schwefel(x)[0] for x in X]) \
-            + np.sqrt(noise_var) * np.random.randn(X.shape[0])
-
+        return np.array([benchmarks.schwefel(x)[0] for x in X]) + \
+            np.sqrt(noise_var) * np.random.randn(X.shape[0])
+        
     dim = 2
-    n_init_sample = 70
-    noise_var = 0.1
+    n_init_sample = 10
 
     x_lb = np.array([-5] * dim)
     x_ub = np.array([5] * dim)
@@ -239,37 +245,52 @@ if __name__ == '__main__':
     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
     mean = linear_trend(dim, beta=None)
-    model = GaussianProcess(mean=mean,
-                            corr='matern',
-                            theta0=theta0,
-                            thetaL=thetaL,
-                            thetaU=thetaU,
-                            nugget=None,
-                            noise_estim=True,
-                            optimizer='BFGS',
-                            verbose=True,
-                            wait_iter=3,
-                            random_start=30,
-                            likelihood='concentrated',
-                            eval_budget=1e3)
+    model = GaussianProcess(mean=mean, corr='matern', theta0=theta0, thetaL=thetaL, thetaU=thetaU,
+                            nugget=None, noise_estim=True, optimizer='BFGS', verbose=True,
+                            wait_iter=3, random_start=10, eval_budget=50)
     
     model.fit(X, y)
     
     def grad(model):
-        f = EI(model)
+        f = MGFI(model, t=10)
         def __(x):
             _, dx = f(x, dx=True)
             return dx
         return __
-    f = EI(model)
-    dx = grad(model)
     
-    fig0, ax0 = plt.subplots(1, 1, sharey=True, sharex=False,
-                                figsize=(fig_width, fig_height),
-                                subplot_kw={'aspect': 'auto'}, dpi=100)
+    t = 1
+    infill = MGFI(model, t=t)
+    infill_dx = grad(model)
+    
+    m = lambda x: model.predict(x)
+    sd2 = lambda x: model.predict(x, eval_MSE=True)[1]
 
-    plot_contour_gradient(ax0, f, dx, x_lb, x_ub, title='Function',
-                          n_level=15, n_per_axis=120)
+    m_dx = lambda x: model.gradient(x)[0]
+    sd2_dx = lambda x: model.gradient(x)[1]
+    
+    if 1 < 2:
+        fig0, (ax0, ax1, ax2) = plt.subplots(1, 3, sharey=False, sharex=False,
+                                  figsize=(fig_width, fig_height),
+                                  subplot_kw={'aspect': 'equal'}, dpi=100)
+                                  
+        gs1 = gridspec.GridSpec(1, 3)
+        gs1.update(wspace=0.025, hspace=0.05) # set the spacing between axes. 
+    
+        plot_contour_gradient(ax0, fitness, None, x_lb, x_ub, title='Noisy function',
+                              n_level=20, n_per_axis=200)
+        
+        plot_contour_gradient(ax1, m, m_dx, x_lb, x_ub, title='GPR estimation',
+                              n_level=20, n_per_axis=200)
+                              
+        plot_contour_gradient(ax2, sd2, sd2_dx, x_lb, x_ub, title='GPR variance',
+                              n_level=20, n_per_axis=200)
+        plt.tight_layout()
+    
+    fig1, ax3 = plt.subplots(1, 1, figsize=(fig_width, fig_height),
+                             subplot_kw={'aspect': 'equal'}, dpi=100)
+                             
+    plot_contour_gradient(ax3, infill, infill_dx, x_lb, x_ub, title='Infill-Criterion',
+                          is_log=True, n_level=50, n_per_axis=250)
 
     plt.tight_layout()
     plt.show()
