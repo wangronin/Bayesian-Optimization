@@ -2,54 +2,85 @@
 """
 Created on Mon Mar 6 15:05:01 2017
 
-@author: wangronin
+@author: Hao Wang
 @email: wangronin@gmail.com
 
 """
 from __future__ import division
 from __future__ import print_function
 
-import pdb
-import dill, functools, itertools, copyreg, logging
+from pdb import set_trace
+import sys, dill, functools, itertools, copyreg, logging
 
 import pandas as pd
 import numpy as np
 
-from joblib import Parallel, delayed
+# from joblib import Parallel, delayed
+from pathos.multiprocessing import ProcessingPool # IMPORTANT: better than joblib
 from scipy.optimize import fmin_l_bfgs_b
 from sklearn.metrics import r2_score
+from sklearn.cluster import KMeans
 
+from .base import Solution
+from .optimizer import mies, cma_es
 from .InfillCriteria import EI, PI, MGFI
-from .optimizer import mies
-from .utils import proportional_selection
+from .Surrogate import SurrogateAggregation
+from .misc import proportional_selection, bcolors, MyFormatter, non_dominated_set_2d
 
-# TODO: remove the usage of pandas here change it to customized np.ndarray
-# TODO: finalize the logging system
+# TODO: implement the automatic surrogate model selection
+# TODO: improve the efficiency; profiling
+class BO(object):
+    """Bayesian Optimization (BO) base
+    """
+    def _eval(x, _eval_type, obj_func, _space=None, logger=None, runs=1, pickling=False):
+        """Evaluate one solution on a scalar-valued objective function
 
-class BayesOpt(object):
-    """
-    Generic Bayesian optimization algorithm
-    """
+        Parameters
+        ----------
+        x : bytes,
+            serialization of the (2-D) Solution instance
+        """
+        # TODO: move the pickling/unpickling operation to class 'Solution'
+        if pickling:
+            x = dill.loads(x)
+        fitness_, n_eval = x.fitness.flatten(), x.n_eval
+
+        if _eval_type == 'list':
+            ans = [obj_func(x.tolist()) for i in range(runs)]
+        elif _eval_type == 'dict':
+            ans = [obj_func(_space.to_dict(x)) for i in range(runs)]
+
+        # TODO: this should be done per objective fct.
+        fitness = np.sum(np.asarray(ans))
+        
+        # TODO: fix it
+        # x.fitness = fitness / runs if any(np.isnan(fitness_)) \
+        #     else (fitness_ * n_eval + fitness) / (x.n_eval + runs)
+        x.fitness = fitness / runs 
+        x.n_eval += runs
+        return dill.dumps(x) if pickling else x
+
     def __init__(self, search_space, obj_func, surrogate, ftarget=None,
-                 minimize=True, noisy=False, max_eval=None, max_iter=None, infill='EI',
+                 minimize=True, max_eval=None, max_iter=None, 
+                 infill='EI', t0=2, tf=1e-1, schedule=None, eval_type='list',
                  n_init_sample=None, n_point=1, n_job=1, backend='multiprocessing',
                  n_restart=None, max_infill_eval=None, wait_iter=3, optimizer='MIES', 
                  log_file=None, data_file=None, verbose=False, random_seed=None):
         """
-        parameter
-        ---------
+        Parameters
+        ----------
             search_space : instance of SearchSpace type
             obj_func : callable,
                 the objective function to optimize
             surrogate: surrogate model, currently support either GPR or random forest
             minimize : bool,
                 minimize or maximize
-            noisy : bool,
-                is the objective stochastic or not?
             max_eval : int,
                 maximal number of evaluations on the objective function
             max_iter : int,
                 maximal iteration
+            eval_type : str,
+                type of arguments to be evaluated: list | dict  
             n_init_sample : int,
                 the size of inital Design of Experiment (DoE),
                 default: 20 * dim
@@ -63,38 +94,41 @@ class BayesOpt(object):
                 the parallelization backend, supporting: 'multiprocessing', 'MPI', 'SPARC'
             optimizer: str,
                 the optimization algorithm for infill-criteria,
-                supported options: 'MIES' (Mixed-Integer Evolution Strategy for random forest), 
-                                   'BFGS' (quasi-Newtion for GPR)
+                supported options are:
+                    'MIES' (Mixed-Integer Evolution Strategy), 
+                    'BFGS' (quasi-Newtion for GPR)
         """
         self.verbose = verbose
         self.log_file = log_file
         self.data_file = data_file
         self._space = search_space
-        self.var_names = self._space.var_name.tolist()
+        self.var_names = self._space.var_name
         self.obj_func = obj_func
-        self.noisy = noisy
         self.surrogate = surrogate
-        self.n_point = n_point
-        self.n_jobs = min(self.n_point, n_job)
+        self.n_point = int(n_point)
+        # self.n_job = min(self.n_point, int(n_job))
+        self.n_job = int(n_job)
         self._parallel_backend = backend
         self.ftarget = ftarget 
         self.infill = infill
-
         self.minimize = minimize
         self.dim = len(self._space)
+        self._best = min if self.minimize else max
+        self._eval_type = eval_type         # TODO: find a better name for this
+        self.n_obj = 1
         
-        # column names for each variable type
-        self.con_ = self._space.var_name[self._space.id_C].tolist()   # continuous
-        self.cat_ = self._space.var_name[self._space.id_N].tolist()   # categorical
-        self.int_ = self._space.var_name[self._space.id_O].tolist()   # integer
+        self.r_index = self._space.id_C       # index of continuous variable
+        self.i_index = self._space.id_O       # index of integer variable
+        self.d_index = self._space.id_N       # index of categorical variable
 
         self.param_type = self._space.var_type
-        self.N_r = len(self.con_)
-        self.N_d = len(self.cat_)
-        self.N_i = len(self.int_)
+        self.N_r = len(self.r_index)
+        self.N_i = len(self.i_index)
+        self.N_d = len(self.d_index)
        
         # parameter: objective evaluation
-        self.init_n_eval = 1      # TODO: for noisy objective function, maybe increase the initial evaluations
+        # TODO: for noisy objective function, maybe increase the initial evaluations
+        self.init_n_eval = 1      
         self.max_eval = int(max_eval) if max_eval else np.inf
         self.max_iter = int(max_iter) if max_iter else np.inf
         self.n_init_sample = self.dim * 20 if n_init_sample is None else int(n_init_sample)
@@ -102,210 +136,457 @@ class BayesOpt(object):
         self.eval_hist_id = []
         self.iter_count = 0
         self.eval_count = 0
+        
+        # setting up cooling schedule
+        # subclassing this part
+        if self.infill == 'MGFI':
+            self.t0 = t0
+            self.tf = tf
+            self.t = t0
+            self.schedule = schedule
+            
+            # TODO: find a nicer way to integrate this part
+            # cooling down to 1e-1
+            max_iter = self.max_eval - self.n_init_sample
+            if self.schedule == 'exp':                         # exponential
+                self.alpha = (self.tf / t0) ** (1. / max_iter) 
+            elif self.schedule == 'linear':
+                self.eta = (t0 - self.tf) / max_iter           # linear
+            elif self.schedule == 'log':
+                self.c = self.tf * np.log(max_iter + 1)        # logarithmic 
+            elif self.schedule == 'self-adaptive':
+                raise NotImplementedError
 
         # paramter: acquisition function optimziation
         mask = np.nonzero(self._space.C_mask | self._space.O_mask)[0]
         self._bounds = np.array([self._space.bounds[i] for i in mask])             # bounds for continuous and integer variable
-        # self._levels = list(self._space.levels.values())
         self._levels = np.array([self._space.bounds[i] for i in self._space.id_N]) # levels for discrete variable
         self._optimizer = optimizer
         # TODO: set this number smaller when using L-BFGS and larger for MIES
-        self._max_eval = int(5e2 * self.dim) if max_infill_eval is None else max_infill_eval
-        self._random_start = int(10 * self.dim) if n_restart is None else n_restart
+        self._max_eval = int(1e3 * self.dim) if max_infill_eval is None else max_infill_eval
+        self._random_start = int(5 * self.dim) if n_restart is None else n_restart
         self._wait_iter = int(wait_iter)    # maximal restarts when optimal value does not change
 
-        # Intensify: the number of potential configuations compared against the current best
-        # self.mu = int(np.ceil(self.n_init_sample / 3))
-        self.mu = 3
-        
         # stop criteria
         self.stop_dict = {}
-        self.hist_perf = []
+        self.hist_f = []
         self._check_params()
 
         # set the random seed
         self.random_seed = random_seed
-        if self.random_seed:
+        if self.random_seed is not None:
             np.random.seed(self.random_seed)
         
+        # setup the logger
         self._get_logger(self.log_file)
+
+        # setup multi-processing workers
+        if self.n_job > 1:
+            self.p = ProcessingPool(ncpus=self.n_job)
         
-        # allows for pickling the objective function 
-        copyreg.pickle(self._eval, dill.pickles) 
-    
     def _get_logger(self, logfile):
-        """
-        When logfile is None, no records are written
+        """When the logfile is None, no records are written
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('- %(asctime)s [%(levelname)s] -- '
-                                      '[%(process)d - %(name)s] %(message)s')
+        fmt = MyFormatter()
 
         # create console handler and set level to warning
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.WARNING)
-        ch.setFormatter(formatter)
-        self.logger.addHandler(ch)
+        # TODO: implemement more verbosity levels
+        if self.verbose:
+            ch = logging.StreamHandler(sys.stdout)
+            ch.setLevel(logging.INFO)
+            ch.setFormatter(fmt)
+            self.logger.addHandler(ch)
 
         # create file handler and set level to debug
         if logfile is not None:
             fh = logging.FileHandler(logfile)
             fh.setLevel(logging.DEBUG)
-            fh.setFormatter(formatter)
+            fh.setFormatter(fmt)
             self.logger.addHandler(fh)
 
-    def _get_var(self, data):
+    def _compare(self, f1, f2):
         """
-        get variables from the dataframe
+        Test if objecctive value f1 is better than f2
         """
-        var_list = lambda row: [_ for _ in row[self.var_names].values]
-        if isinstance(data, pd.DataFrame):
-            return [var_list(row) for i, row in data.iterrows()]
-        elif isinstance(data, pd.Series):
-            return var_list(data)
+        return f1 < f2 if self.minimize else f2 > f1
     
-    def _to_dataframe(self, var, index=0):
-        if not hasattr(var[0], '__iter__'):
-            var = [var]
-        var = np.array(var, dtype=object)
-        N = len(var)
-        df = pd.DataFrame(np.c_[var, [0] * N, [None] * N],
-                          columns=self.var_names + ['n_eval', 'perf'])
-        df[self.con_] = df[self.con_].apply(pd.to_numeric)
-        df[self.int_] = df[self.int_].apply(lambda c: pd.to_numeric(c, downcast='integer'))
-        df.index = list(range(index, index + df.shape[0]))
-        return df
-
-    def _compare(self, perf1, perf2):
-        """
-        Test if perf1 is better than perf2
-        """
-        if self.minimize:
-            return perf1 < perf2
-        else:
-            return perf1 > perf2
-    
-    def _remove_duplicate(self, confs):
+    def _remove_duplicate(self, data):
         """
         check for the duplicated solutions, as it is not allowed
         for noiseless objective functions
         """
-        idx = []
-        X = self.data[self.var_names]
-        for i, x in confs.iterrows():
-            x_ = pd.to_numeric(x[self.con_])
-            CON = np.all(np.isclose(X[self.con_].values, x_), axis=1)
-            INT = np.all(X[self.int_] == x[self.int_], axis=1)
-            CAT = np.all(X[self.cat_] == x[self.cat_], axis=1)
+        _ = []
+        for i in range(data.N):
+            x = data[i]
+            
+            CON = np.all(np.isclose(np.asarray(self.data[:, self.r_index], dtype='float'),
+                                    np.asarray(x[self.r_index], dtype='float')), axis=1)
+            INT = np.all(self.data[:, self.i_index] == x[self.i_index], axis=1)
+            CAT = np.all(self.data[:, self.d_index] == x[self.d_index], axis=1)
             if not any(CON & INT & CAT):
-                idx.append(i)
-        return confs.loc[idx]
-
-    def _eval(self, x, runs=1):
-        perf_, n_eval = x.perf, x.n_eval
-        # TODO: handle the input type in a better way
-        # try:    # for dictionary input
-            # __ = [self.obj_func(x[self.var_names].to_dict()) for i in range(runs)]
-        # except: # for list input
-        __ = [self.obj_func(self._get_var(x)) for i in range(runs)]
-        perf = np.sum(__)
-
-        x.perf = perf / runs if not perf_ else np.mean((perf_ * n_eval + perf))
-        x.n_eval += runs
-
-        self.eval_count += runs
-        self.eval_hist += __
-        self.eval_hist_id += [x.name] * runs
-        
-        return x, runs, __, [x.name] * runs
+                _ += [i]
+        return data[_]
 
     def evaluate(self, data, runs=1):
-        """ Evaluate the candidate points and update evaluation info in the dataframe
+        """Evaluate the candidate points and update evaluation info in the dataframe
         """
-        if isinstance(data, pd.Series):
-            self._eval(data)
-        
-        elif isinstance(data, pd.DataFrame): 
-            if self.n_jobs > 1:
-                if self._parallel_backend == 'multiprocessing': # parallel execution using joblib
-                    res = Parallel(n_jobs=self.n_jobs, verbose=False)(
-                        delayed(self._eval, check_pickle=False)(row) for k, row in data.iterrows())
-                    
-                    x, runs, hist, hist_id = zip(*res)
-                    self.eval_count += sum(runs)
-                    self.eval_hist += list(itertools.chain(*hist))
-                    self.eval_hist_id += list(itertools.chain(*hist_id))
-                    for i, k in enumerate(data.index):
-                        data.loc[k] = x[i]
-                elif self._parallel_backend == 'MPI': # parallel execution using MPI
-                    # TODO: to use InstanceRunner here
-                    pass
-                elif self._parallel_backend == 'Spark': # parallel execution using Spark
-                    pass        
-            else:
-                for k, row in data.iterrows():
-                    self._eval(row)
-                    data.loc[k, ['n_eval', 'perf']] = row[['n_eval', 'perf']]
+        _eval_fun = functools.partial(BO._eval, _eval_type=self._eval_type, _space=self._space,
+                                      obj_func=self.obj_func, logger=self.logger, runs=runs,
+                                      pickling=self.n_job > 1) 
+        data = np.atleast_2d(data)
+        if self.n_job > 1:
+            if self._parallel_backend == 'multiprocessing': # parallel execution using multiprocessing
+                data_pickle = [dill.dumps(d) for d in data]
+
+                # parallel execution
+                __ = self.p.map(_eval_fun, data_pickle)
+
+                x = [dill.loads(_) for _ in __]
+                self.eval_count += runs * len(data)
+                for i, k in enumerate(data):
+                    data[i].fitness = x[i].fitness
+                    data[i].n_eval = x[i].n_eval
+        else:
+            for x in data:
+                self.eval_count += 1
+                _eval_fun(x)
 
     def fit_and_assess(self):
-        # TODO: change var name 'perf'
-        X, perf = self._get_var(self.data), self.data['perf'].values
-
-        # normalization the response for numerical stability
+        fitness = self.data.fitness
+        # normalization the response for the numerical stability
         # e.g., for MGF-based acquisition function
-        perf_min = np.min(perf)
-        perf_max = np.max(perf)
-        perf_ = (perf - perf_min) / (perf_max - perf_min)
+        self.f_min, self.f_max = np.min(fitness), np.max(fitness)
+        if np.isclose(self.f_min, self.f_max): 
+            raise Exception('flat objective value!') 
+        fitness_scaled = (fitness - self.f_min) / (self.f_max - self.f_min)
+        self.f_range = self.f_max - self.f_min
 
         # fit the surrogate model
-        self.surrogate.fit(X, perf_)
+        self.surrogate.fit(self.data, fitness_scaled)
         
         self.is_update = True
-        perf_hat = self.surrogate.predict(X)
-        self.r2 = r2_score(perf_, perf_hat)
+        fitness_hat = self.surrogate.predict(self.data)
+        r2 = r2_score(fitness_scaled, fitness_hat)
 
+        # TODO: adding cross validation for the model? 
+        # TODO: how to prevent overfitting in this case
         # TODO: in case r2 is really poor, re-fit the model or transform the input? 
+        # TODO: perform diagnostic/validation on the surrogate model
         # consider the performance metric transformation in SMAC
-        self.logger.info('Surrogate model r2: {}'.format(self.r2))
-        return self.r2
+        self.logger.info('Surrogate model r2: {}'.format(r2))
+        return r2
 
     def select_candidate(self):
         self.is_update = False
-        # always generate mu + 1 candidate solutions
-        while True:
-            confs_, acqui_opts_ = self.arg_max_acquisition()
-            confs_ = self._to_dataframe(confs_, self.data.shape[0])
-            confs_ = self._remove_duplicate(confs_)
+        X, infill_value = self.arg_max_acquisition()
+        X = Solution(X, index=len(self.data) + np.arange(len(X)), var_name=self.var_names)
+        
+        X = self._remove_duplicate(X)
+        # if the number of new design sites obtained is less than required,
+        # draw the remaining ones randomly
+        if len(X) < self.n_point:
+            self.logger.warn("iteration {}: duplicated solution found " 
+                             "by optimization! New points is taken from random "
+                             "design".format(self.iter_count))
+            N = self.n_point - len(X)
+            if N > 1:
+                s = self._space.sampling(N=N, method='LHS')
+            else:      # To generate a single sample, only uniform sampling is feasible
+                s = self._space.sampling(N=1, method='uniform')
+            X = X.tolist() + s 
+            X = Solution(X, index=len(self.data) + np.arange(len(X)), var_name=self.var_names)
+        
+        return X
+    
+    def _initialize(self):
+        """
+        Generate the initial data set (DOE) and construct the surrogate model
+        """
+        if hasattr(self, 'data'):
+            return 
 
-            # if no new design site is found, re-estimate the parameters immediately
-            if len(confs_) == 0:
-                if not self.is_update:
-                    # Duplication are commonly encountered in the 'corner'
-                    self.fit_and_assess()
-                else:
-                    self.logger.warn("iteration {}: duplicated solution found" 
-                                     "by optimization! New points is taken from random"
-                                     "design".format(self.iter_count))
-                    confs_ = self._space.sampling(N=1, method='uniform')
-                    confs_ = self._to_dataframe(confs_, self.data.shape[0])
-                    break
+        self.logger.info('selected surrogate model: {}'.format(self.surrogate.__class__)) 
+        self.logger.info('building {:d} initial design points...'.format(self.n_init_sample))
+
+        samples = self._space.sampling(self.n_init_sample)
+        self.data = Solution(samples, var_name=self.var_names, n_obj=self.n_obj)
+        self.evaluate(self.data, runs=self.init_n_eval)
+        self.data = self.after_eval_check(self.data)
+        self.fit_and_assess()
+        
+        # save the initial design to csv
+        if self.data_file is not None:
+            self.data.to_csv(self.data_file)
+
+    def after_eval_check(self, X):
+        _ = np.isnan(X.fitness)
+        if np.any(_):
+            if len(_.shape) == 2:
+                _ = np.any(_, axis=1).ravel()
+            self.logger.warn('{} candidate solutions are removed '
+                             'due to falied fitness evaluation: \n{}'.format(sum(_), str(X[_, :])))
+            X = X[~_, :] 
+        return X
+
+    def step(self):
+        self._initialize()  # initialization
+        
+        X = self.select_candidate()     # mutation by optimization
+        self.evaluate(X, runs=self.init_n_eval)
+        X = self.after_eval_check(X)
+        self.data = self.data + X
+
+        if self.data_file is not None:
+            X.to_csv(self.data_file, header=False, append=True)
+
+        self.fopt = self._best(self.data.fitness)
+        _ = np.nonzero(self.data.fitness == self.fopt)[0][0]
+        self.xopt = self.data[_]        
+        
+        self.fit_and_assess()     # re-train the surrogate model   
+        self.iter_count += 1
+        self.hist_f.append(self.xopt.fitness)
+
+        self.logger.info(bcolors.WARNING + \
+            'iteration {}, objective value: {:.8f}'.format(self.iter_count, 
+            self.xopt.fitness) + bcolors.ENDC)
+        self.logger.info('xopt: {}'.format(self._space.to_dict(self.xopt)))
+        
+        return self.xopt.tolist(), self.xopt.fitness
+
+    def run(self):
+        while not self.check_stop():
+            self.step()
+
+        self.stop_dict['n_eval'] = self.eval_count
+        self.stop_dict['n_iter'] = self.iter_count
+
+        return self.xopt.tolist(), self.xopt.fitness, self.stop_dict
+
+    def check_stop(self):
+        # TODO: add more stop criteria
+        if self.iter_count >= self.max_iter:
+            self.stop_dict['max_iter'] = True
+
+        if self.eval_count >= self.max_eval:
+            self.stop_dict['max_eval'] = True
+        
+        if self.ftarget is not None and hasattr(self, 'xopt'):
+            if self._compare(self.xopt.fitness, self.ftarget):
+                self.stop_dict['ftarget'] = True
+
+        return len(self.stop_dict)
+
+    def _acquisition(self, plugin=None, dx=False):
+        """
+        plugin : float,
+            the minimal objective value used in improvement-based infill criteria
+            Note that it should be given in the original scale
+        """
+        # objective values are normalized
+        plugin = 0 if plugin is None else (plugin - self.f_min) / self.f_range
+            
+        if self.n_point > 1:  # multi-point method
+            # create a portofolio of n infill-criteria by 
+            # instantiating n 't' values from the log-normal distribution
+            # exploration and exploitation
+            # TODO: perhaps also introduce cooling schedule for MGF
+            # TODO: other method: niching, UCB, q-EI
+            tt = np.exp(1. * np.random.randn())
+            acquisition_func = MGFI(self.surrogate, plugin, minimize=self.minimize, t=tt)
+            
+        elif self.n_point == 1:   # sequential excution
+            if self.infill == 'EI':
+                acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
+            elif self.infill == 'PI':
+                acquisition_func = PI(self.surrogate, plugin, minimize=self.minimize)
+            elif self.infill == 'MGFI':
+                # TODO: move this part to adaptive BayesOpt
+                acquisition_func = MGFI(self.surrogate, plugin, minimize=self.minimize, t=self.t)
+                self._annealling()
+            elif self.infill == 'UCB':
+                raise NotImplementedError
+                
+        return functools.partial(acquisition_func, dx=dx) 
+    
+    def _annealling(self):
+        if self.schedule == 'exp':  
+             self.t *= self.alpha
+        elif self.schedule == 'linear':
+            self.t -= self.eta
+        elif self.schedule == 'log':
+            # TODO: verify this
+            self.t = self.c / np.log(self.iter_count + 1 + 1)
+   
+    def arg_max_acquisition(self, plugin=None):
+        """
+        Global Optimization of the acqusition function / Infill criterion
+        Returns
+        -------
+            candidates: tuple of list,
+                candidate solution (in list)
+            values: tuple,
+                criterion value of the candidate solution
+        """
+        self.logger.debug('infill criteria optimziation...')
+        
+        dx = True if self._optimizer == 'BFGS' else False
+        criteria = [self._acquisition(plugin, dx=dx) for i in range(self.n_point)]
+
+        if self.n_job > 1:
+            __ = self.p.map(self._argmax_multistart, [_ for _ in criteria])
+        else:
+            __ = [list(self._argmax_multistart(_)) for _ in criteria]
+
+        candidates, values = tuple(zip(*__))
+        return candidates, values
+
+    def _argmax_multistart(self, obj_func):
+        # keep the list of optima in each restart for future usage
+        xopt, fopt = [], []  
+        eval_budget = self._max_eval
+        best = -np.inf
+        wait_count = 0
+
+        for iteration in range(self._random_start):
+            x0 = self._space.sampling(N=1, method='uniform')[0]
+            
+            # TODO: add IPOP-CMA-ES here for testing
+            # TODO: when the surrogate is GP, implement a GA-BFGS hybrid algorithm
+            # TODO: BFGS only works with GP
+            if self._optimizer == 'BFGS':
+                if self.N_d + self.N_i != 0:
+                    raise ValueError('BFGS is not supported with mixed variable types.')
+                # TODO: find out why: somehow this local lambda function can be pickled...
+                # for minimization
+                func = lambda x: tuple(map(lambda x: -1. * x, obj_func(x)))
+                xopt_, fopt_, stop_dict = fmin_l_bfgs_b(func, x0, pgtol=1e-8,
+                                                        factr=1e6, bounds=self._bounds,
+                                                        maxfun=eval_budget)
+                xopt_ = xopt_.flatten().tolist()
+                fopt_ = -np.asscalar(fopt_)
+                
+                if stop_dict["warnflag"] != 0:
+                    pass
+                    # self.logger.debug("L-BFGS-B terminated abnormally with the "
+                    #                   " state: %s" % stop_dict)
+                                
+            elif self._optimizer == 'MIES':
+                opt = mies(self._space, obj_func, max_eval=eval_budget, minimize=False, verbose=False)                           
+                xopt_, fopt_, stop_dict = opt.optimize()
+
+            if fopt_ > best:
+                best = fopt_
+                wait_count = 0
+                # self.logger.info('restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
+                #                    stop_dict['funcalls'], fopt_))
             else:
-                break
+                wait_count += 1
 
-        candidates_id = list(confs_.index)
-        if self.noisy:
-            id_ = self.data[self.data.id != self.incumbent_id.id].id
-            perf = self.data[self.data.id != self.incumbent_id.id].perf
-            __ = proportional_selection(perf, self.mu, self.minimize, replacement=False)
-            candidates_id.append(id_[__])
+            eval_budget -= stop_dict['funcalls']
+            xopt.append(xopt_)
+            fopt.append(fopt_)
+            
+            if eval_budget <= 0 or wait_count >= self._wait_iter:
+                break
+        # maximization: sort the optima in descending order
+        idx = np.argsort(fopt)[::-1]
+        return xopt[idx[0]], fopt[idx[0]]
+
+    def _check_params(self):
+        # assert hasattr(self.obj_func, '__call__')
+
+        if np.isinf(self.max_eval) and np.isinf(self.max_iter):
+            raise ValueError('max_eval and max_iter cannot be both infinite')
+
+
+# TODO: validate this subclass
+class BOAnnealing(BO):
+    def __init__(self, t0, tf, schedule, *argv, **kwargs):
+        super(BOAnnealing, self).__init__(*argv, **kwargs)
+        assert self.infill in ['MGFI', 'UCB']
+        self.t0 = t0
+        self.tf = tf
+        self.t = t0
+        self.schedule = schedule
+            
+        max_iter = self.max_eval - self.n_init_sample
+        if self.schedule == 'exp':                         # exponential
+            self.alpha = (self.tf / t0) ** (1. / max_iter) 
+        elif self.schedule == 'linear':
+            self.eta = (t0 - self.tf) / max_iter           # linear
+        elif self.schedule == 'log':
+            self.c = self.tf * np.log(max_iter + 1)        # logarithmic 
+
+    def _annealling(self):
+        if self.schedule == 'exp':  
+             self.t *= self.alpha
+        elif self.schedule == 'linear':
+            self.t -= self.eta
+        elif self.schedule == 'log':
+            # TODO: verify this
+            self.t = self.c / np.log(self.iter_count + 1 + 1)
+    
+    def _acquisition(self, plugin=None, dx=False):
+        """
+        plugin : float,
+            the minimal objective value used in improvement-based infill criteria
+            Note that it should be given in the original scale
+        """
+        infill = super(BOAnnealing, self)._acquisition(plugin, dx)
+        if self.n_point == 1 and self.infill == 'MGFI':
+            self._annealling()
+                
+        return infill
+
+
+class BOAdapt(BO):
+    def __init__(self, *argv, **kwargs):
+        super(BONoisy, self).__init__(*argv, **kargv)
+
+
+class BONoisy(BO):
+    def __init__(self, *args, **kargv):
+        super(BONoisy, self).__init__(*argv, **kargv)
+        self.noisy = True
+        self.infill = 'EQI'
+        # Intensify: the number of potential configuations compared against the current best
+        self.mu = 3
+    
+    def step(self):
+        self._initialize()  # initialization
         
         # TODO: postpone the evaluate to intensify...
-        self.evaluate(confs_, runs=self.init_n_eval)
-        self.data = self.data.append(confs_)
-        self.data.perf = pd.to_numeric(self.data.perf)
-        return candidates_id
+        X = self.select_candidate() 
+        self.evaluate(X, runs=self.init_n_eval)
+        self.data += X
 
+        # for noisy fitness: perform a proportional selection from the evaluated ones
+        id_, fitness = zip([(i, d.fitness) for i, d in enumerate(self.data) if i != self.incumbent_id])
+        __ = proportional_selection(fitness, self.mu, self.minimize, replacement=False)
+        candidates_id.append(id_[__])
+        
+        self.incumbent_id = self.intensify(ids)
+        self.incumbent = self.data[self.incumbent_id]
+        
+        # TODO: implement more control rules for model refitting
+        self.fit_and_assess()
+        self.iter_count += 1
+        self.hist_f.append(self.incumbent.fitness)
+
+        self.logger.info(bcolors.WARNING + \
+            'iteration {}, objective value: {}'.format(self.iter_count, 
+            self.incumbent.fitness) + bcolors.ENDC)
+        self.logger.info('incumbent: {}'.format(self.incumbent.to_dict()))
+
+        # save the incumbent to csv
+        incumbent_df = pd.DataFrame(np.r_[self.incumbent, self.incumbent.fitness].reshape(1, -1))
+        incumbent_df.to_csv(self.data_file, header=False, index=False, mode='a')
+        
+        return self.incumbent, self.incumbent.fitness
+            
     def intensify(self, candidates_ids):
         """
         intensification procedure for noisy observations (from SMAC)
@@ -341,174 +622,296 @@ class BayesOpt(object):
                 self.data.loc[i] = self.evaluate(conf, r)
                 print(self.conf.to_frame().T)
                 extra_run += r
-    
-    def _initialize(self):
-        """Generate the initial data set (DOE) and construct the surrogate model
+
+
+class MyPool(ProcessingPool):
+    def starmap(self, func, param):
+        return self.map(func, *zip(*param))
+
+
+class MOBO_D(BO):
+    """Decomposition-based Multi-Objective Bayesian Optimization (MOEA/D-EGO) 
+    """
+    # TODO: this number should be set according to the capability of the server
+    __max_procs__ = 16  # maximal number of processes
+
+    def _eval(x, _eval_type, obj_func, _space=None, logger=None, runs=1):
+        """evaluate one solution
+
+        Parameters
+        ----------
+        x : bytes,
+            serialization of the Solution instance
         """
-        self.logger.info('selected surrogate model: {}'.format(self.surrogate.__class__)) 
-        self.logger.info('building the initial design of experiemnts...')
+        # TODO: move the pickling/unpickling operation to class 'Solution'
+        x = dill.loads(x)
+        fitness_, n_eval = x.fitness.flatten(), x.n_eval
 
-        samples = self._space.sampling(self.n_init_sample)
-        self.data = self._to_dataframe(samples)
-        self.evaluate(self.data, runs=self.init_n_eval)
+        if hasattr(obj_func, '__call__'):   # vector-valued obj_func
+            if _eval_type == 'list':
+                ans = [obj_func(x.tolist()) for i in range(runs)]
+            elif _eval_type == 'dict':
+                ans = [obj_func(_space.to_dict(x)) for i in range(runs)]
+
+            # TODO: this should be done per objective fct.
+            fitness = np.sum(np.asarray(ans), axis=0)
+
+            # TODO: fix it
+            # x.fitness = fitness / runs if any(np.isnan(fitness_)) \
+            #     else (fitness_ * n_eval + fitness) / (x.n_eval + runs)
+            x.fitness = fitness / runs 
+
+        elif hasattr(obj_func, '__iter__'):  # a list of  obj_func
+            for i, obj_func in enumerate(obj_func):
+                try:
+                    if _eval_type == 'list':
+                        ans = [obj_func(x.tolist()) for i in range(runs)]
+                    elif _eval_type == 'dict':
+                        ans = [obj_func(_space.to_dict(x)) for i in range(runs)]
+                except Exception as ex:
+                    logger.error('Error in function evaluation: {}'.format(ex))
+                    return
+
+                fitness = np.sum(ans)
+                x.fitness[0, i] = fitness / runs if np.isnan(fitness_[i]) \
+                    else (fitness_[i] * n_eval + fitness) / (x.n_eval + runs)
+
+        x.n_eval += runs
+        return dill.dumps(x)
+    
+    def __init__(self, n_obj=2, aggregation='WS', n_point=5, n_job=1, *argv, **kwargs):
+        """
+        Parameters
+        ---------
+        n_point : int,
+            the number of evaluated points in each iteration
+        aggregation: str or callable,
+            the scalarization method/function. Supported options are:
+                'WS' : weighted sum
+                'Tchebycheff' : Tchebycheff scalarization
+        """
+        super(MOBO_D, self).__init__(*argv, **kwargs)
+        # TODO: perhaps leave this an input parameter
+        self.n_point = int(n_point)
+        self.mu = 2 * self.n_point   # the number of generated points
+        self.n_obj = int(n_obj)
+        assert self.n_obj > 1
+
+        if hasattr(self.obj_func, '__iter__'):
+            assert self.n_obj == len(self.obj_func)
         
-        # set the initial incumbent
-        self.data.perf = pd.to_numeric(self.data.perf)
-        perf = np.array(self.data.perf)
+        assert self.n_obj == len(self.surrogate)
+        self.n_job = min(MOBO_D.__max_procs__, self.mu, n_job)
 
-        self.incumbent_id = np.nonzero(perf == np.min(perf))[0][0]
-        self.fit_and_assess()
+        # TODO: implement the Tchebycheff approach
+        if isinstance(aggregation, str):
+            assert aggregation in ['WS', 'Tchebycheff']
+        else:
+            assert hasattr(aggregation, '__call__')
+        self.aggregation = aggregation
 
-        # record the incumbent in iteration 0
-        self.data.loc[[self.incumbent_id]].to_csv(self.data_file, header=True, index=False, mode='w')
+        # generate weights
+        self.weights = np.random.rand(self.mu, self.n_obj)
+        self.weights /= np.sum(self.weights, axis=1).reshape(self.mu, 1)
+        self.labels_ = KMeans(n_clusters=self.n_point).fit(self.weights).labels_
+        self.f_range = np.zeros(self.n_obj)
+
+        if self.n_job > 1:
+            self.p = ProcessingPool(ncpus=self.n_job)
+    
+    def evaluate(self, data, runs=1):
+        """Evaluate the candidate points and update evaluation info in the dataframe
+        """
+        _eval_fun = functools.partial(MOBO_D._eval, _eval_type=self._eval_type, _space=self._space,
+                                      obj_func=self.obj_func, logger=self.logger, runs=runs) 
+        if len(data.shape) == 1:
+            _eval_fun(data)
+        else: 
+            if self.n_job > 1:
+                if self._parallel_backend == 'multiprocessing': # parallel execution using multiprocessing
+                    data_pickle = [dill.dumps(d) for d in data]
+                    __ = self.p.map(_eval_fun, data_pickle)
+
+                    x = [dill.loads(_) for _ in __]
+                    self.eval_count += runs * len(data)
+                    for i, k in enumerate(data):
+                        data[i].fitness = x[i].fitness
+                        data[i].n_eval = x[i].n_eval
+            else:
+                for x in data:
+                    _eval_fun(x)
+
+    def fit_and_assess(self):
+        def _fit(surrogate, X, y):
+            y_min, y_max = np.min(y), np.max(y)
+            if np.isclose(y_min, y_max): 
+                raise Exception('flat objective value!') 
+
+            y_ = (y - y_min) / (y_max - y_min)
+            surrogate.fit(X, y_)
+            # self.f_range[index] = y_max - y_min
+            y_hat = surrogate.predict(X)
+            r2 = r2_score(y_, y_hat)    
+            return surrogate, r2
+
+        if self.n_job > 1:
+            __ = self.p.map(_fit, *zip(*[(self.surrogate[i], self.data, 
+                            self.data.fitness[:, i]) for i in range(self.n_obj)]))
+        else: 
+            __ = []
+            for i in range(self.n_obj):
+                __.append(list(_fit(self.surrogate[i], self.data, self.data.fitness[:, i])))
+
+        self.surrogate, r2 = tuple(zip(*__))
+        for i in range(self.n_obj):
+            self.logger.info('F{} Surrogate model r2: {}'.format(i + 1, r2[i]))
 
     def step(self):
-        if not hasattr(self, 'data'):
-           self._initialize()
+        self._initialize()  
         
-        ids = self.select_candidate()
-        if self.noisy:
-            self.incumbent_id = self.intensify(ids)
-        else:
-            perf = np.array(self.data.perf)
-            self.incumbent_id = np.nonzero(perf == np.min(perf))[0][0]
-
-        # model re-training
-        self.fit_and_assess()
+        X = self.select_candidate() 
+        self.evaluate(X, runs=self.init_n_eval)
+        self.data += X
+        
+        self.fit_and_assess()     
         self.iter_count += 1
-        self.hist_perf.append(self.data.loc[self.incumbent_id, 'perf'])
+
+        # xopt is the set of the non-dominated point now
+        nd_idx = non_dominated_set_2d(self.data.fitness)
+        self.xopt = self.data[nd_idx]  
+        self.logger.info('{}iteration {}, {} points in the Pareto front: {}\n{}'.format(bcolors.WARNING, 
+            self.iter_count, len(self.xopt), bcolors.ENDC, str(self.xopt)))
+
+        if self.data_file is not None:
+            self.xopt.to_csv(self.data_file)
+
+        return self.xopt, self.xopt.fitness
+    
+    def select_candidate(self):
+        _ = self.arg_max_acquisition()
+        X, value = np.asarray(_[0], dtype='object'), np.asarray(_[1])
         
-        self.incumbent = self.data.loc[[self.incumbent_id]]
+        X_ = []
+        # select the best point from each cluster
+        for i in range(self.n_point):
+            v = value[self.labels_ == i]
+            idx = np.nonzero(v == np.max(v))[0][0]
+            X_.append(X[self.labels_ == i][idx].tolist())
 
-        self.logger.info('iteration {}, current incumbent is:'.format(self.iter_count))
-        self.logger.info(str(self.incumbent))
-        
-        # save the iterative data configuration to csv
-        self.incumbent.to_csv(self.data_file, header=False, index=False, mode='a')
-        
-        return self._get_var(self.incumbent)[0], self.incumbent.perf.values
+        X = Solution(X_, index=len(self.data) + np.arange(len(X_)), 
+                     var_name=self.var_names, n_obj=self.n_obj)
+        X = self._remove_duplicate(X)
 
-    def run(self):
-        while not self.check_stop():
-            self.step()
+        # if the number of new design sites obtained is less than required,
+        # draw the remaining ones randomly
+        if len(X) < self.n_point:
+            self.logger.warn("iteration {}: duplicated solution found " 
+                             "by optimization! New points is taken from random "
+                             "design".format(self.iter_count))
+            N = self.n_point - len(X)
+            s = self._space.sampling(N, method='uniform')
+            X = Solution(X.tolist() + s, index=len(self.data) + np.arange(self.n_point),
+                         var_name=self.var_names, n_obj=self.n_obj)
 
-        self.stop_dict['n_eval'] = self.eval_count
-        self.stop_dict['n_iter'] = self.iter_count
-        return self.incumbent, self.stop_dict
+        return X
 
-    def check_stop(self):
-        # TODO: add more stop criteria
-        # unify the design purpose of stop_dict
-        if self.iter_count >= self.max_iter:
-            self.stop_dict['max_iter'] = True
+    def _acquisition(self, surrogate=None, plugin=None, dx=False):
+        """Generate Infill Criteria based on surrogate models
 
-        if self.eval_count >= self.max_eval:
-            self.stop_dict['max_eval'] = True
-        
-        if self.ftarget is not None and hasattr(self, 'incumbent') and \
-            self._compare(self.incumbent.perf, self.ftarget):
-            self.stop_dict['ftarget'] = True
-
-        return len(self.stop_dict)
-
-    def _acquisition(self, plugin=None, dx=False):
+        Parameters
+        ----------
+        surrogate : class instance
+            trained surrogate model
+        plugin : float,
+            the minimal objective value used in improvement-based infill criteria
+            Note that it should be given in the original scale
+        """
+        # objective values are normalized
         if plugin is None:
-            # plugin = np.min(self.data.perf) if self.minimize else -np.max(self.data.perf)
-            # Note that performance are normalized when building the surrogate
-            plugin = 0 if self.minimize else -1
-            
-        if self.n_point > 1:  # multi-point method
-            # create a portofolio of n infill-criteria by 
-            # instantiating n 't' values from the log-normal distribution
-            # exploration and exploitation
-            # TODO: perhaps also introduce cooling schedule for MGF
-            # TODO: other method: niching, UCB, q-EI
-            tt = np.exp(0.5 * np.random.randn())
-            acquisition_func = MGFI(self.surrogate, plugin, minimize=self.minimize, t=tt)
-        elif self.n_point == 1: # sequential mode
-            
-            if self.infill == 'EI':
-                acquisition_func = EI(self.surrogate, plugin, minimize=self.minimize)
-            elif self.infill == 'PI':
-                acquisition_func = PI(self.surrogate, plugin, minimize=self.minimize)
-            elif self.infill == 'MGFI':
-                acquisition_func = MGFI(self.surrogate, plugin, minimize=self.minimize, t=self.t)
+            plugin = 0
+        else:
+            # TODO: implement this!
+            raise NotImplementedError
+
+        if self.infill == 'EI':
+            acquisition_func = EI(surrogate, plugin, minimize=self.minimize)
+        elif self.infill == 'PI':
+            acquisition_func = PI(surrogate, plugin, minimize=self.minimize)
+        elif self.infill == 'MGFI':
+            acquisition_func = MGFI(surrogate, plugin, minimize=self.minimize, t=self.t)
+        elif self.infill == 'UCB':
+            raise NotImplementedError
                 
-        return functools.partial(acquisition_func, dx=dx)
-        
+        return functools.partial(acquisition_func, dx=dx) 
+
     def arg_max_acquisition(self, plugin=None):
+        """Global Optimization of the acqusition function / Infill criterion
+        Arguments
+        ---------
+        plugin : float,
+            the cut-off value for improvement-based criteria
+            it is set to the current minimal target value
+
+        Returns
+        -------
+            candidates: tuple of list,
+                candidate solution (in list)
+            values: tuple of float,
+                criterion value of the candidate solution
         """
-        Global Optimization on the acqusition function 
-        """
-        if self.verbose:
-            self.logger.info('acquisition function optimziation...')
+        self.logger.debug('infill criteria optimziation...')
         
         dx = True if self._optimizer == 'BFGS' else False
-        obj_func = [self._acquisition(plugin, dx=dx) for i in range(self.n_point)]
+        surrogates = (SurrogateAggregation(self.surrogate, weights=w) for w in self.weights)
+        criteria = (self._acquisition(s, plugin, dx=dx) for s in surrogates)
 
-        if self.n_point == 1:
-            candidates, values = self._argmax_multistart(obj_func[0])
+        if self.n_job > 1:
+            __ = self.p.map(self._argmax_multistart, [_ for _ in criteria])
         else:
-            # parallelization using joblib
-            res = Parallel(n_jobs=self.n_jobs, verbose=self.verbose)(
-                delayed(self._argmax_multistart, check_pickle=False)(func) for func in obj_func)
-            candidates, values = list(zip(*res))
+            __ = [list(self._argmax_multistart(_)) for _ in criteria]
+
+        candidates, values = tuple(zip(*__))
         return candidates, values
 
-    def _argmax_multistart(self, obj_func):
-        # keep the list of optima in each restart for future usage
-        xopt, fopt = [], []  
-        eval_budget = self._max_eval
-        best = -np.inf
-        wait_count = 0
 
-        for iteration in range(self._random_start):
-            x0 = self._space.sampling(N=1, method='uniform')[0]
-            
-            # TODO: add IPOP-CMA-ES here for testing
-            # TODO: when the surrogate is GP, implement a GA-BFGS hybrid algorithm
-            if self._optimizer == 'BFGS':
-                if self.N_d + self.N_i != 0:
-                    raise ValueError('BFGS is not supported with mixed variable types.')
-                # TODO: find out why: somehow this local lambda function can be pickled...
-                # for minimization
-                func = lambda x: tuple(map(lambda x: -1. * x, obj_func(x)))
-                xopt_, fopt_, stop_dict = fmin_l_bfgs_b(func, x0, pgtol=1e-8,
-                                                        factr=1e6, bounds=self._bounds,
-                                                        maxfun=eval_budget)
-                xopt_ = xopt_.flatten().tolist()
-                fopt_ = -np.sum(fopt_)
-                
-                if stop_dict["warnflag"] != 0 and self.verbose:
-                    self.logger.warn("L-BFGS-B terminated abnormally with the "
-                                     " state: %s" % stop_dict)
-                                
-            elif self._optimizer == 'MIES':
-                opt = mies(x0, obj_func, self._bounds.T, self._levels, self.param_type, 
-                           eval_budget, minimize=False, verbose=False)                            
-                xopt_, fopt_, stop_dict = opt.optimize()
+if __name__ == '__main__':
+    from .SearchSpace import ContinuousSpace, OrdinalSpace, NominalSpace
+    from .Surrogate import RandomForest
 
-            if fopt_ > best:
-                best = fopt_
-                wait_count = 0
-                if self.verbose:
-                    self.logger.info('restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
-                        stop_dict['funcalls'], fopt_))
+    np.random.seed(666)
+
+    if 1 < 2:
+        def fitness(x):
+            x_r, x_i, x_d = np.array(x[:2]), x[2], x[3]
+            if x_d == 'OK':
+                tmp = 0
             else:
-                wait_count += 1
+                tmp = 1
+            return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + tmp * 2
 
-            eval_budget -= stop_dict['funcalls']
-            xopt.append(xopt_)
-            fopt.append(fopt_)
-            
-            if eval_budget <= 0 or wait_count >= self._wait_iter:
-                break
-        # maximization: sort the optima in descending order
-        idx = np.argsort(fopt)[::-1]
-        return xopt[idx[0]], fopt[idx[0]]
+        space = (ContinuousSpace([-5, 5]) * 2) + OrdinalSpace([5, 15]) + \
+            NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'])
 
-    def _check_params(self):
-        assert hasattr(self.obj_func, '__call__')
+        levels = space.levels if hasattr(space, 'levels') else None
+        model = RandomForest(levels=levels)
 
-        if np.isinf(self.max_eval) and np.isinf(self.max_iter):
-            raise ValueError('max_eval and max_iter cannot be both infinite')
+        opt = BO(space, fitness, model, max_eval=300, verbose=True, n_job=3, n_point=3)
+        xopt, fopt, stop_dict = opt.run()
+
+    if 11 < 2:
+        def fitness0(x):
+            x = np.asarray(x)
+            return sum(x ** 2.)
+        
+        def fitness1(x):
+            x = np.asarray(x)
+            return sum((x + 2) ** 2.)
+
+        space = (ContinuousSpace([-5, 5]) * 2)
+        model = (RandomForest(levels=None), RandomForest(levels=None))
+
+        obj_func = lambda x: [fitness0(x), fitness1(x)]
+        opt = MOBO_D(n_obj=2, search_space=space, obj_func=obj_func, 
+                     n_point=5, n_job=16, n_init_sample=10,
+                     surrogate=model, max_iter=100, verbose=True)
+        xopt, fopt, stop_dict = opt.run()

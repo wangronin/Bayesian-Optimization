@@ -7,9 +7,9 @@ Created on Tue Jan 29 11:26:41 2013
 
 import numpy as np
 # import hello as h
-from ..misc import boundary_handling
+from .boundary_handling import boundary_handling
 from scipy.stats import chi
-#from function import rand_orth_mat
+from .function import rand_orth_mat
 from numpy.linalg import eigh, LinAlgError, qr, cond
 from numpy.random import randn, rand, shuffle
 from numpy import sqrt, eye, exp, dot, add, inf, triu, isreal, isinf,\
@@ -72,8 +72,8 @@ class cma_es(object):
         self.eval_budget = int(eval(opts['eval_budget'])) if isinstance(opts['eval_budget'],
                                                                         basestring) \
                                                           else int(opts['eval_budget'])
-                                                          
-        self.wcm = np.atleast_2d(self.wcm).reshape(-1, 1)
+
+        self.wcm = self.wcm.reshape(-1, 1)
         self.dim = dim
         self.sigma0 = opts['sigma_init']
         self.sigma = self.sigma0
@@ -183,8 +183,7 @@ class cma_es(object):
 
         # Mirroring
         mode = self.sampling_method
-        dim, _lambda, sigma, evalcount, scale, aux = self.dim, self._lambda, \
-            self.sigma, self.evalcount, self.scale, self.aux
+        dim, _lambda, sigma, evalcount, scale, aux = self.dim, self._lambda, self.sigma, self.evalcount, self.scale, self.aux
 
         if mode == 1 or mode == 11:
             if mod(evalcount+_lambda, 2) != 0:
@@ -358,7 +357,7 @@ class cma_es(object):
         else:
             try:
                 w, e_vector = eigh(C)
-                e_value = sqrt(list(map(complex, w))).reshape(-1, 1)
+                e_value = sqrt(map(complex, w)).reshape(-1, 1)
                 if any(~isreal(e_value)) or any(isinf(e_value)):
                     if self.is_stop_on_warning:
                         self.stop_dict['EigenvalueError'] = True
