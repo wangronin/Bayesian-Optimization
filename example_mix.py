@@ -101,4 +101,8 @@ opt = BO(search_space, obj_func, model, max_iter=n_step,
          verbose=True,     # turn this off, if you prefer no output
          optimizer='MIES')
 
-opt.run()
+xopt, fitness, stop_dict = opt.run()
+
+print('xopt: {}'.format(xopt))
+print('fopt: {}'.format(fitness))
+print('stop criteria: {}'.format(stop_dict))
