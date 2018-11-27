@@ -16,10 +16,21 @@ from numpy import isfinite, mod, floor, shape, bitwise_and, zeros, newaxis
 
 # TODO: re-written those functions to C/Cython
 def non_dominated_set_2d(y, minimize=True):
+    """ 
+    Argument
+    --------
+    y : numpy 2d array, 
+        where the each solution occupies a row
+    """
     y = np.asarray(y)
     N, dim = y.shape
-    if minimize:
-        y = y * -1
+
+    if isinstance(minimize, bool):
+        minimize = [minimize]
+    
+    minimize = np.asarray(minimize).ravel()
+    assert len(minimize) == 1 or minimize.shape == (N, ) 
+    y *= (np.asarray([-1] * N) ** minimize).reshape(-1, 1)
 
     _ = np.argsort(y[:, 0])[::-1]
     y2 = y[_, 1]

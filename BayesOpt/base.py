@@ -145,7 +145,7 @@ class Solution(np.ndarray):
     def __getitem__(self, index):
         _, __ = index, slice(None, None)
         if isinstance(index, tuple):
-            index = list(index)
+            # index = list(index)
             _ = index[0]
             if len(index) == 2 and isinstance(index[1], int):
                 index[1] = slice(index[1], index[1] + 1)
@@ -247,7 +247,7 @@ class Solution(np.ndarray):
 if __name__ == '__main__':
     # test for 2D solution
     s = Solution(np.c_[np.random.randn(5, 3), ['simida', 'niubia', 'bang', 'GG', 'blyat']], 
-                       verbose=True, fitness=[0] * 2, n_obj=2)
+                 verbose=True, fitness=[0] * 2, n_obj=2)
 
     # test for pickling
     import dill
@@ -258,11 +258,9 @@ if __name__ == '__main__':
 
     # test for looping 
     for ss in s[0, :].reshape(1, -1):
-        ss.fitness = [1,2]
-        print(ss.fitness)
+        ss.fitness = [1, 2]
+        print(ss)
     
-    print(s)
-
     # print(s.to_dict(show_attr=True))
     # print(s)
     # print(s[0])
