@@ -4,8 +4,6 @@ output:
   pdf_document: default
 ---
 
-\newcommand{\E}{\mathbb{E}}
-\DeclareMathOperator*{\argmin}{arg\,min}
 
 # Bayesian Optimization Library
 
@@ -88,7 +86,7 @@ $$\epsilon(f, d_n) = f(\mathbf{x}_n) - f(\mathbf{x}^*),\quad \text{in the object
 or
 $$\epsilon(f, d_n) = ||\mathbf{x}_n - \mathbf{x}^*||,\quad \text{in the decision space,}$$
 Using this error measure, the step-wise optimization task can be formulated as:
-$$d_n^* = \argmin_{d_n}\epsilon(f, d_n)$$
+$$d_n^* = \operatorname{arg\,min}_{d_n}\epsilon(f, d_n)$$
 This optimization task requires the full knowledge on the objective function $f$, which is not available (of course...). Alternatively, in Bayesian optimization, it is assumed that the objective function belongs to a function family or _function space_, e.g. $\mathcal{C}^1(\mathbb{R}^d):$ the space of continuous functions on $\mathbb{R}^d$ that have continuous first-order derivatives.
 
 Without loss of generality, let's assume our objective function is in such a function space:
@@ -101,17 +99,13 @@ Then, using the Bayes rule, the __posterior__ distribution of $f$ is calculated 
 $$\underbrace{P(f | \{\mathbf{x}_i\}_{i=1}^n, \{y_i\}_{i=1}^n)}_{\text{posterior}} \propto \underbrace{P(\{\mathbf{x}_i\}_{i=1}^n, \{y_i\}_{i=1}^n | f)}_{\text{likelihood/evidence}}\underbrace{P(f)}_{\text{prior}}$$
 Intuitively, the posterior tells us that how the function $f$ distributes once some data/evidence from it are available. At this point, our knowledge on $f$ is better than nothing, but it is represented as a distribution, containing uncertainties. Therefore, the optimal decision-making task can be tackled by optimizing the expected loss function:
 $$
-\begin{align}
-d_n^{BO} &= \argmin_{d_n}\E\left[\epsilon(f, d_n) \; |\; \{\mathbf{x}_i\}_{i=1}^n, \{y_i\}_{i=1}^n)\right] \nonumber \\
-&= \argmin_{d_n}\int_{\mathcal{C}^1\left(\mathbb{R}^d\right)}\epsilon(f, d_n) \mathrm{d} P(f | \{\mathbf{x}_i\}_{i=1}^n, \{y_i\}_{i=1}^n) \label{eq:infill}
-\end{align}
+d_n^{BO} = \operatorname{arg\,min}_{d_n}\mathbb{E}\left[\epsilon(f, d_n) \; |\; \{\mathbf{x}_i\}_{i=1}^n, \{y_i\}_{i=1}^n)\right]\\
+\quad\quad\quad\;\:= \operatorname{arg\,min}_{d_n}\int_{\mathcal{C}^1\left(\mathbb{R}^d\right)}\epsilon(f, d_n) \mathrm{d} P(f | \{\mathbf{x}_i\}_{i=1}^n, \{y_i\}_{i=1}^n)
 $$
 In practice, the loss function $\epsilon$ is not used because there is not knowledge on the global optimum of $f$. Instead, the improvement between two iterations/steps (as defined in section $1$) is commonly used. The expectation in Eq.~\ref{eq:infill} is the so-called __infill-criteria__, __acquisition function__ or __selection criteria__. Some commonly used ones are: Expected Improvement (EI), Probability of Improvement (PI) and Upper (lower) Confidence Bound (UCB).
 
 As for the prior distribution, the mostly used one is Gaussian and such a distribution on functions is __Gaussian process__ (random field). It is also possible to consider the Gaussian process as a \emph{surrogate} or simple a model on the unknown function $f$. In this sense, some other models are also often exploited, e.g. Student's t process~\cite{williams2000sequential} and random forest (in SMAC and SPOT). However, the usage of random forest models brings me some additional thinkings (see the following sections).
 
-The same algorithmic idea was re-advertised in the name of "Efficient Global Optimization"" (EGO) by Donald R. Jones~\cite{jones1998efficient}. As pointed out in Jone's paper on taxonomy of global optimization methods, the bayesian optimization can be viewed as a special case of a broader family of similar algorithms, that is call ``global optimization based on response surfaces''~\cite{jones2001taxonomy}, Model-based Optimization (MBO) (some references here from Bernd Bischl) or Sequential MBO~\cite{hutter2011sequential}. 
+The same algorithmic idea was re-advertised in the name of "Efficient Global Optimization"" (EGO) by Donald R. Jones~\cite{jones1998efficient}. As pointed out in Jone's paper on taxonomy of global optimization methods, the bayesian optimization can be viewed as a special case of a broader family of similar algorithms, that is call ``global optimization based on response surfaces''~\cite{jones2001taxonomy}, Model-based Optimization (MBO) (some references here from Bernd Bischl) or Sequential MBO~\cite{hutter2011sequential}.
 
 ## Reference
-
-
