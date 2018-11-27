@@ -6,8 +6,6 @@ Created on Mon Mar 6 15:05:01 2017
 @email: wangronin@gmail.com
 
 """
-from __future__ import division
-from __future__ import print_function
 
 from pdb import set_trace
 import sys, dill, functools, itertools, copyreg, logging
@@ -16,7 +14,9 @@ import pandas as pd
 import numpy as np
 
 # from joblib import Parallel, delayed
-from pathos.multiprocessing import ProcessingPool # IMPORTANT: better than joblib
+# IMPORTANT: pathos is better than joblib 
+# it uses dill for pickling 
+from pathos.multiprocessing import ProcessingPool 
 from scipy.optimize import fmin_l_bfgs_b
 from sklearn.metrics import r2_score
 from sklearn.cluster import KMeans
@@ -30,36 +30,7 @@ from .misc import proportional_selection, bcolors, MyFormatter, non_dominated_se
 # TODO: implement the automatic surrogate model selection
 # TODO: improve the efficiency; profiling
 class BO(object):
-    """Bayesian Optimization (BO) base
-    """
-    def _eval(x, _eval_type, obj_func, _space=None, logger=None, runs=1, pickling=False):
-        """Evaluate one solution on a scalar-valued objective function
-
-        Parameters
-        ----------
-        x : bytes,
-            serialization of the (2-D) Solution instance
-        """
-        # TODO: move the pickling/unpickling operation to class 'Solution'
-        if pickling:
-            x = dill.loads(x)
-        fitness_, n_eval = x.fitness.flatten(), x.n_eval
-
-        if _eval_type == 'list':
-            ans = [obj_func(x.tolist()) for i in range(runs)]
-        elif _eval_type == 'dict':
-            ans = [obj_func(_space.to_dict(x)) for i in range(runs)]
-
-        # TODO: this should be done per objective fct.
-        fitness = np.sum(np.asarray(ans))
-        
-        # TODO: fix it
-        # x.fitness = fitness / runs if any(np.isnan(fitness_)) \
-        #     else (fitness_ * n_eval + fitness) / (x.n_eval + runs)
-        x.fitness = fitness / runs 
-        x.n_eval += runs
-        return dill.dumps(x) if pickling else x
-
+    """Bayesian Optimization (BO) base class"""
     def __init__(self, search_space, obj_func, surrogate, ftarget=None,
                  minimize=True, max_eval=None, max_iter=None, 
                  infill='EI', t0=2, tf=1e-1, schedule=None, eval_type='list',
@@ -67,6 +38,7 @@ class BO(object):
                  n_restart=None, max_infill_eval=None, wait_iter=3, optimizer='MIES', 
                  log_file=None, data_file=None, verbose=False, random_seed=None):
         """
+
         Parameters
         ----------
             search_space : instance of SearchSpace type
@@ -125,6 +97,8 @@ class BO(object):
         self.N_r = len(self.r_index)
         self.N_i = len(self.i_index)
         self.N_d = len(self.d_index)
+
+        self._init_flatfitness_trial = 2
        
         # parameter: objective evaluation
         # TODO: for noisy objective function, maybe increase the initial evaluations
@@ -162,8 +136,8 @@ class BO(object):
         self._bounds = np.array([self._space.bounds[i] for i in mask])             # bounds for continuous and integer variable
         self._levels = np.array([self._space.bounds[i] for i in self._space.id_N]) # levels for discrete variable
         self._optimizer = optimizer
-        # TODO: set this number smaller when using L-BFGS and larger for MIES
-        self._max_eval = int(1e3 * self.dim) if max_infill_eval is None else max_infill_eval
+        # TODO: set this _max_eval smaller when using L-BFGS and larger for MIES
+        self._max_eval = int(5e2 * self.dim) if max_infill_eval is None else max_infill_eval
         self._random_start = int(5 * self.dim) if n_restart is None else n_restart
         self._wait_iter = int(wait_iter)    # maximal restarts when optimal value does not change
 
@@ -174,7 +148,7 @@ class BO(object):
 
         # set the random seed
         self.random_seed = random_seed
-        if self.random_seed is not None:
+        if self.random_seed:
             np.random.seed(self.random_seed)
         
         # setup the logger
@@ -207,8 +181,7 @@ class BO(object):
             self.logger.addHandler(fh)
 
     def _compare(self, f1, f2):
-        """
-        Test if objecctive value f1 is better than f2
+        """Test if objecctive value f1 is better than f2
         """
         return f1 < f2 if self.minimize else f2 > f1
     
@@ -229,6 +202,34 @@ class BO(object):
                 _ += [i]
         return data[_]
 
+    def _eval(x, _eval_type, obj_func, _space=None, logger=None, runs=1, pickling=False):
+        """Evaluate one solution on a scalar-valued objective function
+
+        Parameters
+        ----------
+        x : bytes,
+            serialization of the (2-D) Solution instance
+        """
+        # TODO: move the pickling/unpickling operation to class 'Solution'
+        if pickling:
+            x = dill.loads(x)
+        fitness_, n_eval = x.fitness.flatten(), x.n_eval
+
+        if _eval_type == 'list':
+            ans = [obj_func(x.tolist()) for i in range(runs)]
+        elif _eval_type == 'dict':
+            ans = [obj_func(_space.to_dict(x)) for i in range(runs)]
+
+        # TODO: this should be done per objective fct.
+        fitness = np.sum(np.asarray(ans))
+        
+        # TODO: fix it
+        # x.fitness = fitness / runs if any(np.isnan(fitness_)) \
+        #     else (fitness_ * n_eval + fitness) / (x.n_eval + runs)
+        x.fitness = fitness / runs 
+        x.n_eval += runs
+        return dill.dumps(x) if pickling else x
+        
     def evaluate(self, data, runs=1):
         """Evaluate the candidate points and update evaluation info in the dataframe
         """
@@ -248,7 +249,7 @@ class BO(object):
                 for i, k in enumerate(data):
                     data[i].fitness = x[i].fitness
                     data[i].n_eval = x[i].n_eval
-        else:
+        else:  # sequential execution
             for x in data:
                 self.eval_count += 1
                 _eval_fun(x)
@@ -257,11 +258,11 @@ class BO(object):
         fitness = self.data.fitness
         # normalization the response for the numerical stability
         # e.g., for MGF-based acquisition function
-        self.f_min, self.f_max = np.min(fitness), np.max(fitness)
-        if np.isclose(self.f_min, self.f_max): 
-            raise Exception('flat objective value!') 
-        fitness_scaled = (fitness - self.f_min) / (self.f_max - self.f_min)
-        self.f_range = self.f_max - self.f_min
+        self.fmin, self.fmax = np.min(fitness), np.max(fitness)
+
+        flat_fitness = np.isclose(self.fmin, self.fmax)
+        fitness_scaled = (fitness - self.fmin) / (self.fmax - self.fmin)
+        self.frange = self.fmax - self.fmin
 
         # fit the surrogate model
         self.surrogate.fit(self.data, fitness_scaled)
@@ -301,23 +302,48 @@ class BO(object):
         return X
     
     def _initialize(self):
-        """
-        Generate the initial data set (DOE) and construct the surrogate model
-        """
+        """Generate the initial data set (DOE) and construct the surrogate model"""
         if hasattr(self, 'data'):
+            self.logger.warn('initialization is already performed!') 
             return 
 
         self.logger.info('selected surrogate model: {}'.format(self.surrogate.__class__)) 
         self.logger.info('building {:d} initial design points...'.format(self.n_init_sample))
 
-        samples = self._space.sampling(self.n_init_sample)
-        self.data = Solution(samples, var_name=self.var_names, n_obj=self.n_obj)
-        self.evaluate(self.data, runs=self.init_n_eval)
-        self.data = self.after_eval_check(self.data)
+        sampling_trial = self._init_flatfitness_trial
+        while True:
+            DOE = self._space.sampling(self.n_init_sample)
+            DOE = Solution(DOE, var_name=self.var_names, n_obj=self.n_obj)
+            self.evaluate(DOE, runs=self.init_n_eval)
+            DOE = self.after_eval_check(DOE)
+
+            if hasattr(self, 'data'):
+                self.data += DOE
+            else:
+                self.data = DOE
+
+            fmin, fmax = np.min(self.data.fitness), np.max(self.data.fitness)
+            if np.isclose(fmin, fmax): 
+                if sampling_trial > 0:
+                    self.logger.warning('flat objective value in the initialization!')
+                    self.logger.warning('resampling the initial points...')
+                    sampling_trial -= 1
+                else:
+                    self.logger.warning('flat objective value after taking {} '
+                                        'samples (each has {} sample points)...'.format(self._init_flatfitness_trial, 
+                                        self.n_init_sample))
+                    self.logger.warning('optimization terminates...')
+
+                    self.stop_dict['flatfitness'] = True
+                    self.fopt = self._best(self.data.fitness)
+                    _ = np.nonzero(self.data.fitness == self.fopt)[0][0]
+                    self.xopt = self.data[_]  
+                    return
+            else:
+                break
+                    
         self.fit_and_assess()
-        
-        # save the initial design to csv
-        if self.data_file is not None:
+        if self.data_file is not None: # save the initial design to csv
             self.data.to_csv(self.data_file)
 
     def after_eval_check(self, X):
@@ -331,8 +357,6 @@ class BO(object):
         return X
 
     def step(self):
-        self._initialize()  # initialization
-        
         X = self.select_candidate()     # mutation by optimization
         self.evaluate(X, runs=self.init_n_eval)
         X = self.after_eval_check(X)
@@ -357,11 +381,14 @@ class BO(object):
         return self.xopt.tolist(), self.xopt.fitness
 
     def run(self):
+        self._initialize() 
+
         while not self.check_stop():
             self.step()
 
         self.stop_dict['n_eval'] = self.eval_count
         self.stop_dict['n_iter'] = self.iter_count
+
 
         return self.xopt.tolist(), self.xopt.fitness, self.stop_dict
 
@@ -386,7 +413,7 @@ class BO(object):
             Note that it should be given in the original scale
         """
         # objective values are normalized
-        plugin = 0 if plugin is None else (plugin - self.f_min) / self.f_range
+        plugin = 0 if plugin is None else (plugin - self.fmin) / self.frange
             
         if self.n_point > 1:  # multi-point method
             # create a portofolio of n infill-criteria by 
@@ -480,7 +507,7 @@ class BO(object):
             if fopt_ > best:
                 best = fopt_
                 wait_count = 0
-                # self.logger.info('restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
+                # self.logger.debug('restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
                 #                    stop_dict['funcalls'], fopt_))
             else:
                 wait_count += 1
@@ -497,7 +524,6 @@ class BO(object):
 
     def _check_params(self):
         # assert hasattr(self.obj_func, '__call__')
-
         if np.isinf(self.max_eval) and np.isinf(self.max_iter):
             raise ValueError('max_eval and max_iter cannot be both infinite')
 
@@ -623,16 +649,16 @@ class BONoisy(BO):
                 print(self.conf.to_frame().T)
                 extra_run += r
 
-
-class MyPool(ProcessingPool):
-    def starmap(self, func, param):
-        return self.map(func, *zip(*param))
+# TODO: 
+class SMS_BO(BO):
+    pass
 
 
 class MOBO_D(BO):
-    """Decomposition-based Multi-Objective Bayesian Optimization (MOEA/D-EGO) 
+    """Decomposition-based Multi-Objective Bayesian Optimization (MO-EGO/D) 
     """
     # TODO: this number should be set according to the capability of the server
+    # TODO: implement Tchebycheff scalarization
     __max_procs__ = 16  # maximal number of processes
 
     def _eval(x, _eval_type, obj_func, _space=None, logger=None, runs=1):
@@ -681,7 +707,7 @@ class MOBO_D(BO):
     
     def __init__(self, n_obj=2, aggregation='WS', n_point=5, n_job=1, *argv, **kwargs):
         """
-        Parameters
+        Arguments
         ---------
         n_point : int,
             the number of evaluated points in each iteration
@@ -691,11 +717,18 @@ class MOBO_D(BO):
                 'Tchebycheff' : Tchebycheff scalarization
         """
         super(MOBO_D, self).__init__(*argv, **kwargs)
-        # TODO: perhaps leave this an input parameter
         self.n_point = int(n_point)
+        # TODO: perhaps leave this an input parameter
         self.mu = 2 * self.n_point   # the number of generated points
         self.n_obj = int(n_obj)
         assert self.n_obj > 1
+
+        if isinstance(self.minimize, bool):
+            self.minimize = [self.minimize] * self.n_obj
+        elif hasattr(self.minimize, '__iter__'):
+            assert len(self.minimize) == self.n_obj
+
+        self.minimize = np.asarray(self.minimize)
 
         if hasattr(self.obj_func, '__iter__'):
             assert self.n_obj == len(self.obj_func)
@@ -714,7 +747,7 @@ class MOBO_D(BO):
         self.weights = np.random.rand(self.mu, self.n_obj)
         self.weights /= np.sum(self.weights, axis=1).reshape(self.mu, 1)
         self.labels_ = KMeans(n_clusters=self.n_point).fit(self.weights).labels_
-        self.f_range = np.zeros(self.n_obj)
+        self.frange = np.zeros(self.n_obj)
 
         if self.n_job > 1:
             self.p = ProcessingPool(ncpus=self.n_job)
@@ -743,24 +776,31 @@ class MOBO_D(BO):
 
     def fit_and_assess(self):
         def _fit(surrogate, X, y):
-            y_min, y_max = np.min(y), np.max(y)
-            if np.isclose(y_min, y_max): 
-                raise Exception('flat objective value!') 
-
-            y_ = (y - y_min) / (y_max - y_min)
-            surrogate.fit(X, y_)
-            # self.f_range[index] = y_max - y_min
+            surrogate.fit(X, y)
             y_hat = surrogate.predict(X)
-            r2 = r2_score(y_, y_hat)    
+            r2 = r2_score(y, y_hat)    
             return surrogate, r2
+        
+        # NOTE: convert the fitness to minimization problem
+        # objective values that are subject to maximization is revert to mimization 
+        self.y = self.data.fitness.copy()
+        self.y *= np.asarray([-1] * self.data.N).reshape(-1, 1) ** (~self.minimize)
 
-        if self.n_job > 1:
+        ymin, ymax = np.min(self.y), np.max(self.y)
+        if np.isclose(ymin, ymax): 
+            raise Exception('flat objective value!')
+
+        # self._y: normalized objective values
+        self._y = (self.y - ymin) / (ymax - ymin)
+
+        # fit the surrogate models
+        if self.n_job > 1:  
             __ = self.p.map(_fit, *zip(*[(self.surrogate[i], self.data, 
-                            self.data.fitness[:, i]) for i in range(self.n_obj)]))
-        else: 
+                            self._y[:, i]) for i in range(self.n_obj)]))
+        else:               
             __ = []
             for i in range(self.n_obj):
-                __.append(list(_fit(self.surrogate[i], self.data, self.data.fitness[:, i])))
+                __.append(list(_fit(self.surrogate[i], self.data, self._y[:, i])))
 
         self.surrogate, r2 = tuple(zip(*__))
         for i in range(self.n_obj):
@@ -776,8 +816,11 @@ class MOBO_D(BO):
         self.fit_and_assess()     
         self.iter_count += 1
 
+        # TODO: implement a faster algorithm to detect non-dominated point only!
+        # non-dominated sorting: self.y takes minimization issue into account
+        nd_idx = non_dominated_set_2d(self.y)
+
         # xopt is the set of the non-dominated point now
-        nd_idx = non_dominated_set_2d(self.data.fitness, minimize=self.minimize)
         self.xopt = self.data[nd_idx]  
         self.logger.info('{}iteration {}, {} points in the Pareto front: {}\n{}'.format(bcolors.WARNING, 
             self.iter_count, len(self.xopt), bcolors.ENDC, str(self.xopt)))
@@ -793,6 +836,7 @@ class MOBO_D(BO):
         
         X_ = []
         # select the best point from each cluster
+        # NOTE: "the best point" means the maximum of infill criteria 
         for i in range(self.n_point):
             v = value[self.labels_ == i]
             idx = np.nonzero(v == np.max(v))[0][0]
@@ -829,21 +873,21 @@ class MOBO_D(BO):
         # objective values are normalized
         if plugin is None:
             plugin = 0
-        else:
-            # TODO: implement this!
-            raise NotImplementedError
 
+        # NOTE: the following 'minimize' parameter is set to always 'True'
+        # as 
         if self.infill == 'EI':
-            acquisition_func = EI(surrogate, plugin, minimize=self.minimize)
+            acquisition_func = EI(surrogate, plugin, minimize=True)
         elif self.infill == 'PI':
-            acquisition_func = PI(surrogate, plugin, minimize=self.minimize)
+            acquisition_func = PI(surrogate, plugin, minimize=True)
         elif self.infill == 'MGFI':
-            acquisition_func = MGFI(surrogate, plugin, minimize=self.minimize, t=self.t)
+            acquisition_func = MGFI(surrogate, plugin, minimize=True, t=self.t)
         elif self.infill == 'UCB':
             raise NotImplementedError
                 
         return functools.partial(acquisition_func, dx=dx) 
 
+    # TODO: implement evolutionary algorithms, e.g., MOEA/D to optimize of all subproblems simultaneously
     def arg_max_acquisition(self, plugin=None):
         """Global Optimization of the acqusition function / Infill criterion
         Arguments
@@ -863,7 +907,8 @@ class MOBO_D(BO):
         
         dx = True if self._optimizer == 'BFGS' else False
         surrogates = (SurrogateAggregation(self.surrogate, weights=w) for w in self.weights)
-        criteria = (self._acquisition(s, plugin, dx=dx) for s in surrogates)
+        gmin = [np.min(self._y.dot(w)) for w in self.weights]
+        criteria = (self._acquisition(s, gmin[i], dx=dx) for i, s in enumerate(surrogates))
 
         if self.n_job > 1:
             __ = self.p.map(self._argmax_multistart, [_ for _ in criteria])
@@ -880,7 +925,18 @@ if __name__ == '__main__':
 
     np.random.seed(666)
 
-    if 11 < 2:
+    if 11 < 2: # test for flat fitness
+        def fitness(x):
+            return 1
+
+        space = ContinuousSpace([-5, 5]) * 2
+        levels = space.levels if hasattr(space, 'levels') else None
+        model = RandomForest(levels=levels)
+
+        opt = BO(space, fitness, model, max_eval=300, verbose=True, n_job=1, n_point=1)
+        print(opt.run())
+
+    if 1 < 2:
         def fitness(x):
             x_r, x_i, x_d = np.array(x[:2]), x[2], x[3]
             if x_d == 'OK':
@@ -898,7 +954,7 @@ if __name__ == '__main__':
         opt = BO(space, fitness, model, max_eval=300, verbose=True, n_job=3, n_point=3)
         xopt, fopt, stop_dict = opt.run()
 
-    if 1 < 2:
+    if 11 < 2:
         def fitness0(x):
             x = np.asarray(x)
             return sum(x ** 2.)
@@ -907,11 +963,12 @@ if __name__ == '__main__':
             x = np.asarray(x)
             return -sum((x + 2) ** 2.)
 
-        space = (ContinuousSpace([-5, 5]) * 2)
+        space = ContinuousSpace([-5, 5]) * 2
         model = (RandomForest(levels=None), RandomForest(levels=None))
 
         obj_func = lambda x: [fitness0(x), fitness1(x)]
         opt = MOBO_D(n_obj=2, search_space=space, obj_func=obj_func, 
                      n_point=5, n_job=16, n_init_sample=10,
+                     minimize=[True, False],
                      surrogate=model, max_iter=100, verbose=True)
         xopt, fopt, stop_dict = opt.run()
