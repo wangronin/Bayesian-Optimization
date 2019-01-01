@@ -661,7 +661,7 @@ class MOBO_D(BO):
     # TODO: implement Tchebycheff scalarization
     __max_procs__ = 16  # maximal number of processes
 
-    def _eval(x, _eval_type, obj_func, _space=None, logger=None, runs=1):
+    def _eval(x, _eval_type, obj_func, _space=None, logger=None, runs=1, pickling=False):
         """evaluate one solution
 
         Parameters
@@ -669,8 +669,9 @@ class MOBO_D(BO):
         x : bytes,
             serialization of the Solution instance
         """
-        # TODO: move the pickling/unpickling operation to class 'Solution'
-        x = dill.loads(x)
+        if pickling:
+            # TODO: move the pickling/unpickling operation to class 'Solution'
+            x = dill.loads(x)
         fitness_, n_eval = x.fitness.flatten(), x.n_eval
 
         if hasattr(obj_func, '__call__'):   # vector-valued obj_func
@@ -756,7 +757,8 @@ class MOBO_D(BO):
         """Evaluate the candidate points and update evaluation info in the dataframe
         """
         _eval_fun = functools.partial(MOBO_D._eval, _eval_type=self._eval_type, _space=self._space,
-                                      obj_func=self.obj_func, logger=self.logger, runs=runs) 
+                                      obj_func=self.obj_func, logger=self.logger, runs=runs,
+                                      pickling=self.n_job > 1) 
         if len(data.shape) == 1:
             _eval_fun(data)
         else: 
@@ -807,7 +809,7 @@ class MOBO_D(BO):
             self.logger.info('F{} Surrogate model r2: {}'.format(i + 1, r2[i]))
 
     def step(self):
-        self._initialize()  
+        # self._initialize()  
         
         X = self.select_candidate() 
         self.evaluate(X, runs=self.init_n_eval)

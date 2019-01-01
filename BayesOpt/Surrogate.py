@@ -67,7 +67,8 @@ class RandomForest(RandomForestRegressor):
     Extension on the sklearn RandomForestRegressor class
     Added functionality: empirical MSE of predictions
     """
-    def __init__(self, levels=None, **kwargs):
+    def __init__(self, levels=None, n_estimators=50, max_features=5./6,
+                 min_samples_leaf=2, **kwargs):
         """
         parameter
         ---------
@@ -77,6 +78,10 @@ class RandomForest(RandomForestRegressor):
         """
         super(RandomForest, self).__init__(**kwargs)
 
+        # TODO: using such encoding, feature number will increase drastically
+        # TODO: investigate the upper bound (in the sense of cpu time)
+        # for categorical levels/variable number
+        # in the future, maybe implement binary/multi-value split
         if levels is not None:
             assert isinstance(levels, dict)
             self._levels = levels
@@ -86,14 +91,9 @@ class RandomForest(RandomForestRegressor):
             self._le = [LabelEncoder().fit(self._levels[i]) for i in self._cat_idx]
             # encode integers to binary
             _max = max(self._n_values)
-            data = atleast_2d([list(range(n)) * (_max // n) + \
-                list(range(_max % n)) for n in self._n_values]).T
-            self._enc = OneHotEncoder(n_values=self._n_values, sparse=False)
+            data = atleast_2d([list(range(n)) * (_max // n) + list(range(_max % n)) for n in self._n_values]).T
+            self._enc = OneHotEncoder(categories='auto', sparse=False)
             self._enc.fit(data)
-            # TODO: using such encoding, feature number will increase drastically
-            # TODO: investigate the upper bound (in the sense of cpu time)
-            # for categorical levels/variable number
-            # in the future, maybe implement binary/multi-value split
 
     def _check_X(self, X):
         # TODO: this line seems to cause problem sometimes

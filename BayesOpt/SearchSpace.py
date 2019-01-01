@@ -112,6 +112,7 @@ class SearchSpace(object):
     def __rmul__(self, N):
         return self.__mul__(N)
     
+    # TODO: maybe this function should be moved to base.py
     def to_dict(self, solution):
         if self.name is None:
             return solution.to_dict() 
@@ -313,10 +314,10 @@ if __name__ == '__main__':
 
     # test for space names and save to dictionary
     if 1 < 2:
-        from base import Solution
+        from .base import Solution
 
         C1 = ContinuousSpace([0, 1], name='C1') 
-        C2 = OrdinalSpace([-5, 5], name='O1') * 4
+        C2 = OrdinalSpace([-5, 5], var_name='O1') * 4
         space = C1 + C2
 
         d = Solution(np.random.rand(5).tolist())
@@ -330,4 +331,5 @@ if __name__ == '__main__':
                         "N" : 3
                     }
                   })
+    print(a.var_name)
     print(a.sampling(1))

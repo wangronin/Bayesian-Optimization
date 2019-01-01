@@ -55,4 +55,14 @@ opt = BO(search_space, obj_func, model, max_iter=n_step,
          optimizer='BFGS'  # when using GPR model, 'BFGS' is faster than 'MIES'
          )
                
-opt.run()
+# opt.run()
+
+opt._initialize() 
+while not opt.check_stop():
+    opt.step()
+
+    eval_count = opt.eval_count
+
+    # you can put fopt in an array
+    fopt = opt.fopt
+
