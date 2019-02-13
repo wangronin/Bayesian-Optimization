@@ -29,8 +29,6 @@ ub = np.array([6] * dim)
 
 search_space = ContinuousSpace(list(zip(lb, ub)))
 
-
-
 # Bayesian optimization also uses a Surrogate model
 # For the continuous variable, the Gaussian process regression (GPR) is typically used
 
@@ -46,7 +44,7 @@ theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 model = GaussianProcess(mean=mean, corr='matern',
                         theta0=theta0, thetaL=thetaL, thetaU=thetaU,
                         nugget=1e-10, noise_estim=False,
-                        optimizer='BFGS', wait_iter=5, random_start=15 * dim,
+                        optimizer='BFGS', wait_iter=5, random_start=30 * dim,
                         likelihood='concentrated', eval_budget=150 * dim)
 
 opt = BO(search_space, obj_func, model, max_iter=n_step,
@@ -55,14 +53,14 @@ opt = BO(search_space, obj_func, model, max_iter=n_step,
          optimizer='BFGS'  # when using GPR model, 'BFGS' is faster than 'MIES'
          )
                
-# opt.run()
+opt.run()
 
-opt._initialize() 
-while not opt.check_stop():
-    opt.step()
+# opt._initialize() 
+# while not opt.check_stop():
+#     opt.step()
 
-    eval_count = opt.eval_count
+#     eval_count = opt.eval_count
 
-    # you can put fopt in an array
-    fopt = opt.fopt
+#     # you can put fopt in an array
+#     fopt = opt.fopt
 
