@@ -82,21 +82,33 @@ class mies(object):
         
          # initialize the populations
         if x0 is not None:                         # given x0
-            self.pop = Solution(np.tile(np.r_[x0, sigma0, eta0, [P0] * self.N_p], (self.mu_, 1)),
+            par = []
+            if self.N_r:
+                par += [sigma0]
+            if self.N_i:
+                par += [eta0]
+            if self.N_p:
+                par += [P0] * self.N_p
+
+            self.pop = Solution(np.tile(np.r_[x0, par], (self.mu_, 1)),
                                 var_name=self.var_names + par_name, verbose=self.verbose)
             fitness0 = self.evaluate(self.pop[0])
             self.fitness = np.repeat(fitness0, self.mu_)
             self.xopt = x0
             self.fopt = sum(fitness0)
-        else:                                     # uniform sampling
-            x = np.asarray(self._space.sampling(self.mu_), dtype='object')  
-            
-            if sigma0 is not None:
-                x = np.c_[x, np.tile(sigma0, (self.mu_, 1))]
-            if eta0 is not None:
-                x = np.c_[x, np.tile(eta0, (self.mu_, 1))]
-            if P0 is not None:
-                x = np.c_[x, np.tile([P0] * self.N_p, (self.mu_, 1))]
+        else:                                      # uniform sampling                 
+            x = np.asarray(self._space.sampling(self.mu_), dtype='object')   
+
+            par = []
+            if self.N_r:
+                par += [np.tile(sigma0, (self.mu_, 1))]
+            if self.N_i:
+                par += [np.tile(eta0, (self.mu_, 1))]
+            if self.N_p:
+                par += [np.tile([P0] * self.N_p, (self.mu_, 1))]
+
+            par = np.concatenate(par, axis=1)
+            x = np.c_[x, par].tolist()
             
             self.pop = Solution(x, var_name=self.var_names + par_name, verbose=self.verbose)
             self.fitness = self.evaluate(self.pop)
@@ -161,7 +173,7 @@ class mies(object):
         if len(pop.shape) == 1:  # one solution
             f = np.asarray(self.obj_func(pop[self._id_var]))
         else:                    # a population
-            f = np.array(list(map(self.obj_func, pop[:, self._id_var].tolist())))
+            f = np.array(list(map(self.obj_func, pop[:, self._id_var])))
         self.eval_count += pop.N
         pop.fitness = f
         return f
@@ -301,7 +313,7 @@ class mo_mies(mies):
     pass
 
 if __name__ == '__main__':
-    if 11 < 2:
+    if 1 < 2:
         def fitness(x):
             x_r, x_i, x_d = np.array(x[:2]), x[2], x[3]
             if x_d == 'OK':
@@ -310,7 +322,7 @@ if __name__ == '__main__':
                 tmp = 1
             return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + tmp * 2
     
-        space = (ContinuousSpace([-5, 5]) * 2) * OrdinalSpace([5, 15]) * \
+        space = (ContinuousSpace([-5, 5]) * 2) + OrdinalSpace([5, 15]) + \
             NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'])
         opt = mies(space, fitness, max_eval=1e3, verbose=True)
         xopt, fopt, stop_dict = opt.optimize()

@@ -19,9 +19,8 @@ from tabulate import tabulate
 # TODO: extend self.fitness for multi-objective optimization
 
 class Solution(np.ndarray):
-    """
-    Subclassing numpy array to represent set of solutions in the optimization
-    Goal to achieve: 
+    """Subclassing numpy array to represent set of solutions in the optimization
+       Goal to achieve: 
         1) heterogenous data types, like pandas
         2) easy indexing as np.ndarray
         3) extra attributes (e.g., fitness) sliced together with the solution
@@ -248,7 +247,10 @@ if __name__ == '__main__':
     # test for 2D solution
     s = Solution(np.c_[np.random.randn(5, 3), ['simida', 'niubia', 'bang', 'GG', 'blyat']], 
                  verbose=True, fitness=[0] * 2, n_obj=2)
-
+    
+    a = Solution([[1,2,3]])
+    print(a)
+    print(np.atleast_2d(a))
     # test for pickling
     import dill
     a = dill.dumps(s)
@@ -300,8 +302,6 @@ if __name__ == '__main__':
     # print(ss[0:5])
     # ss.fitness = 3  # TODO: change the fitness to a 1-d array
     # print(ss)
-
-    
 
     # # test for pickling
     # # np.save('test', s)

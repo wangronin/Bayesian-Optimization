@@ -14,8 +14,6 @@ from numpy import sqrt, exp, pi
 from scipy.stats import norm
 from abc import ABCMeta, abstractmethod
 
-# warnings.filterwarnings("error")
-
 # TODO: implement noisy handling infill criteria, e.g., EQI (expected quantile improvement)
 # TODO: perphaps also enable acquisition function engineering here?
 # meaning the combination of the acquisition functions
@@ -177,15 +175,17 @@ class MGFI(InfillCriteria):
         if np.isclose(sd, 0):
             return (np.array([0.]), np.zeros((len(X[0]), 1))) if dx else 0.
 
-        try:
-            y_hat_p = y_hat - self.t * sd ** 2.
-            beta_p = (self.plugin - y_hat_p) / sd
-            term = self.t * (self.plugin - y_hat - 1)
-            f_ = norm.cdf(beta_p) * exp(term + self.t ** 2. * sd ** 2. / 2.)
-            if n_sample == 1:
-                f_ = sum(f_)
-        except Exception: # in case of numerical errors
-            f_ = 0.
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error')
+            try:
+                y_hat_p = y_hat - self.t * sd ** 2.
+                beta_p = (self.plugin - y_hat_p) / sd
+                term = self.t * (self.plugin - y_hat - 1)
+                f_ = norm.cdf(beta_p) * exp(term + self.t ** 2. * sd ** 2. / 2.)
+                if n_sample == 1:
+                    f_ = sum(f_)
+            except Exception: # in case of numerical errors
+                f_ = 0.
 
         if np.isinf(f_):
             f_ = 0.

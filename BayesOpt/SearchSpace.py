@@ -5,7 +5,7 @@
 from __future__ import print_function
 from pdb import set_trace
 
-import six
+import six, json
 from copy import deepcopy
 from collections import OrderedDict
 
@@ -113,11 +113,12 @@ class SearchSpace(object):
         return self.__mul__(N)
     
     # TODO: maybe this function should be moved to base.py
-    def to_dict(self, solution):
+    def to_dict(self, solution=None):
         if self.name is None:
             return solution.to_dict() 
         else:
             return {self.name : solution.tolist()}
+    
 
 
 # TODO: maybe implement the scalar multiplication for ProductSpace
@@ -150,9 +151,8 @@ class ProductSpace(SearchSpace):
         return [a[i] + b[i] for i in range(N)]
     
     def to_dict(self, solution):
-        """
-        Save a Solution instance to dict, grouped by sub-spaces
-        This is meant for vector-valued parameters for the configuration 
+        """Save a Solution instance to dict, grouped by sub-spaces
+            This is meant for vector-valued parameters for the configuration 
         """
         id1 = list(range(self._sub_space1.dim))
         id2 = list(range(self._sub_space1.dim, self.dim))
@@ -282,8 +282,10 @@ def from_dict(param, space_name=True):
     
     return space
 
-def from_json(param):
-    pass
+def from_json(file):
+    with open(file, 'r') as f:
+        space = from_dict(json.load(f))
+    return space
 
 if __name__ == '__main__':
     np.random.seed(1)
@@ -333,3 +335,6 @@ if __name__ == '__main__':
                   })
     print(a.var_name)
     print(a.sampling(1))
+
+    a = NominalSpace(['aaa'], name='test')
+    print(a.sampling(3))

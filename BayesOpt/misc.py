@@ -89,51 +89,6 @@ def fast_non_dominated_sort(fitness):
         
     return fronts
 
-class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-
-
-# Custom formatter
-# TODO: use relative path for %(pathname)s
-class MyFormatter(logging.Formatter):
-    default_time_format = '%m/%d/%Y %H:%M:%S'
-    default_msec_format = '%s,%02d'
-
-    FORMATS = {
-        logging.DEBUG : '%(asctime)s - [%(levelname)s] {%(pathname)s:%(lineno)d} -- %(message)s',
-        logging.INFO : '%(asctime)s - [%(levelname)s] -- %(message)s',
-        logging.WARNING : '%(asctime)s - [%(levelname)s] {%(name)s} -- %(message)s',
-        logging.ERROR : '%(asctime)s - [%(levelname)s] {%(name)s} -- %(message)s',
-        'DEFAULT' : '%(asctime)s - %(levelname)s -- %(message)s'}
-    
-    def __init__(self, fmt='%(asctime)s - %(levelname)s -- %(message)s'):
-        MyFormatter.FORMATS['DEFAULT'] = fmt
-        super().__init__(fmt=fmt, datefmt=None, style='%') 
-    
-    def format(self, record):
-
-        # Save the original format configured by the user
-        # when the logger formatter was instantiated
-        _fmt = self._style._fmt
-
-        # Replace the original format with one customized by logging level
-        self._style._fmt = self.FORMATS.get(record.levelno, self.FORMATS['DEFAULT'])
-
-        # Call the original formatter class to do the grunt work
-        fmt = logging.Formatter.format(self, record)
-
-        # Restore the original format configured by the user
-        self._style._fmt = _fmt
-        return fmt
-
-
 # TODO: implement this as a C procedure
 def proportional_selection(perf, N, minimize=True, replacement=True):
     def select(perf):

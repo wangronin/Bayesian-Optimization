@@ -1,4 +1,3 @@
-#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 """
 Created on Mon Sep 11 10:48:14 2017
@@ -7,7 +6,7 @@ Created on Mon Sep 11 10:48:14 2017
 @email: wangronin@gmail.com
 """
 from __future__ import print_function
-import pdb
+from pdb import set_trace
 
 import pandas as pd
 import numpy as np
@@ -22,7 +21,6 @@ from sklearn.metrics import r2_score
 from joblib import Parallel, delayed
 
 # TODO: implement multi-output/objetive surrogate models, better to model the correlation among targets
-
 class SurrogateAggregation(object):
     def __init__(self, surrogates, aggregation='WS', **kwargs):
         self.surrogates = surrogates

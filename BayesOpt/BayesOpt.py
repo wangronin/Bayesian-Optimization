@@ -6,16 +6,20 @@ Created on Mon Mar 6 15:05:01 2017
 @email: wangronin@gmail.com
 
 """
-
 from pdb import set_trace
-import sys, dill, functools, itertools, copyreg, logging
+import os, sys, dill, functools, logging, time
+
+sys.path.insert(0, os.path.abspath('../'))
 
 import pandas as pd
 import numpy as np
 
-# from joblib import Parallel, delayed
+from utils import bcolors, MyFormatter
+
+# TODO: replace 'pathos' in long runs as this package create global process pool 
 # IMPORTANT: pathos is better than joblib 
-# it uses dill for pickling 
+# it uses dill for pickling, which allows for pickling functions
+# from joblib import Parallel, delayed
 from pathos.multiprocessing import ProcessingPool 
 from scipy.optimize import fmin_l_bfgs_b
 from sklearn.metrics import r2_score
@@ -25,18 +29,18 @@ from .base import Solution
 from .optimizer import mies, cma_es
 from .InfillCriteria import EI, PI, MGFI
 from .Surrogate import SurrogateAggregation
-from .misc import proportional_selection, bcolors, MyFormatter, non_dominated_set_2d
+from .misc import proportional_selection, non_dominated_set_2d
 
 # TODO: implement the automatic surrogate model selection
 # TODO: improve the efficiency; profiling
 class BO(object):
     """Bayesian Optimization (BO) base class"""
     def __init__(self, search_space, obj_func, surrogate, ftarget=None,
-                 minimize=True, max_eval=None, max_iter=None, 
-                 infill='EI', t0=2, tf=1e-1, schedule=None, eval_type='list',
+                 minimize=True, max_eval=None, max_iter=None, init_points=None,
+                 infill='EI', t0=2, tf=1e-1, schedule='exp', eval_type='list',
                  n_init_sample=None, n_point=1, n_job=1, backend='multiprocessing',
                  n_restart=None, max_infill_eval=None, wait_iter=3, optimizer='MIES', 
-                 log_file=None, data_file=None, verbose=False, random_seed=None):
+                 data_file=None, verbose=False, random_seed=None):
         """
 
         Parameters
@@ -71,14 +75,12 @@ class BO(object):
                     'BFGS' (quasi-Newtion for GPR)
         """
         self.verbose = verbose
-        self.log_file = log_file
         self.data_file = data_file
         self._space = search_space
         self.var_names = self._space.var_name
         self.obj_func = obj_func
         self.surrogate = surrogate
         self.n_point = int(n_point)
-        # self.n_job = min(self.n_point, int(n_job))
         self.n_job = int(n_job)
         self._parallel_backend = backend
         self.ftarget = ftarget 
@@ -88,6 +90,7 @@ class BO(object):
         self._best = min if self.minimize else max
         self._eval_type = eval_type         # TODO: find a better name for this
         self.n_obj = 1
+        self.init_points = init_points
         
         self.r_index = self._space.id_C       # index of continuous variable
         self.i_index = self._space.id_O       # index of integer variable
@@ -110,6 +113,10 @@ class BO(object):
         self.eval_hist_id = []
         self.iter_count = 0
         self.eval_count = 0
+
+        # TODO: this is just an ad-hoc fix 
+        if self.n_point > 1:
+            self.infill = 'MGFI'
         
         # setting up cooling schedule
         # subclassing this part
@@ -133,8 +140,10 @@ class BO(object):
 
         # paramter: acquisition function optimziation
         mask = np.nonzero(self._space.C_mask | self._space.O_mask)[0]
-        self._bounds = np.array([self._space.bounds[i] for i in mask])             # bounds for continuous and integer variable
-        self._levels = np.array([self._space.bounds[i] for i in self._space.id_N]) # levels for discrete variable
+
+        # bounds for continuous and integer variable
+        self._bounds = np.array([self._space.bounds[i] for i in mask])  # continous and integer
+        self._levels = np.array([self._space.bounds[i] for i in self._space.id_N]) # discrete
         self._optimizer = optimizer
         # TODO: set this _max_eval smaller when using L-BFGS and larger for MIES
         self._max_eval = int(5e2 * self.dim) if max_infill_eval is None else max_infill_eval
@@ -152,33 +161,42 @@ class BO(object):
             np.random.seed(self.random_seed)
         
         # setup the logger
-        self._get_logger(self.log_file)
+        self.set_logger(None)
 
         # setup multi-processing workers
         if self.n_job > 1:
-            self.p = ProcessingPool(ncpus=self.n_job)
-        
-    def _get_logger(self, logfile):
-        """When the logfile is None, no records are written
+            self.pool = ProcessingPool(ncpus=self.n_job)
+
+    def __del__(self):
+        if hasattr(self, 'pool'):
+            self.pool.terminate()
+
+    def set_logger(self, logger):
+        """Create the logging object
+        Params:
+            logger : str, None or logging.Logger,
+                either a logger file name, None (no logging) or a logger object
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(logging.DEBUG)
         fmt = MyFormatter()
 
-        # create console handler and set level to warning
-        # TODO: implemement more verbosity levels
-        if self.verbose:
+        if self.verbose != 0:
+            # create console handler and set level to warning
             ch = logging.StreamHandler(sys.stdout)
             ch.setLevel(logging.INFO)
             ch.setFormatter(fmt)
             self.logger.addHandler(ch)
 
         # create file handler and set level to debug
-        if logfile is not None:
-            fh = logging.FileHandler(logfile)
+        if logger is not None:
+            fh = logging.FileHandler(logger)
             fh.setLevel(logging.DEBUG)
             fh.setFormatter(fmt)
             self.logger.addHandler(fh)
+
+        if hasattr(self, 'logger'):
+            self.logger.propagate = False
 
     def _compare(self, f1, f2):
         """Test if objecctive value f1 is better than f2
@@ -201,58 +219,42 @@ class BO(object):
             if not any(CON & INT & CAT):
                 _ += [i]
         return data[_]
-
-    def _eval(x, _eval_type, obj_func, _space=None, logger=None, runs=1, pickling=False):
-        """Evaluate one solution on a scalar-valued objective function
-
-        Parameters
-        ----------
-        x : bytes,
-            serialization of the (2-D) Solution instance
-        """
-        # TODO: move the pickling/unpickling operation to class 'Solution'
-        if pickling:
-            x = dill.loads(x)
-        fitness_, n_eval = x.fitness.flatten(), x.n_eval
-
-        if _eval_type == 'list':
-            ans = [obj_func(x.tolist()) for i in range(runs)]
-        elif _eval_type == 'dict':
-            ans = [obj_func(_space.to_dict(x)) for i in range(runs)]
-
-        # TODO: this should be done per objective fct.
-        fitness = np.sum(np.asarray(ans))
-        
-        # TODO: fix it
-        # x.fitness = fitness / runs if any(np.isnan(fitness_)) \
-        #     else (fitness_ * n_eval + fitness) / (x.n_eval + runs)
-        x.fitness = fitness / runs 
-        x.n_eval += runs
-        return dill.dumps(x) if pickling else x
         
     def evaluate(self, data, runs=1):
         """Evaluate the candidate points and update evaluation info in the dataframe
         """
-        _eval_fun = functools.partial(BO._eval, _eval_type=self._eval_type, _space=self._space,
-                                      obj_func=self.obj_func, logger=self.logger, runs=runs,
-                                      pickling=self.n_job > 1) 
         data = np.atleast_2d(data)
+        N = len(data)
+
         if self.n_job > 1:
-            if self._parallel_backend == 'multiprocessing': # parallel execution using multiprocessing
-                data_pickle = [dill.dumps(d) for d in data]
+            if self._eval_type == 'list':
+                X = [x.tolist() for x in data]
+            elif self._eval_type == 'dict':
+                X = [self._space.to_dict(x) for x in data]
 
-                # parallel execution
-                __ = self.p.map(_eval_fun, data_pickle)
+            ans = np.zeros((runs, N))
+            for i in range(runs):
+                # parallelization is implemented in self.obj_func
+                ans[i, :] = self.obj_func(X, n_jobs=self.n_job)
+            
+            ans = np.atleast_2d(ans)
+            ans = np.mean(ans, axis=0)
+            
+            for i, k in enumerate(data):
+                data[i].fitness = ans[i]
+                data[i].n_eval += runs
 
-                x = [dill.loads(_) for _ in __]
-                self.eval_count += runs * len(data)
-                for i, k in enumerate(data):
-                    data[i].fitness = x[i].fitness
-                    data[i].n_eval = x[i].n_eval
         else:  # sequential execution
             for x in data:
-                self.eval_count += 1
-                _eval_fun(x)
+                if self._eval_type == 'list':
+                    ans = [self.obj_func(x.tolist()) for i in range(runs)]
+                elif self._eval_type == 'dict':
+                    ans = [self.obj_func(self._space.to_dict(x)) for i in range(runs)]
+
+                x.fitness = np.mean(np.asarray(ans))
+                x.n_eval += runs
+
+        self.eval_count += runs * N
 
     def fit_and_assess(self):
         fitness = self.data.fitness
@@ -260,7 +262,7 @@ class BO(object):
         # e.g., for MGF-based acquisition function
         self.fmin, self.fmax = np.min(fitness), np.max(fitness)
 
-        flat_fitness = np.isclose(self.fmin, self.fmax)
+        # flat_fitness = np.isclose(self.fmin, self.fmax)
         fitness_scaled = (fitness - self.fmin) / (self.fmax - self.fmin)
         self.frange = self.fmax - self.fmin
 
@@ -309,15 +311,20 @@ class BO(object):
 
         self.logger.info('selected surrogate model: {}'.format(self.surrogate.__class__)) 
         self.logger.info('building {:d} initial design points...'.format(self.n_init_sample))
-
+        
         sampling_trial = self._init_flatfitness_trial
         while True:
-            DOE = self._space.sampling(self.n_init_sample)
+            if self.init_points is not None:
+                n = len(self.init_points)
+                DOE = self.init_points + self._space.sampling(self.n_init_sample - n)
+            else:
+                DOE = self._space.sampling(self.n_init_sample)
+                
             DOE = Solution(DOE, var_name=self.var_names, n_obj=self.n_obj)
             self.evaluate(DOE, runs=self.init_n_eval)
             DOE = self.after_eval_check(DOE)
-
-            if hasattr(self, 'data'):
+            
+            if hasattr(self, 'data') and len(self.data) != 0:
                 self.data += DOE
             else:
                 self.data = DOE
@@ -330,8 +337,8 @@ class BO(object):
                     sampling_trial -= 1
                 else:
                     self.logger.warning('flat objective value after taking {} '
-                                        'samples (each has {} sample points)...'.format(self._init_flatfitness_trial, 
-                                        self.n_init_sample))
+                    'samples (each has {} sample points)...'.format(self._init_flatfitness_trial, 
+                             self.n_init_sample))
                     self.logger.warning('optimization terminates...')
 
                     self.stop_dict['flatfitness'] = True
@@ -341,7 +348,10 @@ class BO(object):
                     return
             else:
                 break
-                    
+
+        for i, x in enumerate(DOE):
+            self.logger.info('DOE {}, fitness: {} -- {}'.format(i + 1, x.fitness, self._space.to_dict(x)))
+
         self.fit_and_assess()
         if self.data_file is not None: # save the initial design to csv
             self.data.to_csv(self.data_file)
@@ -358,7 +368,11 @@ class BO(object):
 
     def step(self):
         X = self.select_candidate()     # mutation by optimization
+
+        t0 = time.time()
         self.evaluate(X, runs=self.init_n_eval)
+        self.logger.info('evaluation takes {:.4f}s'.format(time.time() - t0))
+
         X = self.after_eval_check(X)
         self.data = self.data + X
 
@@ -367,28 +381,27 @@ class BO(object):
 
         self.fopt = self._best(self.data.fitness)
         _ = np.nonzero(self.data.fitness == self.fopt)[0][0]
-        self.xopt = self.data[_]        
-        
-        self.fit_and_assess()     # re-train the surrogate model   
-        self.iter_count += 1
-        self.hist_f.append(self.xopt.fitness)
+        self.xopt = self.data[_]   
 
         self.logger.info(bcolors.WARNING + \
             'iteration {}, objective value: {:.8f}'.format(self.iter_count, 
             self.xopt.fitness) + bcolors.ENDC)
-        self.logger.info('xopt: {}'.format(self._space.to_dict(self.xopt)))
+        self.logger.info('xopt: {}'.format(self._space.to_dict(self.xopt)))     
+        
+        self.fit_and_assess()     # re-train the surrogate model   
+        self.iter_count += 1
+        self.hist_f.append(self.xopt.fitness)
         
         return self.xopt.tolist(), self.xopt.fitness
 
     def run(self):
         self._initialize() 
-
         while not self.check_stop():
             self.step()
 
         self.stop_dict['n_eval'] = self.eval_count
         self.stop_dict['n_iter'] = self.iter_count
-
+        self.logger.handlers = []   # completely de-register the logger
 
         return self.xopt.tolist(), self.xopt.fitness, self.stop_dict
 
@@ -421,8 +434,9 @@ class BO(object):
             # exploration and exploitation
             # TODO: perhaps also introduce cooling schedule for MGF
             # TODO: other method: niching, UCB, q-EI
-            tt = np.exp(1. * np.random.randn())
+            tt = np.exp(self.t * np.random.randn())
             acquisition_func = MGFI(self.surrogate, plugin, minimize=self.minimize, t=tt)
+            self._annealling()
             
         elif self.n_point == 1:   # sequential excution
             if self.infill == 'EI':
@@ -458,16 +472,25 @@ class BO(object):
                 criterion value of the candidate solution
         """
         self.logger.debug('infill criteria optimziation...')
+        t0 = time.time()
         
         dx = True if self._optimizer == 'BFGS' else False
         criteria = [self._acquisition(plugin, dx=dx) for i in range(self.n_point)]
-
+        
         if self.n_job > 1:
-            __ = self.p.map(self._argmax_multistart, [_ for _ in criteria])
+            # TODO: fix this issue once for all!
+            try:  
+                self.pool.restart() # restart the pool in case it is terminated before
+            except AssertionError:
+                pass
+            __ = self.pool.map(self._argmax_multistart, [_ for _ in criteria])
+            # __ = Parallel(n_jobs=self.n_job)(delayed(self._argmax_multistart)(c) for c in criteria)
         else:
             __ = [list(self._argmax_multistart(_)) for _ in criteria]
 
         candidates, values = tuple(zip(*__))
+        self.logger.debug('infill criteria optimziation takes {:.4f}s'.format(time.time() - t0))
+
         return candidates, values
 
     def _argmax_multistart(self, obj_func):
@@ -570,12 +593,12 @@ class BOAnnealing(BO):
 
 class BOAdapt(BO):
     def __init__(self, *argv, **kwargs):
-        super(BONoisy, self).__init__(*argv, **kargv)
+        super(BOAdapt, self).__init__(*argv, **kwargs)
 
 
 class BONoisy(BO):
-    def __init__(self, *args, **kargv):
-        super(BONoisy, self).__init__(*argv, **kargv)
+    def __init__(self, *argv, **kwargs):
+        super(BONoisy, self).__init__(*argv, **kwargs)
         self.noisy = True
         self.infill = 'EQI'
         # Intensify: the number of potential configuations compared against the current best
@@ -590,11 +613,12 @@ class BONoisy(BO):
         self.data += X
 
         # for noisy fitness: perform a proportional selection from the evaluated ones
-        id_, fitness = zip([(i, d.fitness) for i, d in enumerate(self.data) if i != self.incumbent_id])
-        __ = proportional_selection(fitness, self.mu, self.minimize, replacement=False)
-        candidates_id.append(id_[__])
+        id_, fitness = zip([(i, d.fitness) for i, d in enumerate(self.data) \
+                            if i != self.incumbent_id])
+        # __ = proportional_selection(fitness, self.mu, self.minimize, replacement=False)
+        # candidates_id.append(id_[__])
         
-        self.incumbent_id = self.intensify(ids)
+        # self.incumbent_id = self.intensify(ids)
         self.incumbent = self.data[self.incumbent_id]
         
         # TODO: implement more control rules for model refitting
@@ -618,36 +642,36 @@ class BONoisy(BO):
         intensification procedure for noisy observations (from SMAC)
         """
         # TODO: verify the implementation here
-        maxR = 20 # maximal number of the evaluations on the incumbent
-        for i, ID in enumerate(candidates_ids):
-            r, extra_run = 1, 1
-            conf = self.data.loc[i]
-            self.evaluate(conf, 1)
-            print(conf.to_frame().T)
+        # maxR = 20 # maximal number of the evaluations on the incumbent
+        # for i, ID in enumerate(candidates_ids):
+        #     r, extra_run = 1, 1
+        #     conf = self.data.loc[i]
+        #     self.evaluate(conf, 1)
+        #     print(conf.to_frame().T)
 
-            if conf.n_eval > self.incumbent_id.n_eval:
-                self.incumbent_id = self.evaluate(self.incumbent_id, 1)
-                extra_run = 0
+        #     if conf.n_eval > self.incumbent_id.n_eval:
+        #         self.incumbent_id = self.evaluate(self.incumbent_id, 1)
+        #         extra_run = 0
 
-            while True:
-                if self._compare(self.incumbent_id.perf, conf.perf):
-                    self.incumbent_id = self.evaluate(self.incumbent_id, 
-                                                   min(extra_run, maxR - self.incumbent_id.n_eval))
-                    print(self.incumbent_id.to_frame().T)
-                    break
-                if conf.n_eval > self.incumbent_id.n_eval:
-                    self.incumbent_id = conf
-                    if self.verbose:
-                        print('[DEBUG] iteration %d -- new incumbent selected:' % self.iter_count)
-                        print('[DEBUG] {}'.format(self.incumbent_id))
-                        print('[DEBUG] with performance: {}'.format(self.incumbent_id.perf))
-                        print()
-                    break
+        #     while True:
+        #         if self._compare(self.incumbent_id.perf, conf.perf):
+        #             self.incumbent_id = self.evaluate(self.incumbent_id, 
+        #                                            min(extra_run, maxR - self.incumbent_id.n_eval))
+        #             print(self.incumbent_id.to_frame().T)
+        #             break
+        #         if conf.n_eval > self.incumbent_id.n_eval:
+        #             self.incumbent_id = conf
+        #             if self.verbose:
+        #                 print('[DEBUG] iteration %d -- new incumbent selected:' % self.iter_count)
+        #                 print('[DEBUG] {}'.format(self.incumbent_id))
+        #                 print('[DEBUG] with performance: {}'.format(self.incumbent_id.perf))
+        #                 print()
+        #             break
 
-                r = min(2 * r, self.incumbent_id.n_eval - conf.n_eval)
-                self.data.loc[i] = self.evaluate(conf, r)
-                print(self.conf.to_frame().T)
-                extra_run += r
+        #         r = min(2 * r, self.incumbent_id.n_eval - conf.n_eval)
+        #         self.data.loc[i] = self.evaluate(conf, r)
+        #         print(self.conf.to_frame().T)
+        #         extra_run += r
 
 # TODO: 
 class SMS_BO(BO):
@@ -750,22 +774,20 @@ class MOBO_D(BO):
         self.labels_ = KMeans(n_clusters=self.n_point).fit(self.weights).labels_
         self.frange = np.zeros(self.n_obj)
 
-        if self.n_job > 1:
-            self.p = ProcessingPool(ncpus=self.n_job)
-    
     def evaluate(self, data, runs=1):
         """Evaluate the candidate points and update evaluation info in the dataframe
         """
         _eval_fun = functools.partial(MOBO_D._eval, _eval_type=self._eval_type, _space=self._space,
                                       obj_func=self.obj_func, logger=self.logger, runs=runs,
-                                      pickling=self.n_job > 1) 
+                                      pickling=self.n_job > 1)
         if len(data.shape) == 1:
             _eval_fun(data)
         else: 
             if self.n_job > 1:
-                if self._parallel_backend == 'multiprocessing': # parallel execution using multiprocessing
+                 # parallel execution using multiprocessing
+                if self._parallel_backend == 'multiprocessing':
                     data_pickle = [dill.dumps(d) for d in data]
-                    __ = self.p.map(_eval_fun, data_pickle)
+                    __ = self.pool.map(_eval_fun, data_pickle)
 
                     x = [dill.loads(_) for _ in __]
                     self.eval_count += runs * len(data)
@@ -796,8 +818,8 @@ class MOBO_D(BO):
         self._y = (self.y - ymin) / (ymax - ymin)
 
         # fit the surrogate models
-        if self.n_job > 1:  
-            __ = self.p.map(_fit, *zip(*[(self.surrogate[i], self.data, 
+        if self.n_job > 1 and 11 < 2:  
+            __ = self.pool.map(_fit, *zip(*[(self.surrogate[i], self.data, 
                             self._y[:, i]) for i in range(self.n_obj)]))
         else:               
             __ = []
@@ -913,7 +935,7 @@ class MOBO_D(BO):
         criteria = (self._acquisition(s, gmin[i], dx=dx) for i, s in enumerate(surrogates))
 
         if self.n_job > 1:
-            __ = self.p.map(self._argmax_multistart, [_ for _ in criteria])
+            __ = self.pool.map(self._argmax_multistart, [_ for _ in criteria])
         else:
             __ = [list(self._argmax_multistart(_)) for _ in criteria]
 
@@ -953,7 +975,9 @@ if __name__ == '__main__':
         levels = space.levels if hasattr(space, 'levels') else None
         model = RandomForest(levels=levels)
 
-        opt = BO(space, fitness, model, max_eval=300, verbose=True, n_job=3, n_point=3)
+        opt = BO(space, fitness, model, max_eval=300, verbose=True, n_job=1, n_point=3,
+                 n_init_sample=3,
+                 init_points=[[0, 0, 10, 'OK']])
         xopt, fopt, stop_dict = opt.run()
 
     if 11 < 2:
