@@ -4,7 +4,6 @@ Created on Thu Sep  7 11:10:18 2017
 
 @author: wangronin
 """
-from __future__ import print_function
 from pdb import set_trace
 
 import numpy as np
@@ -13,14 +12,16 @@ from numpy.random import randint, rand, randn, geometric
 
 from ..misc import boundary_handling
 from ..base import Solution
+from ..utils import dynamic_penalty
 from ..SearchSpace import ContinuousSpace, OrdinalSpace, NominalSpace
-    
+
+# TODO: test more contraint handling methods
 # TODO: improve efficiency, e.g. compile it with cython
 # TODO: try to use advanced python default parameter 
 class mies(object):
-    def __init__(self, search_space, obj_func, x0=None, ftarget=None, max_eval=np.inf,
-                 minimize=True, mu_=4, lambda_=10, sigma0=None, eta0=None, P0=None,
-                 verbose=False):
+    def __init__(self, search_space, obj_func, eq_func=None, ineq_func=None, x0=None, 
+                 ftarget=None, max_eval=np.inf, minimize=True, elitism=False, mu_=4, 
+                 lambda_=10, sigma0=None, eta0=None, P0=None, verbose=False):
 
         self.mu_ = mu_
         self.lambda_ = lambda_
@@ -28,11 +29,14 @@ class mies(object):
         self.iter_count = 0
         self.minimize = minimize
         self.obj_func = obj_func
+        self.eq_func = eq_func
+        self.ineq_func = ineq_func
         self.stop_dict = {}
         self.verbose = verbose
         self.max_eval = max_eval
         self.ftarget = ftarget
-        self.plus_selection = False
+        self.elitism = False
+        self._penalty_func = dynamic_penalty
         
         self._space = search_space
         self.var_names = self._space.var_name
@@ -49,15 +53,17 @@ class mies(object):
         self.N_d = len(self.id_d)
         self.dim = self.N_r + self.N_i + self.N_d
 
-        # by default, we use individual step sizes for continuous and integer variables
-        # and global strength for the nominal variables
+        # by default, we use individual step sizes for continuous and 
+        # integer variables and global strength for the nominal variables
         self.N_p = min(self.N_d, int(1))
-        self._len = self.dim + self.N_r + self.N_i + self.N_p  # total length of the solution vector
+        
+        # total length of the solution vector
+        self._len = self.dim + self.N_r + self.N_i + self.N_p 
         
         # unpack interval bounds
         self.bounds_r = np.asarray([self._space.bounds[_] for _ in self.id_r])
         self.bounds_i = np.asarray([self._space.bounds[_] for _ in self.id_i])
-        self.bounds_d = np.asarray([self._space.bounds[_] for _ in self.id_d])   # actually levels...
+        self.bounds_d = np.asarray([self._space.bounds[_] for _ in self.id_d])
         self._check_bounds(self.bounds_r)
         self._check_bounds(self.bounds_i)
         
@@ -77,9 +83,10 @@ class mies(object):
         self._id_var = np.arange(self.dim)                    
         self._id_sigma = np.arange(self.N_r) + len(self._id_var)
         self._id_eta = np.arange(self.N_i) + len(self._id_var) + len(self._id_sigma) 
-        self._id_p = np.arange(self.N_p) + len(self._id_var) + len(self._id_sigma) + len(self._id_eta)
+        self._id_p = np.arange(self.N_p) + len(self._id_var) + len(self._id_sigma) \
+            + len(self._id_eta)
         self._id_hyperpar = np.arange(self.dim, self._len)
-        
+
          # initialize the populations
         if x0 is not None:                         # given x0
             par = []
@@ -91,7 +98,8 @@ class mies(object):
                 par += [P0] * self.N_p
 
             self.pop = Solution(np.tile(np.r_[x0, par], (self.mu_, 1)),
-                                var_name=self.var_names + par_name, verbose=self.verbose)
+                                var_name=self.var_names + par_name, 
+                                verbose=self.verbose)
             fitness0 = self.evaluate(self.pop[0])
             self.fitness = np.repeat(fitness0, self.mu_)
             self.xopt = x0
@@ -124,7 +132,7 @@ class mies(object):
         self.tolfun = 1e-5
         self.nbin = int(3 + ceil(30. * self.dim / self.lambda_))
         self.histfunval = zeros(self.nbin)
-        
+    
     def _check_bounds(self, bounds):
         if len(bounds) == 0:
             return
@@ -159,9 +167,10 @@ class mies(object):
         return p1
 
     def select(self):
-        pop = self.pop + self.offspring if self.plus_selection else self.offspring
-        fitness = np.r_[self.fitness, self.f_offspring] if self.plus_selection else self.f_offspring
+        pop = self.pop + self.offspring if self.elitism else self.offspring
+        fitness = np.r_[self.fitness, self.f_offspring] if self.elitism else self.f_offspring
         rank = argsort(fitness)
+
         if not self.minimize:
             rank = rank[::-1]
         
@@ -169,14 +178,18 @@ class mies(object):
         self.pop = pop[_]
         self.fitness = fitness[_]
 
-    def evaluate(self, pop):
+    def evaluate(self, pop, return_penalized=True):
         if len(pop.shape) == 1:  # one solution
-            f = np.asarray(self.obj_func(pop[self._id_var]))
+            pop.fitness = np.asarray(self.obj_func(pop[self._id_var]))
         else:                    # a population
-            f = np.array(list(map(self.obj_func, pop[:, self._id_var])))
+            pop.fitness = np.array(list(map(self.obj_func, pop[:, self._id_var])))
+        
         self.eval_count += pop.N
-        pop.fitness = f
-        return f
+        _penalized_fitness = pop.fitness + self._penalty_func(pop, self.iter_count + 1, 
+                                                              self.eq_func, self.ineq_func, 
+                                                              minimize=self.minimize)
+
+        return (_penalized_fitness if return_penalized else pop.fitness)
 
     def mutate(self, individual):
         if self.N_r:
@@ -203,10 +216,11 @@ class mies(object):
         # Interval Bounds Treatment
         x_ = boundary_handling(x_, self.bounds_r[:, 0], self.bounds_r[:, 1])
         
+        # TODO: check if this interval boundary handling works with penalty functions
         # the constraint handling method will (by chance) turn really bad cadidates
         # (the one with huge sigmas) to good ones and hence making the step size explode
         # Repair the step-size if x_ is out of bounds
-        if 1 < 2:
+        if 11 < 2:
             individual[self._id_sigma] = np.abs((x_ - x) / R)
         else:
             individual[self._id_sigma] = sigma
@@ -290,6 +304,7 @@ class mies(object):
                 individual = self.recombine(p1, p2)
                 self.offspring[i] = self.mutate(individual)
             
+            # NOTE: `self.fitness` and `self.f_offspring` are penalized function values
             self.f_offspring[:] = self.evaluate(self.offspring)
             self.select()
 
@@ -311,72 +326,3 @@ class mies(object):
 # TODO: implement this class
 class mo_mies(mies):
     pass
-
-if __name__ == '__main__':
-    if 1 < 2:
-        def fitness(x):
-            x_r, x_i, x_d = np.array(x[:2]), x[2], x[3]
-            if x_d == 'OK':
-                tmp = 0
-            else:
-                tmp = 1
-            return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + tmp * 2
-    
-        space = (ContinuousSpace([-5, 5]) * 2) + OrdinalSpace([5, 15]) + \
-            NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'])
-        opt = mies(space, fitness, max_eval=1e3, verbose=True)
-        xopt, fopt, stop_dict = opt.optimize()
-    
-    else:
-        def sphere(x):
-            x = np.asarray(x, dtype='float')
-            return np.sum(x ** 2.)
-        
-        def rand(x):
-            return np.random.rand()
-        
-        dim = 5
-        space = ContinuousSpace([-5, 5]) * dim
-        if 1 < 2:   # test for continous maximization problem
-            opt = mies(space, sphere, max_eval=2000, minimize=True, verbose=True)
-            xopt, fopt, stop_dict = opt.optimize()
-            print(stop_dict)
-        
-        if 11 < 2:   # for statistical test
-            N = int(1e2)
-            max_eval = int(1000)
-            fopt = np.zeros((1, N))
-            hist_sigma = zeros((100, N))
-            for i in range(N):
-                opt = mies(space, fitness, max_eval=max_eval, verbose=False)
-                xopt, fopt[0, i], stop_dict = opt.optimize()
-            
-            np.savetxt('mies.csv', fopt, delimiter=',')
-            
-        if 11 < 2:  
-            N = int(50)
-            max_eval = int(1000)
-            fopt = np.zeros((1, N))
-            hist_sigma = zeros((100, N))
-            hist_fitness = zeros((100, N))
-            
-            for i in range(N):
-                opt = mies(space, fitness, max_eval=max_eval, verbose=False)
-                xopt, fopt[0, i], stop_dict, hist_fitness[:, i], hist_sigma[:, i] = opt.optimize()
-            
-            import matplotlib.pyplot as plt
-            
-            with plt.style.context('ggplot'):
-                fig0, (ax0, ax1) = plt.subplots(1, 2, figsize=(10, 10), dpi=100)
-                for i in range(N):
-                    ax0.semilogy(range(100), hist_fitness[:, i])
-                    ax1.semilogy(range(100), hist_sigma[:, i])
-                    
-                ax0.set_xlabel('iteration')
-                ax0.set_ylabel('fitness')
-                ax1.set_xlabel('iteration')
-                ax1.set_ylabel('Step-sizes')
-                
-                fig0.suptitle('Sphere {}D'.format(dim))
-                plt.show()
-            

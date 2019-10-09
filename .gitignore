@@ -1,0 +1,16 @@
+*.log
+*.pyc
+*.bk
+*.pdf
+*.csv
+*.h5
+
+**/*.pyc
+**/**/*.pyc
+.vscode
+.DS_store
+
+!/.gitignore
+__pycache__/
+**/__pycache__/
+**/**/__pycache__/

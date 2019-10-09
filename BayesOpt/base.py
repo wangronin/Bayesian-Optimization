@@ -6,17 +6,14 @@ Created on Mon Apr 23 17:16:39 2018
 @email: wangronin@gmail.com
 
 """
-
 from pdb import set_trace
 import numpy as np
-import copyreg, dill
 from tabulate import tabulate
 
 # TODO: test the performance against Pandas dataframe
 # TODO: maybe set var_name as a constant attribute
 # TODO: register the objective function the class and implement an eval function  
 # TODO: fix the maximum recursion problem when debugging
-# TODO: extend self.fitness for multi-objective optimization
 
 class Solution(np.ndarray):
     """Subclassing numpy array to represent set of solutions in the optimization
@@ -28,7 +25,8 @@ class Solution(np.ndarray):
     # ger rid of self.__dict__ for speed concern
     # TODO: __slots__ does NOT work with dill yet...
     # __slots__ = 'N', 'dim', 'var_name', 'index', 'fitness', 'n_eval', 'verbose', 'n_obj'
-    def __new__(cls, x, fitness=None, n_eval=0, index=None, var_name=None, n_obj=1, verbose=True):
+    def __new__(cls, x, fitness=None, n_eval=0, index=None, var_name=None, 
+                fitness_name=None, n_obj=1, verbose=True):
         """
         Parameters
         ----------
@@ -40,7 +38,9 @@ class Solution(np.ndarray):
             index : int (array),
                 indices of solutions
             var_name : str (array),
-                column names
+                column names of variables
+            fitness_name : str (array),
+                column names of fitness values
             verbose : bool,
                 controls if additional information are printed when calling __str__
                 and to_dict
@@ -81,8 +81,18 @@ class Solution(np.ndarray):
         assert len(index) == obj.N
         
         if var_name is None:
-            var_name = ['x' + str(i) for i in range(obj.dim)]
+            if obj.dim == 1:
+                var_name = ['x']
+            else:
+                var_name = ['x' + str(i) for i in range(obj.dim)]
         assert len(var_name) == obj.dim
+
+        if fitness_name is None:
+            if obj.n_obj == 1:
+                fitness_name = ['f']
+            else:
+                fitness_name = ['f' + str(i) for i in range(obj.n_obj)]
+        assert len(fitness_name) == obj.n_obj
 
         # np.ndarray is set for those attributes because slicing it returns references
         # avoid calling self.__setattr__ for attributes fitness, n_eval and index
@@ -90,6 +100,7 @@ class Solution(np.ndarray):
         super(Solution, obj).__setattr__('n_eval', np.asarray(n_eval, dtype='int'))
         super(Solution, obj).__setattr__('index', np.asarray(index, dtype='int'))
         obj.var_name = np.asarray(var_name)
+        obj.fitness_name = fitness_name
         obj.verbose = verbose
         
         return obj      
@@ -108,12 +119,16 @@ class Solution(np.ndarray):
         assert isinstance(other, Solution)
         assert self.dim == other.dim
         assert self.n_obj == other.n_obj
+        assert len(set(self.fitness_name).symmetric_difference(other.fitness_name)) == 0
+        assert len(set(self.var_name).symmetric_difference(other.var_name)) == 0
+
         _ = [self.tolist()] if len(self.shape) == 1 else self.tolist()
         __ = [other.tolist()] if len(other.shape) == 1 else other.tolist()
         return Solution(_ + __,  self.fitness.tolist() + other.fitness.tolist(),
                         self.n_eval.tolist() + other.n_eval.tolist(), 
                         # self.index.tolist() + other.index.tolist(),
-                        var_name=self.var_name, n_obj=self.n_obj, 
+                        var_name=self.var_name, fitness_name=self.fitness_name,
+                        n_obj=self.n_obj, 
                         verbose=self.verbose)
 
     def __mul__(self, N):
@@ -125,6 +140,7 @@ class Solution(np.ndarray):
             raise Exception('Replication is not supported for 2D')
         return Solution([self.tolist()] * N, self.fitness.tolist() * N, 
                          self.n_eval.tolist() * N, var_name=self.var_name, 
+                         fitness_name=self.fitness_name,
                          n_obj=self.n_obj, verbose=self.verbose)
 
     def __rmul__(self, N):
@@ -144,24 +160,31 @@ class Solution(np.ndarray):
     def __getitem__(self, index):
         _, __ = index, slice(None, None)
         if isinstance(index, tuple):
-            # index = list(index)
             _ = index[0]
-            if len(index) == 2 and isinstance(index[1], int):
-                index[1] = slice(index[1], index[1] + 1)
             if len(index) == 2:
-                __ = index[1]
+                if isinstance(index[1], int):
+                    __ = slice(index[1], index[1] + 1)
+                    index = (_, __)
+                else:
+                    __ = index[1]
         
         subarr = super(Solution, self).__getitem__(index)
 
         # sub-slicing the attributes
         if isinstance(subarr, Solution):
-            # make sure an array is always returned after slicing attributes fitness, n_eval
-            # otherwise setting the attribute of a slice is by value...
-            _ = slice(_, _ + 1) if isinstance(_, int) else _
-            if len(self.shape) == 1:   # only one solution
+            # NOTE: `slice` is needed here to make sure an array is always returned 
+            # after slicing attributes `fitness`, `n_eval, `index`
+            # Otherwise setting the attribute of a slice is by value...
+            _ = slice(_, _ + 1) if isinstance(_, (int, np.int_)) else _
+            if len(self.shape) == 1:   # `self` is a 1-d array
                 subarr.var_name = subarr.var_name[_]
             else:
-                super(Solution, subarr).__setattr__('fitness', subarr.fitness[_])
+                # NOTE: 1-d array should have 1-d `fitness`
+                fitness = subarr.fitness[_]
+                if len(subarr.shape) == 1:
+                    fitness = fitness.ravel()
+                    
+                super(Solution, subarr).__setattr__('fitness', fitness)
                 super(Solution, subarr).__setattr__('n_eval', subarr.n_eval[_])
                 super(Solution, subarr).__setattr__('index', subarr.index[_])
 
@@ -184,6 +207,7 @@ class Solution(np.ndarray):
         super(Solution, self).__setattr__('n_eval', getattr(obj, 'n_eval', None))
         super(Solution, self).__setattr__('index', getattr(obj, 'index', None))
         self.var_name = getattr(obj, 'var_name', None)
+        self.fitness_name = getattr(obj, 'fitness_name', None)
         self.verbose = getattr(obj, 'verbose', None)
         self.dim = getattr(obj, 'dim', None)
         self.N = getattr(obj, 'N', None)
@@ -205,27 +229,27 @@ class Solution(np.ndarray):
     
     def __str__(self):
         var_name = self.var_name.tolist()
-        _ = ['fitness' + str(i) for i in range(self.n_obj)] if self.n_obj > 1 else ['fitness']
-        headers = var_name + ['n_eval'] + _ if self.verbose else var_name
+        headers = var_name + ['n_eval'] + self.fitness_name if self.verbose else var_name
         if len(self.shape) == 1:
-            t = [self.tolist() + self.n_eval.tolist() + self.fitness.flatten().tolist()] if self.verbose else \
-                [self.tolist()]
+            t = [self.tolist() + self.n_eval.tolist() + self.fitness.tolist()] if self.verbose \
+                else [self.tolist()]
         else:
             t = np.c_[self, self.n_eval, self.fitness].tolist() if self.verbose else self.tolist()
         
         return tabulate(t, headers=headers, showindex=self.index.tolist(), tablefmt='grid')
 
-    def __repr__(self):  # needed for pdb
+    def __repr__(self): # NOTE: this is needed in pdb...
         return self.__str__()
                         
-    def to_csv(self, fname, delimiter=',', append=False, header=True, index=True, show_attr=True):
+    def to_csv(self, fname, delimiter=',', append=False, header=True, index=True, 
+               show_attr=True):
+        var_name = self.var_name.tolist()
         if header:
-            _header = self.var_name.tolist()
+            _header = var_name
             if index:
                 _header = [''] + _header
             if show_attr:
-                _ = ['fitness' + str(i) for i in range(self.n_obj)] if self.n_obj > 1 else ['fitness']
-                attr_name = ['n_eval'] + _
+                attr_name = ['n_eval'] + self.fitness_name
                 _header += attr_name
             _header = ','.join(_header) + '\n'
         
@@ -241,77 +265,3 @@ class Solution(np.ndarray):
             if header:
                 f.writelines(_header)
             f.writelines(out)
-
-
-if __name__ == '__main__':
-    # test for 2D solution
-    s = Solution(np.c_[np.random.randn(5, 3), ['simida', 'niubia', 'bang', 'GG', 'blyat']], 
-                 verbose=True, fitness=[0] * 2, n_obj=2)
-    
-    a = Solution([[1,2,3]])
-    print(a)
-    print(np.atleast_2d(a))
-    # test for pickling
-    import dill
-    a = dill.dumps(s)
-    s2 = dill.loads(a)
-    print(s2)
-    print(s2.fitness)
-
-    # test for looping 
-    for ss in s[0, :].reshape(1, -1):
-        ss.fitness = [1, 2]
-        print(ss)
-    
-    # print(s.to_dict(show_attr=True))
-    # print(s)
-    # print(s[0])
-    # print(s[0:1])
-    # print(s[0, 0:3])
-    # print(s[:, 0])
-    # print(s[0:2][0, 0:2])
-    # print(s[0][0:2])
-    
-    # s[:, 0] = np.asarray(['wa'] * 5).reshape(-1, 1)
-    # print(s)
-
-    # a = s[0]
-    # a.fitness = 3
-    # print(s)
-
-    # s[0].fitness = 2
-    # print(s)
-    
-    # s[1].fitness = [1, 2]
-    # s[2:4].fitness = [[3, 4], [5, 6]]
-    # s[0:2].n_eval += 1
-    # print(s)
-
-    # s += s[3:5]
-    # print(s[0:2] + s[3:5])
-
-    # # # test saving to csv
-    # if 1 < 2:
-    #     s.to_csv('test.csv', header=True, show_attr=True, index=True)
-
-    # # test for 1D solution
-    # ss = Solution(np.random.randn(10))
-
-    # print(ss * 2)
-    # print(ss[0])
-    # print(ss[0:5])
-    # ss.fitness = 3  # TODO: change the fitness to a 1-d array
-    # print(ss)
-
-    # # test for pickling
-    # # np.save('test', s)
-
-    # # test for one-dimensional case
-    # if 11 < 2:
-    #     d = Solution([np.random.randint(0, 100, size=(1,)).tolist() for i in range(10)], index=list(range(10)))
-    #     print(d)
-    #     for dd in d:
-    #         print(dd.tolist())
-
-    
-    

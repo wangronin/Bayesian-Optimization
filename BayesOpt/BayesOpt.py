@@ -36,7 +36,8 @@ from .misc import proportional_selection, non_dominated_set_2d
 class BO(object):
     """Bayesian Optimization (BO) base class"""
     def __init__(self, search_space, obj_func, surrogate, ftarget=None,
-                 minimize=True, max_eval=None, max_iter=None, init_points=None,
+                 eq_func=None, ineq_func=None, minimize=True, max_eval=None, 
+                 max_iter=None, init_points=None,
                  infill='EI', t0=2, tf=1e-1, schedule='exp', eval_type='list',
                  n_init_sample=None, n_point=1, n_job=1, backend='multiprocessing',
                  n_restart=None, max_infill_eval=None, wait_iter=3, optimizer='MIES', 
@@ -79,6 +80,8 @@ class BO(object):
         self._space = search_space
         self.var_names = self._space.var_name
         self.obj_func = obj_func
+        self.eq_func = eq_func
+        self.ineq_func = ineq_func
         self.surrogate = surrogate
         self.n_point = int(n_point)
         self.n_job = int(n_job)
@@ -372,7 +375,7 @@ class BO(object):
         t0 = time.time()
         self.evaluate(X, runs=self.init_n_eval)
         self.logger.info('evaluation takes {:.4f}s'.format(time.time() - t0))
-
+        
         X = self.after_eval_check(X)
         self.data = self.data + X
 
@@ -385,7 +388,7 @@ class BO(object):
 
         self.logger.info(bcolors.WARNING + \
             'iteration {}, objective value: {:.8f}'.format(self.iter_count, 
-            self.xopt.fitness) + bcolors.ENDC)
+            self.xopt.fitness[0]) + bcolors.ENDC)
         self.logger.info('xopt: {}'.format(self._space.to_dict(self.xopt)))     
         
         self.fit_and_assess()     # re-train the surrogate model   
@@ -505,7 +508,8 @@ class BO(object):
             
             # TODO: add IPOP-CMA-ES here for testing
             # TODO: when the surrogate is GP, implement a GA-BFGS hybrid algorithm
-            # TODO: BFGS only works with GP
+            # TODO: BFGS only works with continuous parameters
+            # TODO: add constraint handling for BFGS
             if self._optimizer == 'BFGS':
                 if self.N_d + self.N_i != 0:
                     raise ValueError('BFGS is not supported with mixed variable types.')
@@ -519,19 +523,19 @@ class BO(object):
                 fopt_ = -np.asscalar(fopt_)
                 
                 if stop_dict["warnflag"] != 0:
-                    pass
-                    # self.logger.debug("L-BFGS-B terminated abnormally with the "
-                    #                   " state: %s" % stop_dict)
+                    self.logger.debug("L-BFGS-B terminated abnormally with the "
+                                      " state: %s" % stop_dict)
                                 
             elif self._optimizer == 'MIES':
-                opt = mies(self._space, obj_func, max_eval=eval_budget, minimize=False, verbose=False)                           
+                opt = mies(self._space, obj_func, eq_func=self.eq_func, ineq_func=self.ineq_func,
+                           max_eval=eval_budget, minimize=False, verbose=False)                           
                 xopt_, fopt_, stop_dict = opt.optimize()
 
             if fopt_ > best:
                 best = fopt_
                 wait_count = 0
-                # self.logger.debug('restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
-                #                    stop_dict['funcalls'], fopt_))
+                self.logger.debug('restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
+                                   stop_dict['funcalls'], fopt_))
             else:
                 wait_count += 1
 
@@ -541,6 +545,7 @@ class BO(object):
             
             if eval_budget <= 0 or wait_count >= self._wait_iter:
                 break
+
         # maximization: sort the optima in descending order
         idx = np.argsort(fopt)[::-1]
         return xopt[idx[0]], fopt[idx[0]]
@@ -552,6 +557,7 @@ class BO(object):
 
 
 # TODO: validate this subclass
+# TODO: move those to Extension.py
 class BOAnnealing(BO):
     def __init__(self, t0, tf, schedule, *argv, **kwargs):
         super(BOAnnealing, self).__init__(*argv, **kwargs)
