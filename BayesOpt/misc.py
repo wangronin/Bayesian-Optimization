@@ -9,10 +9,15 @@ from __future__ import print_function
 
 import pdb
 import logging
+import random
+import string
+import re
+import os
 from copy import copy
 
 import numpy as np
 from numpy import isfinite, mod, floor, shape, bitwise_and, zeros, newaxis
+
 
 # TODO: re-written those functions to C/Cython
 def non_dominated_set_2d(y, minimize=True):
@@ -89,6 +94,7 @@ def fast_non_dominated_sort(fitness):
         
     return fronts
 
+
 # TODO: implement this as a C procedure
 def proportional_selection(perf, N, minimize=True, replacement=True):
     def select(perf):
@@ -117,6 +123,7 @@ def proportional_selection(perf, N, minimize=True, replacement=True):
                 perf_ = np.delete(perf_, _)
                 del idx[_]
     return res
+
 
 # TODO: double check this one. It causes the explosion of step-sizes in MIES
 def boundary_handling(x, lb, ub):
@@ -161,6 +168,63 @@ def boundary_handling(x, lb, ub):
     if transpose:
         x = x.T
     return x.reshape(shape_ori)
+
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+
+# Custom formatter
+# TODO: use relative path for %(pathname)s
+class MyFormatter(logging.Formatter):
+    default_time_format = '%m/%d/%Y %H:%M:%S'
+    default_msec_format = '%s,%02d'
+
+    FORMATS = {
+        logging.DEBUG : '%(asctime)s - [%(levelname)s] {%(pathname)s:%(lineno)d} -- %(message)s',
+        logging.INFO : '%(asctime)s - [%(levelname)s] -- %(message)s',
+        logging.WARNING : '%(asctime)s - [%(levelname)s] {%(name)s} -- %(message)s',
+        logging.ERROR : '%(asctime)s - [%(levelname)s] {%(name)s} -- %(message)s',
+        'DEFAULT' : '%(asctime)s - %(levelname)s -- %(message)s'}
+    
+    def __init__(self, fmt='%(asctime)s - %(levelname)s -- %(message)s'):
+        MyFormatter.FORMATS['DEFAULT'] = fmt
+        super().__init__(fmt=fmt, datefmt=None, style='%') 
+    
+    def format(self, record):
+
+        # Save the original format configured by the user
+        # when the logger formatter was instantiated
+        _fmt = self._style._fmt
+
+        # Replace the original format with one customized by logging level
+        self._style._fmt = self.FORMATS.get(record.levelno, self.FORMATS['DEFAULT'])
+
+        # Call the original formatter class to do the grunt work
+        fmt = logging.Formatter.format(self, record)
+
+        # Restore the original format configured by the user
+        self._style._fmt = _fmt
+        return fmt
+
+
+def random_string(k=15):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=15))
+
+
+def expand_replace(s):
+    m = re.match(r'${.*}', s)
+    for _ in m.group():
+        s.replace(_, os.path.expandvars(_))
+    return s
+
 
 if __name__ == '__main__':
     # TODO: goes to unittest

@@ -9,12 +9,15 @@ Created on Mon Mar 6 15:05:01 2017
 from pdb import set_trace
 import os, sys, dill, functools, logging, time
 
-sys.path.insert(0, os.path.abspath('../'))
 
 import pandas as pd
 import numpy as np
+import json
+import copy
+import re
 
-from utils import bcolors, MyFormatter
+#sys.path.insert(0, os.path.abspath('../'))
+#from utils import bcolors, MyFormatter
 
 # TODO: replace 'pathos' in long runs as this package create global process pool 
 # IMPORTANT: pathos is better than joblib 
@@ -29,7 +32,7 @@ from .base import Solution
 from .optimizer import mies, cma_es
 from .InfillCriteria import EI, PI, MGFI
 from .Surrogate import SurrogateAggregation
-from .misc import proportional_selection, non_dominated_set_2d
+from .misc import proportional_selection, non_dominated_set_2d, bcolors, MyFormatter
 
 # TODO: implement the automatic surrogate model selection
 # TODO: improve the efficiency; profiling
@@ -41,7 +44,8 @@ class BO(object):
                  infill='EI', t0=2, tf=1e-1, schedule='exp', eval_type='list',
                  n_init_sample=None, n_point=1, n_job=1, backend='multiprocessing',
                  n_restart=None, max_infill_eval=None, wait_iter=3, optimizer='MIES', 
-                 data_file=None, verbose=False, random_seed=None):
+                 data_file=None, verbose=False, random_seed=None,
+                 warm_data=None, log_file=None):
         """
 
         Parameters
@@ -77,6 +81,7 @@ class BO(object):
         """
         self.verbose = verbose
         self.data_file = data_file
+        self.log_file = log_file
         self._space = search_space
         self.var_names = self._space.var_name
         self.obj_func = obj_func
@@ -164,11 +169,20 @@ class BO(object):
             np.random.seed(self.random_seed)
         
         # setup the logger
-        self.set_logger(None)
+        self.set_logger(self.log_file)
 
         # setup multi-processing workers
         if self.n_job > 1:
             self.pool = ProcessingPool(ncpus=self.n_job)
+
+        # load initial data 
+        if (warm_data is not None 
+                and isinstance(warm_data, Solution)):
+            self._check_var_name_consistency(warm_data.var_name)
+            self.warm_data = warm_data
+        elif (warm_data is not None 
+                and isinstance(warm_data, str)):
+            self._load_initial_data(warm_data)
 
     def __del__(self):
         if hasattr(self, 'pool'):
@@ -211,6 +225,7 @@ class BO(object):
         check for the duplicated solutions, as it is not allowed
         for noiseless objective functions
         """
+        if not hasattr(self, 'data'): return data
         _ = []
         for i in range(data.N):
             x = data[i]
@@ -310,20 +325,31 @@ class BO(object):
         """Generate the initial data set (DOE) and construct the surrogate model"""
         if hasattr(self, 'data'):
             self.logger.warn('initialization is already performed!') 
-            return 
+            return
+
+        if hasattr(self, 'warm_data'):
+            self.logger.info('adding warm data to the initial model')
+            self.data = copy.deepcopy(self.warm_data)
 
         self.logger.info('selected surrogate model: {}'.format(self.surrogate.__class__)) 
         self.logger.info('building {:d} initial design points...'.format(self.n_init_sample))
         
         sampling_trial = self._init_flatfitness_trial
         while True:
-            if self.init_points is not None:
-                n = len(self.init_points)
-                DOE = self.init_points + self._space.sampling(self.n_init_sample - n)
-            else:
-                DOE = self._space.sampling(self.n_init_sample)
-                
-            DOE = Solution(DOE, var_name=self.var_names, n_obj=self.n_obj)
+            DOE = []
+            while len(DOE) < self.n_init_sample:
+                if len(DOE) > 0:
+                    self.logger.info('adding {:d} new points due to duplications...'.format(self.n_init_sample - len(DOE)))
+                    DOE += Solution(self._space.sampling(self.n_init_sample - len(DOE)), var_name=self.var_names, n_obj=self.n_obj)
+                elif self.init_points is not None:
+                    n = len(self.init_points)
+                    DOE = self.init_points + self._space.sampling(self.n_init_sample - n)
+                else:
+                    DOE = self._space.sampling(self.n_init_sample)
+                if not isinstance(DOE, Solution):
+                    DOE = Solution(DOE, var_name=self.var_names, n_obj=self.n_obj)
+                DOE = self._remove_duplicate(DOE)
+
             self.evaluate(DOE, runs=self.init_n_eval)
             DOE = self.after_eval_check(DOE)
             
@@ -357,7 +383,8 @@ class BO(object):
 
         self.fit_and_assess()
         if self.data_file is not None: # save the initial design to csv
-            self.data.to_csv(self.data_file)
+            DOE.to_csv(self.data_file)
+            #self.data.to_csv(self.data_file)
 
     def after_eval_check(self, X):
         _ = np.isnan(X.fitness)
@@ -554,6 +581,47 @@ class BO(object):
         # assert hasattr(self.obj_func, '__call__')
         if np.isinf(self.max_eval) and np.isinf(self.max_iter):
             raise ValueError('max_eval and max_iter cannot be both infinite')
+
+    def _check_var_name_consistency(self, var_name):
+        if len(self._space.var_name) == len(var_name):
+            for a,b in zip(self._space.var_name, var_name):
+                if a != b:
+                    raise Exception("Var name inconsistency (" + str(a) + ", " + str(b) +")")
+        else:
+            raise Exception("Search space dim does not mathc with the warm data file")
+
+    def _load_initial_data(self, filename, sep=","):
+        try:
+            var_name = None
+            index_pos = 0
+            with open(filename, "r") as f:
+                line = f.readline()
+                while line:
+                    line = line.replace("\n", "").split(sep)
+                    if var_name is None:
+                        var_name = line
+                        fitness_pos = line.index("fitness")
+                        n_eval_pos = line.index("n_eval")
+                        var_pos = min(fitness_pos, n_eval_pos)
+                        var_name.remove("fitness")
+                        var_name.remove("n_eval")
+                        if line[0] == "":
+                           index_pos = 1
+                           var_name.remove("")
+                        # Check the consistency of the csv file and the search space
+                        self._check_var_name_consistency(var_name)
+                    elif len(var_name) > 0:
+                        var = [int(p) if p.isnumeric() else float(p) if re.match("^\d+?\.\d+?$", p) else p for p in line[index_pos:var_pos]]
+                        sol = Solution(var, var_name=var_name, fitness=float(line[fitness_pos]), n_eval=int(line[n_eval_pos]))
+                        if hasattr(self, 'warm_data') and len(self.warm_data) > 0:
+                            self.warm_data += sol
+                        else:
+                            self.warm_data = sol
+                    line = f.readline()
+            f.close()
+            self.logger.info(str(len(self.warm_data)) + " points loaded from " + filename)
+        except IOError:
+            raise Exception("the " + filename + " does not contain a valid set of solutions")
 
 
 # TODO: validate this subclass

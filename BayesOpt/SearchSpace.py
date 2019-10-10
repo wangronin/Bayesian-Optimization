@@ -61,7 +61,7 @@ class SearchSpace(object):
         if var_name is not None:
             if isinstance(var_name, str):
                 if self.dim > 1:
-                    var_name = [var_name + str(_) for _ in range(self.dim)]
+                    var_name = [var_name + '_' + str(_) for _ in range(self.dim)]
                 else:
                     var_name = [var_name]
             assert len(var_name) == self.dim
@@ -106,7 +106,7 @@ class SearchSpace(object):
         s.dim = int(self.dim * N)
         s.var_type *= N
         s.bounds *= N
-        s.var_name = ['{}{}'.format(v, k) for k in range(N) for v in self.var_name]
+        s.var_name = ['{}_{}'.format(v, k) for k in range(N) for v in self.var_name]
         return s
 
     def __rmul__(self, N):
@@ -173,7 +173,10 @@ class ContinuousSpace(SearchSpace):
     def __init__(self, bounds, var_name=None, name=None):
         super(ContinuousSpace, self).__init__(bounds, var_name, name)
         if not hasattr(self, 'var_name'):
-            self.var_name = ['r' + str(i) for i in range(self.dim)]
+            if self.dim > 1:
+                self.var_name = ['r_' + str(i) for i in range(self.dim)]
+            else:
+                self.var_name = ['r']
 
         self.var_type = ['C'] * self.dim
         self._bounds = np.atleast_2d(self.bounds).T
@@ -203,7 +206,10 @@ class NominalSpace(SearchSpace):
     def __init__(self, levels, var_name=None, name=None):
         super(NominalSpace, self).__init__(levels, var_name, name)
         if not hasattr(self, 'var_name'):
-            self.var_name = ['d' + str(i) for i in range(self.dim)]
+            if self.dim > 1:
+                self.var_name = ['d_' + str(i) for i in range(self.dim)]
+            else:
+                self.var_name = ['d']
 
         self.var_type = ['N'] * self.dim
         self._levels = [np.array(b) for b in self.bounds]
@@ -233,7 +239,10 @@ class OrdinalSpace(SearchSpace):
     def __init__(self, bounds, var_name=None, name=None):
         super(OrdinalSpace, self).__init__(bounds, var_name, name)
         if not hasattr(self, 'var_name'):
-            self.var_name = ['i' + str(i) for i in range(self.dim)]
+            if self.dim > 1:
+                self.var_name = ['i_' + str(i) for i in range(self.dim)]
+            else:
+                self.var_name = ['i']
 
         self.var_type = ['O'] * self.dim
         self._lb, self._ub = zip(*self.bounds)        # for sampling
