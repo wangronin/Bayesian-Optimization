@@ -555,7 +555,7 @@ class BO(object):
                                 
             elif self._optimizer == 'MIES':
                 opt = mies(self._space, obj_func, eq_func=self.eq_func, ineq_func=self.ineq_func,
-                           max_eval=eval_budget, minimize=False, verbose=False)                           
+                           max_eval=eval_budget, minimize=False, verbose=False, eval_type=self._eval_type)                           
                 xopt_, fopt_, stop_dict = opt.optimize()
 
             if fopt_ > best:
