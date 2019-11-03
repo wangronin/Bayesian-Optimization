@@ -21,7 +21,8 @@ from ..SearchSpace import ContinuousSpace, OrdinalSpace, NominalSpace
 class mies(object):
     def __init__(self, search_space, obj_func, eq_func=None, ineq_func=None, x0=None, 
                  ftarget=None, max_eval=np.inf, minimize=True, elitism=False, mu_=4, 
-                 lambda_=10, sigma0=None, eta0=None, P0=None, verbose=False):
+                 lambda_=10, sigma0=None, eta0=None, P0=None, verbose=False,
+                 eval_type='list'):
 
         self.mu_ = mu_
         self.lambda_ = lambda_
@@ -37,6 +38,7 @@ class mies(object):
         self.ftarget = ftarget
         self.elitism = False
         self._penalty_func = dynamic_penalty
+        self._eval_type = eval_type
         
         self._space = search_space
         self.var_names = self._space.var_name
@@ -185,7 +187,12 @@ class mies(object):
             pop.fitness = np.array(list(map(self.obj_func, pop[:, self._id_var])))
         
         self.eval_count += pop.N
-        _penalized_fitness = pop.fitness + self._penalty_func(pop, self.iter_count + 1, 
+        if self._eval_type == 'list':
+            X = pop
+        elif self._eval_type == 'dict':
+            X = [self._space.to_dict(x) for x in pop]
+        #_penalized_fitness = pop.fitness + self._penalty_func(pop, self.iter_count + 1, 
+        _penalized_fitness = pop.fitness + self._penalty_func(X, self.iter_count + 1, 
                                                               self.eq_func, self.ineq_func, 
                                                               minimize=self.minimize)
 

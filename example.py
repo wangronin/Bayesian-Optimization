@@ -17,6 +17,7 @@ from GaussianProcess.trend import constant_trend
 from BayesOpt import BO
 from BayesOpt.Surrogate import RandomForest
 from BayesOpt.SearchSpace import ContinuousSpace
+from BayesOpt.base import Solution
 
 np.random.seed(42)
 
@@ -47,10 +48,17 @@ model = GaussianProcess(mean=mean, corr='matern',
                         optimizer='BFGS', wait_iter=5, random_start=30 * dim,
                         likelihood='concentrated', eval_budget=150 * dim)
 
+warm_data = Solution([2.7839273017368615, 1.1839018103644392], var_name=["r_0", "r_1"], n_eval=1, fitness=12.18884801)
+warm_data += Solution([-4.127776314690761, -4.128065755965569], var_name=["r_0", "r_1"], n_eval=1, fitness=38.61525121)
+
+
 opt = BO(search_space, obj_func, model, max_iter=n_step,
          n_init_sample=n_init_sample, minimize=True, verbose=True, 
          wait_iter=10, 
-         optimizer='BFGS'  # when using GPR model, 'BFGS' is faster than 'MIES'
+         #warm_data="example-wd.csv",
+         warm_data=warm_data,
+         #warm_data=None,
+         optimizer='BFGS'  # when using GPR model, 'BFGS' is faster than 'MIES'        
          )
                
 opt.run()

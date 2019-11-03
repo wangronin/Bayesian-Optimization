@@ -90,7 +90,8 @@ class RandomForest(RandomForestRegressor):
             # encode integers to binary
             _max = max(self._n_values)
             data = atleast_2d([list(range(n)) * (_max // n) + list(range(_max % n)) for n in self._n_values]).T
-            self._enc = OneHotEncoder(categories='auto', sparse=False)
+            self._enc = OneHotEncoder(n_values=self._n_values, sparse=False)
+            #self._enc = OneHotEncoder(categories='auto', sparse=False)
             self._enc.fit(data)
 
     def _check_X(self, X):

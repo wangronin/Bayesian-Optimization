@@ -2,7 +2,8 @@ import numpy as np
 
 def dynamic_penalty(X, t, equality=None, inquality=None, C=0.5, alpha=1, beta=2, 
                     epsilon=0.01, minimize=True):
-    N = X.shape[0]
+    N = len(X) if isinstance(X, list) else X.shape[0]
+    # N = X.shape[0]
     p = np.zeros(N)
 
     if equality is not None:
@@ -22,7 +23,8 @@ def dynamic_penalty(X, t, equality=None, inquality=None, C=0.5, alpha=1, beta=2,
 # TODO: get this done and test it
 def stochastic_ranking(X, fitness, equality=None, inquality=None, P=0.4, gamma=1, 
                        beta=1, epsilon=0):
-    N = X.shape[0]
+    N = len(X) if isinstance(X, list) else X.shape[0]
+    #N = X.shape[0]
     p = np.zeros(N)
 
     if equality is not None:
