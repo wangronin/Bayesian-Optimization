@@ -20,7 +20,8 @@ from sklearn.metrics import r2_score
 
 from joblib import Parallel, delayed
 
-# TODO: implement multi-output/objetive surrogate models, better to model the correlation among targets
+# TODO: implement multi-output/objetive surrogate models, better to model the c
+# orrelation among targets
 class SurrogateAggregation(object):
     def __init__(self, surrogates, aggregation='WS', **kwargs):
         self.surrogates = surrogates
@@ -65,8 +66,8 @@ class RandomForest(RandomForestRegressor):
     Extension on the sklearn RandomForestRegressor class
     Added functionality: empirical MSE of predictions
     """
-    def __init__(self, levels=None, n_estimators=50, max_features=5./6,
-                 min_samples_leaf=2, **kwargs):
+    def __init__(self, n_estimators=100, max_features=5./6, min_samples_leaf=2, 
+                 levels=None, **kwargs):
         """
         parameter
         ---------
@@ -74,7 +75,10 @@ class RandomForest(RandomForestRegressor):
             keys: indices of categorical variables
             values: list of levels of categorical variables
         """
-        super(RandomForest, self).__init__(**kwargs)
+        super(RandomForest, self).__init__(n_estimators=n_estimators,
+                                           max_features=max_features,
+                                           min_samples_leaf=min_samples_leaf,
+                                           **kwargs)
 
         # TODO: using such encoding, feature number will increase drastically
         # TODO: investigate the upper bound (in the sense of cpu time)
@@ -83,22 +87,19 @@ class RandomForest(RandomForestRegressor):
         if levels is not None:
             assert isinstance(levels, dict)
             self._levels = levels
-            self._cat_idx = sorted(self._levels.keys())
-            self._n_values = [len(self._levels[i]) for i in self._cat_idx]
-            # encode categorical variables to integer type
-            self._le = [LabelEncoder().fit(self._levels[i]) for i in self._cat_idx]
-            # encode integers to binary
-            _max = max(self._n_values)
-            data = atleast_2d([list(range(n)) * (_max // n) + list(range(_max % n)) for n in self._n_values]).T
-            self._enc = OneHotEncoder(n_values=self._n_values, sparse=False)
-            #self._enc = OneHotEncoder(categories='auto', sparse=False)
+            self._cat_idx = list(self._levels.keys())
+            self._categories = list(self._levels.values())
+            data = np.atleast_2d(self._categories).T.tolist()
+
+            # encode categorical variables to binary values
+            self._enc = OneHotEncoder(categories=self._categories, sparse=False)
             self._enc.fit(data)
 
     def _check_X(self, X):
         # TODO: this line seems to cause problem sometimes
         X_ = array(X, dtype=object)
         if hasattr(self, '_levels'):
-            X_cat = array([self._le[i].transform(X_[:, k]) for i, k in enumerate(self._cat_idx)]).T
+            X_cat = X_[:, self._cat_idx]
             X_cat = self._enc.transform(X_cat)
             X = np.c_[np.delete(X_, self._cat_idx, 1).astype(float), X_cat]
         return X

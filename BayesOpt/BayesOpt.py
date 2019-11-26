@@ -34,6 +34,12 @@ from .InfillCriteria import EI, PI, MGFI
 from .Surrogate import SurrogateAggregation
 from .misc import proportional_selection, non_dominated_set_2d, bcolors, MyFormatter
 
+verbose = {
+    False : logging.NOTSET,
+    'DEBUG' : logging.DEBUG,
+    'INFO' : logging.INFO
+}
+
 # TODO: implement the automatic surrogate model selection
 # TODO: improve the efficiency; profiling
 class BO(object):
@@ -110,7 +116,7 @@ class BO(object):
         self.N_d = len(self.d_index)
 
         self._init_flatfitness_trial = 2
-       
+
         # parameter: objective evaluation
         # TODO: for noisy objective function, maybe increase the initial evaluations
         self.init_n_eval = 1      
@@ -201,14 +207,14 @@ class BO(object):
         if self.verbose != 0:
             # create console handler and set level to warning
             ch = logging.StreamHandler(sys.stdout)
-            ch.setLevel(logging.INFO)
+            ch.setLevel(verbose[self.verbose])
             ch.setFormatter(fmt)
             self.logger.addHandler(ch)
 
         # create file handler and set level to debug
         if logger is not None:
             fh = logging.FileHandler(logger)
-            fh.setLevel(logging.DEBUG)
+            fh.setLevel(verbose[self.verbose])
             fh.setFormatter(fmt)
             self.logger.addHandler(fh)
 
@@ -220,20 +226,23 @@ class BO(object):
         """
         return f1 < f2 if self.minimize else f2 > f1
     
-    def _remove_duplicate(self, data):
+    def _remove_duplicate(self, data, X=None):
         """
         check for the duplicated solutions, as it is not allowed
         for noiseless objective functions
         """
-        if not hasattr(self, 'data'): return data
+        if X is None:
+            if not hasattr(self, 'data'): 
+                return data
+            X = self.data
+
         _ = []
         for i in range(data.N):
             x = data[i]
-            
-            CON = np.all(np.isclose(np.asarray(self.data[:, self.r_index], dtype='float'),
+            CON = np.all(np.isclose(np.asarray(X[:, self.r_index], dtype='float'),
                                     np.asarray(x[self.r_index], dtype='float')), axis=1)
-            INT = np.all(self.data[:, self.i_index] == x[self.i_index], axis=1)
-            CAT = np.all(self.data[:, self.d_index] == x[self.d_index], axis=1)
+            INT = np.all(X[:, self.i_index] == x[self.i_index], axis=1)
+            CAT = np.all(X[:, self.d_index] == x[self.d_index], axis=1)
             if not any(CON & INT & CAT):
                 _ += [i]
         return data[_]
@@ -339,8 +348,10 @@ class BO(object):
             DOE = []
             while len(DOE) < self.n_init_sample:
                 if len(DOE) > 0:
-                    self.logger.info('adding {:d} new points due to duplications...'.format(self.n_init_sample - len(DOE)))
-                    DOE += Solution(self._space.sampling(self.n_init_sample - len(DOE)), var_name=self.var_names, n_obj=self.n_obj)
+                    self.logger.info('adding %d new points due to duplications...'
+                        %self.n_init_sample - len(DOE))
+                    DOE += Solution(self._space.sampling(self.n_init_sample - len(DOE)), 
+                                    var_name=self.var_names, n_obj=self.n_obj)
                 elif self.init_points is not None:
                     n = len(self.init_points)
                     DOE = self.init_points + self._space.sampling(self.n_init_sample - n)
@@ -379,7 +390,8 @@ class BO(object):
                 break
 
         for i, x in enumerate(DOE):
-            self.logger.info('DOE {}, fitness: {} -- {}'.format(i + 1, x.fitness, self._space.to_dict(x)))
+            self.logger.info('DOE {}, fitness: {} -- {}'.format(i + 1, x.fitness, 
+                             self._space.to_dict(x)))
 
         self.fit_and_assess()
         if self.data_file is not None: # save the initial design to csv
@@ -555,7 +567,8 @@ class BO(object):
                                 
             elif self._optimizer == 'MIES':
                 opt = mies(self._space, obj_func, eq_func=self.eq_func, ineq_func=self.ineq_func,
-                           max_eval=eval_budget, minimize=False, verbose=False, eval_type=self._eval_type)                           
+                           max_eval=eval_budget, minimize=False, verbose=False, 
+                           eval_type=self._eval_type)                           
                 xopt_, fopt_, stop_dict = opt.optimize()
 
             if fopt_ > best:

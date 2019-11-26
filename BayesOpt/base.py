@@ -196,6 +196,10 @@ class Solution(np.ndarray):
 
         return subarr
 
+    def unique(self):
+        _, index = np.unique(self.tolist(), axis=0, return_index=True)
+        return self[np.sort(index)]
+
     def __array_finalize__(self, obj):
         """
         __array_finalize__ is called after new 'Solution' instance is created: from calling
@@ -226,7 +230,7 @@ class Solution(np.ndarray):
             res['fitness'] = self.fitness.tolist()
             res['n_eval'] = self.n_eval.tolist()
         return res
-    
+
     def __str__(self):
         var_name = self.var_name.tolist()
         headers = var_name + ['n_eval'] + self.fitness_name if self.verbose else var_name
