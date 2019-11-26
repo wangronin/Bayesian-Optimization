@@ -200,6 +200,9 @@ class BO(object):
             logger : str, None or logging.Logger,
                 either a logger file name, None (no logging) or a logger object
         """
+        if isinstance(logger, logging.Logger):
+            self.logger = logger
+
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(logging.DEBUG)
         fmt = MyFormatter()
@@ -207,14 +210,14 @@ class BO(object):
         if self.verbose != 0:
             # create console handler and set level to warning
             ch = logging.StreamHandler(sys.stdout)
-            ch.setLevel(verbose[self.verbose])
+            ch.setLevel(logging.INFO)
             ch.setFormatter(fmt)
             self.logger.addHandler(ch)
 
         # create file handler and set level to debug
         if logger is not None:
             fh = logging.FileHandler(logger)
-            fh.setLevel(verbose[self.verbose])
+            fh.setLevel(logging.DEBUG)
             fh.setFormatter(fmt)
             self.logger.addHandler(fh)
 

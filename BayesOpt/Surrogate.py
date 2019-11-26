@@ -10,6 +10,7 @@ from pdb import set_trace
 
 import pandas as pd
 import numpy as np
+
 from numpy import std, array, atleast_2d
 
 from sklearn.ensemble import RandomForestRegressor
@@ -88,19 +89,20 @@ class RandomForest(RandomForestRegressor):
             assert isinstance(levels, dict)
             self._levels = levels
             self._cat_idx = list(self._levels.keys())
-            self._categories = list(self._levels.values())
-            data = np.atleast_2d(self._categories).T.tolist()
+            self._categories = [list(l) for l in self._levels.values()]
 
             # encode categorical variables to binary values
             self._enc = OneHotEncoder(categories=self._categories, sparse=False)
-            self._enc.fit(data)
 
     def _check_X(self, X):
         # TODO: this line seems to cause problem sometimes
         X_ = array(X, dtype=object)
         if hasattr(self, '_levels'):
             X_cat = X_[:, self._cat_idx]
-            X_cat = self._enc.transform(X_cat)
+            try:
+                X_cat = self._enc.transform(X_cat)
+            except:
+                X_cat = self._enc.fit_transform(X_cat)
             X = np.c_[np.delete(X_, self._cat_idx, 1).astype(float), X_cat]
         return X
 
