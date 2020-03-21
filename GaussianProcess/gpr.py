@@ -13,7 +13,7 @@ from numpy.random import uniform
 from numpy import log, pi, log10, exp, dot, sqrt, array
 
 from scipy import linalg
-from scipy.linalg import cho_solve
+from scipy.linalg import cho_solve, solve_triangular, cholesky, LinAlgError
 from scipy.optimize import fmin_l_bfgs_b
 
 from sklearn.base import BaseEstimator, RegressorMixin
@@ -26,8 +26,6 @@ from .kernel import absolute_exponential, squared_exponential, generalized_expon
     cubic, pure_nugget, matern
     
 from .trend import BasisExpansionTrend, NonparametricTrend
-
-# from libgpr import corr_grad_theta, matern
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
@@ -299,8 +297,8 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         n_eval_X1, _ = X1.shape
         n_eval_X2, _ = X2.shape
-        n_samples, n_features = self.X.shape
-        n_samples_y, n_targets = self.y.shape
+        n_features = self.X.shape[1]
+        n_targets = self.y.shape[1]
 
         if X1.shape[1] != n_features or X2.shape[1] != n_features:
             raise ValueError(("The number of features in X (X.shape[1] = %d) "
@@ -429,7 +427,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         X = check_array(X)
         n_eval, _ = X.shape
         n_samples, n_features = self.X.shape
-        n_samples_y, n_targets = self.y.shape
+        n_targets = self.y.shape[1]
 
         # Run input checks
         self._check_params()
@@ -458,11 +456,11 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             
             # Mean Squared Error
             if eval_MSE:
-                rt = linalg.solve_triangular(self.C, r.T, lower=True)
+                rt = solve_triangular(self.C, r.T, lower=True)
 
                 if self.estimate_trend:  # Universal / Ordinary Kriging
                     f = self.mean.F(X)
-                    u = linalg.solve_triangular(self.G.T, np.dot(self.Ft.T, rt) - f.T, lower=True)
+                    u = solve_triangular(self.G.T, np.dot(self.Ft.T, rt) - f.T, lower=True)
                 else:                  # simple Kriging
                     u = np.zeros((n_targets, n_eval))
 
@@ -512,7 +510,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         Note that the nugget effect will not the change the computation below
         """
 
-        check_is_fitted(self, 'X')
+        # check_is_fitted(self, 'X')
         # Check input shapes
         x = np.atleast_2d(x)
         n_eval, _ = x.shape
@@ -537,10 +535,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         y_dx = dot(self.mean.beta.T, f_dx) + my_dot(self.gamma.T, r_dx)
 
         # auxiliary variable: rt = C^-1 * r
-        rt = linalg.solve_triangular(self.C, r.T, lower=True)
-        rt_dx = linalg.solve_triangular(self.C, r_dx, lower=True)
+        rt = solve_triangular(self.C, r.T, lower=True)
+        rt_dx = solve_triangular(self.C, r_dx, lower=True)
 
-        mse_dx = -dot(rt.T, rt_dx)      # for Simple Kriging
+        mse_dx = -1.0 * dot(rt.T, rt_dx)      # for Simple Kriging
         if self.estimate_trend:       # Universal / Ordinary Kriging
             # auxiliary variable: u = Ft^T * rt - f
             u = dot(self.Ft.T, rt) - f
@@ -602,7 +600,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                         pass
 
                 elif self.corr_type == 'absolute_exponential':
-                    grad = -r * theta * np.sign(diff)
+                    grad = -1.0 * r * theta * np.sign(diff)
                 elif self.corr_type == 'generalized_exponential':
                     pass
                 elif self.corr_type == 'cubic':
@@ -614,13 +612,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         return grad
     
-    # def corr_grad_theta(self, theta, X, R, nu=1.5):
-        # return corr_grad_theta(theta, X, R, nu=1.5)
-    
     def corr_grad_theta(self, theta, X, R, nu=1.5):
         # Check input shapes
         X = np.atleast_2d(X)
-        n_eval, _ = X.shape
+        _ = X.shape[1]
         n_features = self.X.shape[1]
 
         if _ != n_features:
@@ -668,28 +663,28 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     def compute_beta_gamma(self):
         if self.estimate_trend:
             # estimate the trend coefficients
-            self.mean.beta = linalg.solve_triangular(self.G, my_dot(self.Q.T, self.Yt))
-        self.gamma = linalg.solve_triangular(self.C.T, self.rho).reshape(-1, 1)
+            self.mean.beta = solve_triangular(self.G, my_dot(self.Q.T, self.Yt))
+        self.gamma = solve_triangular(self.C.T, self.rho).reshape(-1, 1)
 
     def _compute_aux_var(self, R):
         # compute auxiliary variables
         # Cholesky decomposition of R: Note that this matrix R can be singular
         # change notation from 'C' to 'L': 'L'ower triagular component...
         try:
-            L = linalg.cholesky(R, lower=True)
-        except linalg.LinAlgError as e:
+            L = cholesky(R, lower=True)
+        except LinAlgError as e:
             raise e
 
-        Yt = linalg.solve_triangular(L, self.y, lower=True)
+        Yt = solve_triangular(L, self.y, lower=True)
         if self.estimate_trend:
             # compute rho: the residuals in linear model
             # ρ = Y - Fβ 
             # both Y and F are transformed by R^-1/2 such that the noise covariance is identity
-            Ft = linalg.solve_triangular(L, self.F, lower=True)
+            Ft = solve_triangular(L, self.F, lower=True)
             Q, G = linalg.qr(Ft, mode='economic')
             rho = Yt - Q.dot(Q.T).dot(Yt)
         else:
-            rho = Yt - linalg.solve_triangular(L, self.mean(self.X), lower=True)
+            rho = Yt - solve_triangular(L, self.mean(self.X), lower=True)
             Ft, Q, G = None, None, None
 
         return L, Ft, Yt, Q, G, rho
@@ -700,9 +695,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         The restricted log likelihood function
         It yields the unbiased estimation for the hyperparameters 
         """
-        check_is_fitted(self, "X")
-        
-        n_samples, n_features = self.X.shape
+        # TODO: find a way to replace this function
+        # check_is_fitted(self, "X")
+        n_samples = self.X.shape[0]
         n_par = len(par)
         log_likelihood = -np.inf
         
@@ -723,7 +718,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             
         try:
             L, Ft, Yt, Q, G, rho = self._compute_aux_var(R)
-        except linalg.LinAlgError as e:
+        except LinAlgError as e:
             warnings.warn("linear operation failed on {}".format(e))
             if eval_grad:
                 return log_likelihood, np.zeros((n_par, 1))
@@ -749,10 +744,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         if eval_grad:
             # gradient calculation of the log-likelihood
-            gamma_ = linalg.solve_triangular(L.T, rho).reshape(-1, 1) / total_var
+            gamma_ = solve_triangular(L.T, rho).reshape(-1, 1) / total_var
             Cinv = cho_solve((L, True), np.eye(n_samples)) / total_var
             if self.estimate_trend:
-                __ = linalg.solve_triangular(L.T, Q)
+                __ = solve_triangular(L.T, Q)
                 term = __.dot(__.T)
     
             # Covariance: partial derivatives w.r.t. theta
@@ -796,17 +791,15 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     def log_likelihood_concentrated(self, par, env=None, eval_grad=False):
         """
         The concentrated log likelihood function
-        The MLE estiation on sigma2 is biased downwards: \hat{sigma2} < sigma2
+        The MLE estimation of sigma2 is biased downwards, namely \hat{sigma2} < sigma2
         
-        Parameters concetrated out are:
+        Parameters that are concetrated out:
             beta : coeffiencts in the basis expansion trend function
                 replaced by the MLE estimate (GLS formula) in the likelihood 
             sigma2 : stationary variance of the process
                 replace by the MLE estimate
         """
-        check_is_fitted(self, "X")
-
-        n_samples, n_features = self.X.shape
+        n_samples = self.X.shape[0]
         n_par = len(par)
         log_likelihood = -np.inf
         if self.estimation_mode == 'noiseless':
@@ -817,7 +810,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             
             try:
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R0)
-            except linalg.LinAlgError:
+            except LinAlgError:
                 if eval_grad:
                     return (log_likelihood, np.zeros((n_par, 1)))
                 else:
@@ -839,7 +832,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
             try:
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R)
-            except linalg.LinAlgError:
+            except LinAlgError:
                 if eval_grad:
                     return (log_likelihood, np.zeros(n_par, 1))
                 else:
@@ -861,7 +854,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
             try:
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R)
-            except linalg.LinAlgError:
+            except LinAlgError:
                 if eval_grad:
                     return (log_likelihood, np.zeros(n_par, 1)) 
                 else: 
@@ -892,7 +885,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             return log_likelihood[0]
 
         # gradient calculation of the log-likelihood
-        gamma = linalg.solve_triangular(L.T, rho).reshape(-1, 1)
+        gamma = solve_triangular(L.T, rho).reshape(-1, 1)
         
         Rinv = cho_solve((L, True), np.eye(n_samples))
         Rinv_upper = Rinv[np.triu_indices(n_samples, 1)]
@@ -946,7 +939,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     def _hyperparameter_bound(self, par_list):
         bounds = []
         # TODO: better estimation the upper and lowe bound of sigma2
-        for k, name in enumerate(par_list):
+        for name in par_list:
             if name == 'theta':
                 bounds.append(np.c_[self.thetaL, self.thetaU])
             elif name == 'sigma2':

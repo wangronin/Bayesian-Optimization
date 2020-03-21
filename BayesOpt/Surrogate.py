@@ -113,7 +113,6 @@ class RandomForest(RandomForestRegressor):
         return super(RandomForest, self).fit(X, y)
 
     def predict(self, X, eval_MSE=False):
-        check_is_fitted(self, 'estimators_')
         # Check data
         X = self._check_X(X)
         X = self._validate_X_predict(X)
@@ -220,7 +219,7 @@ if 11 < 2:
             self.columns = numpy2ri.ri2py(self.X.colnames)
             n_sample, self.n_feature = self.X.nrow, self.X.ncol
 
-            if isinstance(self.param['mtry'], basestring):
+            if isinstance(self.param['mtry'], str):
                 p = self.n_feature
                 self.param['mtry'] = eval(self.param['mtry'])
 

@@ -270,7 +270,7 @@ class BO(object):
             ans = np.atleast_2d(ans)
             ans = np.mean(ans, axis=0)
             
-            for i, k in enumerate(data):
+            for i in range(len(data)):
                 data[i].fitness = ans[i]
                 data[i].n_eval += runs
 
@@ -313,7 +313,7 @@ class BO(object):
 
     def select_candidate(self):
         self.is_update = False
-        X, infill_value = self.arg_max_acquisition()
+        X = self.arg_max_acquisition()[0]
         X = Solution(X, index=len(self.data) + np.arange(len(X)), var_name=self.var_names)
         
         X = self._remove_duplicate(X)
@@ -352,7 +352,7 @@ class BO(object):
             while len(DOE) < self.n_init_sample:
                 if len(DOE) > 0:
                     self.logger.info('adding %d new points due to duplications...'
-                        %self.n_init_sample - len(DOE))
+                        %(self.n_init_sample - len(DOE)))
                     DOE += Solution(self._space.sampling(self.n_init_sample - len(DOE)), 
                                     var_name=self.var_names, n_obj=self.n_obj)
                 elif self.init_points is not None:
@@ -429,7 +429,7 @@ class BO(object):
         self.xopt = self.data[_]   
 
         self.logger.info(bcolors.WARNING + \
-            'iteration {}, objective value: {:.8f}'.format(self.iter_count, 
+            'iteration {}, objective value: {:.8f}'.format(self.iter_count + 1, 
             self.xopt.fitness[0]) + bcolors.ENDC)
         self.logger.info('xopt: {}'.format(self._space.to_dict(self.xopt)))     
         
@@ -695,37 +695,38 @@ class BONoisy(BO):
         self.mu = 3
     
     def step(self):
-        self._initialize()  # initialization
+        raise NotImplementedError
+        # self._initialize()  # initialization
         
-        # TODO: postpone the evaluate to intensify...
-        X = self.select_candidate() 
-        self.evaluate(X, runs=self.init_n_eval)
-        self.data += X
+        # # TODO: postpone the evaluate to intensify...
+        # X = self.select_candidate() 
+        # self.evaluate(X, runs=self.init_n_eval)
+        # self.data += X
 
-        # for noisy fitness: perform a proportional selection from the evaluated ones
-        id_, fitness = zip([(i, d.fitness) for i, d in enumerate(self.data) \
-                            if i != self.incumbent_id])
-        # __ = proportional_selection(fitness, self.mu, self.minimize, replacement=False)
-        # candidates_id.append(id_[__])
+        # # for noisy fitness: perform a proportional selection from the evaluated ones
+        # id_, fitness = zip([(i, d.fitness) for i, d in enumerate(self.data) \
+        #                     if i != self.incumbent_id])
+        # # __ = proportional_selection(fitness, self.mu, self.minimize, replacement=False)
+        # # candidates_id.append(id_[__])
         
-        # self.incumbent_id = self.intensify(ids)
-        self.incumbent = self.data[self.incumbent_id]
+        # # self.incumbent_id = self.intensify(ids)
+        # self.incumbent = self.data[self.incumbent_id]
         
-        # TODO: implement more control rules for model refitting
-        self.fit_and_assess()
-        self.iter_count += 1
-        self.hist_f.append(self.incumbent.fitness)
+        # # TODO: implement more control rules for model refitting
+        # self.fit_and_assess()
+        # self.iter_count += 1
+        # self.hist_f.append(self.incumbent.fitness)
 
-        self.logger.info(bcolors.WARNING + \
-            'iteration {}, objective value: {}'.format(self.iter_count, 
-            self.incumbent.fitness) + bcolors.ENDC)
-        self.logger.info('incumbent: {}'.format(self.incumbent.to_dict()))
+        # self.logger.info(bcolors.WARNING + \
+        #     'iteration {}, objective value: {}'.format(self.iter_count, 
+        #     self.incumbent.fitness) + bcolors.ENDC)
+        # self.logger.info('incumbent: {}'.format(self.incumbent.to_dict()))
 
-        # save the incumbent to csv
-        incumbent_df = pd.DataFrame(np.r_[self.incumbent, self.incumbent.fitness].reshape(1, -1))
-        incumbent_df.to_csv(self.data_file, header=False, index=False, mode='a')
+        # # save the incumbent to csv
+        # incumbent_df = pd.DataFrame(np.r_[self.incumbent, self.incumbent.fitness].reshape(1, -1))
+        # incumbent_df.to_csv(self.data_file, header=False, index=False, mode='a')
         
-        return self.incumbent, self.incumbent.fitness
+        # return self.incumbent, self.incumbent.fitness
             
     def intensify(self, candidates_ids):
         """
@@ -1051,7 +1052,7 @@ if __name__ == '__main__':
         print(opt.run())
 
     if 1 < 2:
-        def fitness(x):
+        def fitness1(x):
             x_r, x_i, x_d = np.array(x[:2]), x[2], x[3]
             if x_d == 'OK':
                 tmp = 0
@@ -1065,7 +1066,7 @@ if __name__ == '__main__':
         levels = space.levels if hasattr(space, 'levels') else None
         model = RandomForest(levels=levels)
 
-        opt = BO(space, fitness, model, max_eval=300, verbose=True, n_job=1, n_point=3,
+        opt = BO(space, fitness1, model, max_eval=300, verbose=True, n_job=1, n_point=3,
                  n_init_sample=3,
                  init_points=[[0, 0, 10, 'OK']])
         xopt, fopt, stop_dict = opt.run()

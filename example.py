@@ -21,10 +21,10 @@ from BayesOpt.base import Solution
 
 np.random.seed(42)
 
-dim = 2
+dim = 5
 n_step = 50
 n_init_sample = 21
-obj_func = lambda x: benchmarks.himmelblau(x)[0]
+obj_func = lambda x: benchmarks.ackley(x)[0]
 lb = np.array([-6] * dim)
 ub = np.array([6] * dim)
 
@@ -46,17 +46,17 @@ model = GaussianProcess(mean=mean, corr='matern',
                         theta0=theta0, thetaL=thetaL, thetaU=thetaU,
                         nugget=1e-10, noise_estim=False,
                         optimizer='BFGS', wait_iter=5, random_start=30 * dim,
-                        likelihood='concentrated', eval_budget=150 * dim)
+                        likelihood='concentrated', eval_budget=200 * dim)
 
-warm_data = Solution([2.7839273017368615, 1.1839018103644392], var_name=["r_0", "r_1"], n_eval=1, fitness=12.18884801)
-warm_data += Solution([-4.127776314690761, -4.128065755965569], var_name=["r_0", "r_1"], n_eval=1, fitness=38.61525121)
+# warm_data = Solution([2.7839273017368615, 1.1839018103644392], var_name=["r_0", "r_1"], n_eval=1, fitness=12.18884801)
+# warm_data += Solution([-4.127776314690761, -4.128065755965569], var_name=["r_0", "r_1"], n_eval=1, fitness=38.61525121)
 
 
 opt = BO(search_space, obj_func, model, max_iter=n_step,
          n_init_sample=n_init_sample, minimize=True, verbose=True, 
          wait_iter=10, 
          #warm_data="example-wd.csv",
-         warm_data=warm_data,
+        #  warm_data=warm_data,
          #warm_data=None,
          optimizer='BFGS'  # when using GPR model, 'BFGS' is faster than 'MIES'        
          )

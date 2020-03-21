@@ -54,7 +54,7 @@ class GaussianProcess_extra(GaussianProcess):
         Note that the nugget effect will not the change the computation below
         """
 
-        check_is_fitted(self, 'X')
+        # check_is_fitted(self, 'X')
 
         # Check input shapes
         x = np.atleast_2d(x)
@@ -265,7 +265,7 @@ class GaussianProcess_extra(GaussianProcess):
             An array with shape (n_eval, ) or (n_eval, n_targets) as with y,
             with the Mean Squared Error at x.
         """
-        check_is_fitted(self, "X")
+        # check_is_fitted(self, "X")
 
         # Check input shapes
         X = np.atleast_2d(X)
