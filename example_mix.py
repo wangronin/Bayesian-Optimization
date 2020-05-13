@@ -94,8 +94,8 @@ model = RandomForest(levels=search_space.levels)
 # task is extremely slow (e.g., tuning machine learning algorithms)
 opt = BO(search_space, obj_func, model, max_iter=n_step, 
          n_init_sample=n_init_sample, 
-         n_point=1,        # number of the candidate solution proposed in each iteration
-         n_job=1,          # number of processes for the parallel execution
+         n_point=3,        # number of the candidate solution proposed in each iteration
+         n_job=3,          # number of processes for the parallel execution
          minimize=True, 
          eval_type=eval_type, # use this parameter to control the type of evaluation
          verbose=True,     # turn this off, if you prefer no output

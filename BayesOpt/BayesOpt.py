@@ -9,21 +9,16 @@ Created on Mon Mar 6 15:05:01 2017
 from pdb import set_trace
 import os, sys, dill, functools, logging, time
 
-
 import pandas as pd
 import numpy as np
-import json
-import copy
-import re
+import json, copy, re 
 
 #sys.path.insert(0, os.path.abspath('../'))
 #from utils import bcolors, MyFormatter
 
-# TODO: replace 'pathos' in long runs as this package create global process pool 
 # IMPORTANT: pathos is better than joblib 
 # it uses dill for pickling, which allows for pickling functions
-# from joblib import Parallel, delayed
-from pathos.multiprocessing import ProcessingPool 
+from joblib import Parallel, delayed
 from scipy.optimize import fmin_l_bfgs_b
 from sklearn.metrics import r2_score
 from sklearn.cluster import KMeans
@@ -179,7 +174,9 @@ class BO(object):
 
         # setup multi-processing workers
         if self.n_job > 1:
-            self.pool = ProcessingPool(ncpus=self.n_job)
+            # Parallel(n_jobs=n_jobs)(delayed(train_func)(c) for c in cfg)
+            # self.pool = ProcessingPool(ncpus=self.n_job)
+            pass
 
         # load initial data 
         if (warm_data is not None 
@@ -189,10 +186,6 @@ class BO(object):
         elif (warm_data is not None 
                 and isinstance(warm_data, str)):
             self._load_initial_data(warm_data)
-
-    def __del__(self):
-        if hasattr(self, 'pool'):
-            self.pool.terminate()
 
     def set_logger(self, logger):
         """Create the logging object
@@ -264,8 +257,9 @@ class BO(object):
 
             ans = np.zeros((runs, N))
             for i in range(runs):
-                # parallelization is implemented in self.obj_func
-                ans[i, :] = self.obj_func(X, n_jobs=self.n_job)
+                # TODO: parallelization is implemented in self.obj_func
+                # ans[i, :] = self.obj_func(X, n_jobs=self.n_job)
+                ans[i, :] = Parallel(n_jobs=self.n_job)(delayed(self.obj_func)(x) for x in X)
             
             ans = np.atleast_2d(ans)
             ans = np.mean(ans, axis=0)
@@ -333,7 +327,7 @@ class BO(object):
         
         return X
     
-    def _initialize(self):
+    def initialize(self):
         """Generate the initial data set (DOE) and construct the surrogate model"""
         if hasattr(self, 'data'):
             self.logger.warn('initialization is already performed!') 
@@ -433,19 +427,20 @@ class BO(object):
             self.xopt.fitness[0]) + bcolors.ENDC)
         self.logger.info('xopt: {}'.format(self._space.to_dict(self.xopt)))     
         
-        self.fit_and_assess()     # re-train the surrogate model   
+        self.fit_and_assess()     # re-train the surrogate model  
+
         self.iter_count += 1
         self.hist_f.append(self.xopt.fitness)
+        self.stop_dict['n_eval'] = self.eval_count
+        self.stop_dict['n_iter'] = self.iter_count
         
         return self.xopt.tolist(), self.xopt.fitness
 
     def run(self):
-        self._initialize() 
+        self.initialize() 
         while not self.check_stop():
             self.step()
 
-        self.stop_dict['n_eval'] = self.eval_count
-        self.stop_dict['n_iter'] = self.iter_count
         self.logger.handlers = []   # completely de-register the logger
 
         return self.xopt.tolist(), self.xopt.fitness, self.stop_dict
@@ -462,7 +457,7 @@ class BO(object):
             if self._compare(self.xopt.fitness, self.ftarget):
                 self.stop_dict['ftarget'] = True
 
-        return len(self.stop_dict)
+        return any([v for v in self.stop_dict.values() if isinstance(v, bool)])
 
     def _acquisition(self, plugin=None, dx=False):
         """
@@ -524,12 +519,12 @@ class BO(object):
         
         if self.n_job > 1:
             # TODO: fix this issue once for all!
-            try:  
-                self.pool.restart() # restart the pool in case it is terminated before
-            except AssertionError:
-                pass
-            __ = self.pool.map(self._argmax_multistart, [_ for _ in criteria])
-            # __ = Parallel(n_jobs=self.n_job)(delayed(self._argmax_multistart)(c) for c in criteria)
+            # try:  
+            #     self.pool.restart() # restart the pool in case it is terminated before
+            # except AssertionError:
+            #     pass
+            # __ = self.pool.map(self._argmax_multistart, [_ for _ in criteria])
+            __ = Parallel(n_jobs=self.n_job)(delayed(self._argmax_multistart)(c) for c in criteria)
         else:
             __ = [list(self._argmax_multistart(_)) for _ in criteria]
 
@@ -878,7 +873,8 @@ class MOBO_D(BO):
                  # parallel execution using multiprocessing
                 if self._parallel_backend == 'multiprocessing':
                     data_pickle = [dill.dumps(d) for d in data]
-                    __ = self.pool.map(_eval_fun, data_pickle)
+                    # __ = self.pool.map(_eval_fun, data_pickle)
+                    __ = Parallel(n_jobs=self.n_job)(delayed(_eval_fun)(d) for d in data_pickle)
 
                     x = [dill.loads(_) for _ in __]
                     self.eval_count += runs * len(data)
@@ -910,8 +906,9 @@ class MOBO_D(BO):
 
         # fit the surrogate models
         if self.n_job > 1 and 11 < 2:  
-            __ = self.pool.map(_fit, *zip(*[(self.surrogate[i], self.data, 
-                            self._y[:, i]) for i in range(self.n_obj)]))
+            data = zip(*[(self.surrogate[i], self.data, self._y[:, i]) for i in range(self.n_obj)])
+            __ = Parallel(n_jobs=self.n_job)(delayed(_fit)(d) for d in data)
+            # __ = self.pool.map(_fit, *data)
         else:               
             __ = []
             for i in range(self.n_obj):
@@ -1026,7 +1023,9 @@ class MOBO_D(BO):
         criteria = (self._acquisition(s, gmin[i], dx=dx) for i, s in enumerate(surrogates))
 
         if self.n_job > 1:
-            __ = self.pool.map(self._argmax_multistart, [_ for _ in criteria])
+            __ = Parallel(n_jobs=self.n_job)(delayed(self._argmax_multistart)(_) \
+                for _ in criteria)
+            # __ = self.pool.map(self._argmax_multistart, [_ for _ in criteria])
         else:
             __ = [list(self._argmax_multistart(_)) for _ in criteria]
 
