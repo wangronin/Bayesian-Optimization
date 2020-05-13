@@ -126,7 +126,6 @@ class Solution(np.ndarray):
         __ = [other.tolist()] if len(other.shape) == 1 else other.tolist()
         return Solution(_ + __,  self.fitness.tolist() + other.fitness.tolist(),
                         self.n_eval.tolist() + other.n_eval.tolist(), 
-                        # self.index.tolist() + other.index.tolist(),
                         var_name=self.var_name, fitness_name=self.fitness_name,
                         n_obj=self.n_obj, 
                         verbose=self.verbose)
@@ -167,7 +166,7 @@ class Solution(np.ndarray):
                     index = (_, __)
                 else:
                     __ = index[1]
-        
+                    
         subarr = super(Solution, self).__getitem__(index)
 
         # sub-slicing the attributes
