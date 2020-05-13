@@ -250,7 +250,7 @@ class BO(object):
     
     def tell(self, X, func_vals):
         if not isinstance(X, Solution):
-            X = Solution(X, index=len(self.data) + np.arange(len(X)), var_name=self.var_names)
+            X = Solution(X, var_name=self.var_names)
 
         if self.iter_count == 0:
             self.logger.info(bcolors.WARNING + \
@@ -408,75 +408,6 @@ class BO(object):
         self.logger.debug('infill criteria optimziation takes {:.4f}s'.format(time.time() - t0))
 
         return candidates, values
-    
-    # TODO: this function should be removed
-    def initialize(self):
-        """Generate the initial data set (DOE) and construct the surrogate model"""
-        if hasattr(self, 'data'):
-            self.logger.warn('initialization is already performed!') 
-            return
-
-        if hasattr(self, 'warm_data'):
-            self.logger.info('adding warm data to the initial model')
-            self.data = copy.deepcopy(self.warm_data)
-
-        self.logger.info('selected surrogate model: {}'.format(self.surrogate.__class__)) 
-        self.logger.info('building {:d} initial design points...'.format(self.n_init_sample))
-        
-        sampling_trial = self._init_flatfitness_trial
-        while True:
-            DOE = []
-            while len(DOE) < self.n_init_sample:
-                if len(DOE) > 0:
-                    self.logger.info('adding %d new points due to duplications...'
-                        %(self.n_init_sample - len(DOE)))
-                    DOE += Solution(self._space.sampling(self.n_init_sample - len(DOE)), 
-                                    var_name=self.var_names, n_obj=self.n_obj)
-                elif self.init_points is not None:
-                    n = len(self.init_points)
-                    DOE = self.init_points + self._space.sampling(self.n_init_sample - n)
-                else:
-                    DOE = self._space.sampling(self.n_init_sample)
-                if not isinstance(DOE, Solution):
-                    DOE = Solution(DOE, var_name=self.var_names, n_obj=self.n_obj)
-                DOE = self._remove_duplicate(DOE)
-
-            self.evaluate(DOE, runs=self.init_n_eval)
-            DOE = self.after_eval_check(DOE)
-            
-            if hasattr(self, 'data') and len(self.data) != 0:
-                self.data += DOE
-            else:
-                self.data = DOE
-
-            fmin, fmax = np.min(self.data.fitness), np.max(self.data.fitness)
-            if np.isclose(fmin, fmax): 
-                if sampling_trial > 0:
-                    self.logger.warning('flat objective value in the initialization!')
-                    self.logger.warning('resampling the initial points...')
-                    sampling_trial -= 1
-                else:
-                    self.logger.warning('flat objective value after taking {} '
-                    'samples (each has {} sample points)...'.format(self._init_flatfitness_trial, 
-                             self.n_init_sample))
-                    self.logger.warning('optimization terminates...')
-
-                    self.stop_dict['flatfitness'] = True
-                    self.fopt = self._best(self.data.fitness)
-                    _ = np.nonzero(self.data.fitness == self.fopt)[0][0]
-                    self.xopt = self.data[_]  
-                    return
-            else:
-                break
-
-        for i, x in enumerate(DOE):
-            self.logger.info('DOE {}, fitness: {} -- {}'.format(i + 1, x.fitness, 
-                             self._space.to_dict(x)))
-
-        self.fit_and_assess()
-        if self.data_file is not None: # save the initial design to csv
-            DOE.to_csv(self.data_file)
-            #self.data.to_csv(self.data_file)
 
     def check_stop(self):
         # TODO: add more stop criteria
@@ -678,3 +609,73 @@ if __name__ == '__main__':
                  n_init_sample=3,
                  init_points=[[0, 0, 10, 'OK']])
         xopt, fopt, stop_dict = opt.run()
+
+
+    # # TODO: this function should be removed
+    # def initialize(self):
+    #     """Generate the initial data set (DOE) and construct the surrogate model"""
+    #     if hasattr(self, 'data'):
+    #         self.logger.warn('initialization is already performed!') 
+    #         return
+
+    #     if hasattr(self, 'warm_data'):
+    #         self.logger.info('adding warm data to the initial model')
+    #         self.data = copy.deepcopy(self.warm_data)
+
+    #     self.logger.info('selected surrogate model: {}'.format(self.surrogate.__class__)) 
+    #     self.logger.info('building {:d} initial design points...'.format(self.n_init_sample))
+        
+    #     sampling_trial = self._init_flatfitness_trial
+    #     while True:
+    #         DOE = []
+    #         while len(DOE) < self.n_init_sample:
+    #             if len(DOE) > 0:
+    #                 self.logger.info('adding %d new points due to duplications...'
+    #                     %(self.n_init_sample - len(DOE)))
+    #                 DOE += Solution(self._space.sampling(self.n_init_sample - len(DOE)), 
+    #                                 var_name=self.var_names, n_obj=self.n_obj)
+    #             elif self.init_points is not None:
+    #                 n = len(self.init_points)
+    #                 DOE = self.init_points + self._space.sampling(self.n_init_sample - n)
+    #             else:
+    #                 DOE = self._space.sampling(self.n_init_sample)
+    #             if not isinstance(DOE, Solution):
+    #                 DOE = Solution(DOE, var_name=self.var_names, n_obj=self.n_obj)
+    #             DOE = self._remove_duplicate(DOE)
+
+    #         self.evaluate(DOE, runs=self.init_n_eval)
+    #         DOE = self.after_eval_check(DOE)
+            
+    #         if hasattr(self, 'data') and len(self.data) != 0:
+    #             self.data += DOE
+    #         else:
+    #             self.data = DOE
+
+    #         fmin, fmax = np.min(self.data.fitness), np.max(self.data.fitness)
+    #         if np.isclose(fmin, fmax): 
+    #             if sampling_trial > 0:
+    #                 self.logger.warning('flat objective value in the initialization!')
+    #                 self.logger.warning('resampling the initial points...')
+    #                 sampling_trial -= 1
+    #             else:
+    #                 self.logger.warning('flat objective value after taking {} '
+    #                 'samples (each has {} sample points)...'.format(self._init_flatfitness_trial, 
+    #                          self.n_init_sample))
+    #                 self.logger.warning('optimization terminates...')
+
+    #                 self.stop_dict['flatfitness'] = True
+    #                 self.fopt = self._best(self.data.fitness)
+    #                 _ = np.nonzero(self.data.fitness == self.fopt)[0][0]
+    #                 self.xopt = self.data[_]  
+    #                 return
+    #         else:
+    #             break
+
+    #     for i, x in enumerate(DOE):
+    #         self.logger.info('DOE {}, fitness: {} -- {}'.format(i + 1, x.fitness, 
+    #                          self._space.to_dict(x)))
+
+    #     self.fit_and_assess()
+    #     if self.data_file is not None: # save the initial design to csv
+    #         DOE.to_csv(self.data_file)
+    #         #self.data.to_csv(self.data_file)
