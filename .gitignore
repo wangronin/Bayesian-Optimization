@@ -8,7 +8,7 @@
 **/*.pyc
 **/**/*.pyc
 .vscode
-.DS_store
+.DS_Store
 *.pid
 **/*log
 
