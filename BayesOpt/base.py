@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Created on Mon Apr 23 17:16:39 2018
 
@@ -22,8 +21,8 @@ class Solution(np.ndarray):
         2) easy indexing as np.ndarray
         3) extra attributes (e.g., fitness) sliced together with the solution
     """
-    # ger rid of self.__dict__ for speed concern
-    # TODO: __slots__ does NOT work with dill yet...
+    # TODO: get rid of self.__dict__ for speed concern
+    # But __slots__ does NOT work with dill yet...
     # __slots__ = 'N', 'dim', 'var_name', 'index', 'fitness', 'n_eval', 'verbose', 'n_obj'
     def __new__(cls, x, fitness=None, n_eval=0, index=None, var_name=None, 
                 fitness_name=None, n_obj=1, verbose=True):
@@ -46,9 +45,15 @@ class Solution(np.ndarray):
                 and to_dict
         Note
         ----
-            If attributes index, fitness, n_eval are modified in a slice of Solution, 
+            Instead of `__init__`, the `__new__` function is used here because sometimes we
+            would like to return an object of its subclasses, e.g., when slicing a subclass of 
+            `ndarray`, `ndarray.__new__(subclass, ...)` will return an object of type `subclass` while `ndarray.__init__(self, ...)` will return an object of `ndarray` 
+            (of course, `__init__` would work if the user also overloads the slicing function, which is not convenient).
+            If attributes `index`, `fitness`, `n_eval` are modified in a slice of Solution, 
             the corresponding attributes in the original object are also modified. 
-            var_name is not affected by this behavior
+            `var_name` is not affected by this behavior. 
+            This function is only called when explicitly constructing the `Solution` object. For slicing and view casting, the extra attributes are handled in function
+            `__array_finalize__`.
         """
         obj = np.asarray(x, dtype='object').view(cls)
 
@@ -94,7 +99,7 @@ class Solution(np.ndarray):
                 fitness_name = ['f' + str(i) for i in range(obj.n_obj)]
         assert len(fitness_name) == obj.n_obj
 
-        # np.ndarray is set for those attributes because slicing it returns references
+        # a np.ndarray is used for those attributes because slicing it returns references
         # avoid calling self.__setattr__ for attributes fitness, n_eval and index
         super(Solution, obj).__setattr__('fitness', np.asarray(fitness, dtype='float'))
         super(Solution, obj).__setattr__('n_eval', np.asarray(n_eval, dtype='int'))
@@ -166,7 +171,7 @@ class Solution(np.ndarray):
                     index = (_, __)
                 else:
                     __ = index[1]
-                    
+
         subarr = super(Solution, self).__getitem__(index)
 
         # sub-slicing the attributes
@@ -192,7 +197,7 @@ class Solution(np.ndarray):
 
             subarr.N = 1 if len(subarr.shape) == 1 else subarr.shape[0]
             subarr.dim = subarr.shape[0] if len(subarr.shape) == 1 else subarr.shape[1]
-
+        
         return subarr
 
     def unique(self):
@@ -201,8 +206,8 @@ class Solution(np.ndarray):
 
     def __array_finalize__(self, obj):
         """
-        __array_finalize__ is called after new 'Solution' instance is created: from calling
-        1) __new__, 2) view casting (ndarray.view()) or 3) slicing (__getitem__) 
+        `__array_finalize__` is called after new `Solution` instance is created: from calling
+        1) `__new__`, 2) view casting (`ndarray`.`view()`) or 3) slicing (`__getitem__`) 
         """
         if obj is None: return
         # Needed for array slicing (__getitem__)
@@ -216,32 +221,40 @@ class Solution(np.ndarray):
         self.N = getattr(obj, 'N', None)
         self.n_obj = getattr(obj, 'n_obj', None)
     
-    def to_dict(self, show_attr=False):
-        # avoid calling self.__getitem__
-        if len(self.shape) == 1:
-            res = {k : super(Solution, self).__getitem__(i) for i, k in enumerate(self.var_name)} 
-        else:
-            res = {k : super(Solution, self).__getitem__((slice(None, None), i)).tolist() \
-                for i, k in enumerate(self.var_name)} 
+    def to_dict(self, orient='var'):
+        # NOTE: avoid calling self.__getitem__
+        if orient == 'index':
+            index = lambda i: i if len(self.shape) == 1 else (i, slice(None, None))
+            res = {k : super(Solution, self).__getitem__(index(i)).to_dict('var') \
+                for i, k in enumerate(self.index)} 
+        elif orient == 'var':
+            index = lambda i: i if len(self.shape) == 1 else (slice(None, None), i)
+            if len(self.shape) == 1:
+                res = {k : super(Solution, self).__getitem__(index(i)) \
+                    for i, k in enumerate(self.var_name)}
+            else:
+                res = {k : super(Solution, self).__getitem__(index(i)).tolist() \
+                    for i, k in enumerate(self.var_name)}
 
-        if show_attr:
-            res['index'] = self.index.tolist()
-            res['fitness'] = self.fitness.tolist()
-            res['n_eval'] = self.n_eval.tolist()
+        # if show_attr:
+        #     res['index'] = self.index.tolist()
+        #     res['fitness'] = self.fitness.tolist()
+        #     res['n_eval'] = self.n_eval.tolist()
         return res
 
     def __str__(self):
         var_name = self.var_name.tolist()
         headers = var_name + ['n_eval'] + self.fitness_name if self.verbose else var_name
         if len(self.shape) == 1:
-            t = [self.tolist() + self.n_eval.tolist() + self.fitness.tolist()] if self.verbose \
-                else [self.tolist()]
+            t = [self.tolist() + self.n_eval.tolist() + self.fitness.tolist()] \
+                if self.verbose else [self.tolist()]
         else:
-            t = np.c_[self, self.n_eval, self.fitness].tolist() if self.verbose else self.tolist()
+            t = np.c_[self, self.n_eval, self.fitness].tolist() \
+                if self.verbose else self.tolist()
         
         return tabulate(t, headers=headers, showindex=self.index.tolist(), tablefmt='grid')
 
-    def __repr__(self): # NOTE: this is needed in pdb...
+    def __repr__(self):
         return self.__str__()
                         
     def to_csv(self, fname, delimiter=',', append=False, header=True, index=True, 
