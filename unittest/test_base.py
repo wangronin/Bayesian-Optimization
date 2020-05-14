@@ -2,12 +2,14 @@ import numpy as np
 from BayesOpt.base import Solution
 
 # test for 2D solution
-s = Solution(np.c_[np.random.randn(5, 3), ['simida', 'niubia', 'bang', 'GG', 'blyat']], 
+A, B = np.random.randn(5, 3).tolist(), ['simida', 'niubia', 'bang', 'GG', 'blyat']
+s = Solution([A[i] + [B[i]] for i in range(5)], 
              verbose=True, fitness=[0] * 2, fitness_name=['f', 'penalty'], n_obj=2)
 
-print(s.to_dict(show_attr=True))
+print(s.to_dict(orient='index'))
+print(s.to_dict(orient='var'))
+
 print(s)
-print(s[0])
 print(s[0:1])
 print(s[0, 0:3])
 print(s[:, 0])
@@ -15,11 +17,11 @@ print(s[0:2][0, 0:2])
 print(s[0][0:2])
 
 # test for pickling
-
-import dill
-a = dill.dumps(s)
-s2 = dill.loads(a)
-print(s2)
+if 11 < 2:
+    import dill
+    a = dill.dumps(s)
+    s2 = dill.loads(a)
+    print(s2)
 
 s[:, 0] = np.asarray(['wa'] * 5).reshape(-1, 1)
 print(s)
@@ -41,7 +43,7 @@ print(s + s[3:5])
 print(s[0:2] + s[3:5])
 
 # # test saving to csv
-if 1 < 2:
+if 11 < 2:
     s.to_csv('test.csv', header=True, show_attr=True, index=True)
 
 # test for 1D solution

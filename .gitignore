@@ -9,6 +9,8 @@
 **/**/*.pyc
 .vscode
 .DS_store
+*.pid
+**/*log
 
 !/.gitignore
 __pycache__/

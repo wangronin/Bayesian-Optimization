@@ -41,7 +41,7 @@ class BO(object):
                  infill='EI', t0=2, tf=1e-1, schedule='exp', eval_type='list',
                  n_init_sample=None, n_point=1, n_job=1,
                  n_restart=None, max_infill_eval=None, wait_iter=3, optimizer='MIES', 
-                 data_file=None, verbose=False, random_seed=None, log_file=None):
+                 data_file=None, verbose=False, random_seed=None, logger=None):
         """
 
         Parameters
@@ -76,7 +76,6 @@ class BO(object):
         # TODO: clean up and split this function into sub-procedures.
         self.verbose = verbose
         self.data_file = data_file
-        self.log_file = log_file
         self._space = search_space
         self.var_names = self._space.var_name
         self.obj_func = obj_func
@@ -164,7 +163,7 @@ class BO(object):
             np.random.seed(self.random_seed)
         
         # setup the logger
-        self.set_logger(self.log_file)
+        self.set_logger(logger)
 
         # load initial data 
         if (warm_data is not None 
@@ -175,9 +174,6 @@ class BO(object):
                 and isinstance(warm_data, str)):
             self._load_initial_data(warm_data)
 
-    def __del__(self):
-        self.logger.handlers = []   # completely de-register the logger
-
     def set_logger(self, logger):
         """Create the logging object
         Params:
@@ -186,6 +182,8 @@ class BO(object):
         """
         if isinstance(logger, logging.Logger):
             self.logger = logger
+            self.logger.propagate = False
+            return
 
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.setLevel(logging.DEBUG)
@@ -263,7 +261,7 @@ class BO(object):
         for i in range(len(X)):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
-            self.logger.info('#{} - fitness: {},  x: {}'.format(i + 1, func_vals[i], 
+            self.logger.info('#{} - fitness: {},  solution: {}'.format(i + 1, func_vals[i], 
                              self._space.to_dict(X[i])))
 
         X = self.post_eval_check(X)
@@ -570,7 +568,22 @@ class BO(object):
             self.logger.info(str(len(self.warm_data)) + " points loaded from " + filename)
         except IOError:
             raise Exception("the " + filename + " does not contain a valid set of solutions")
+    
+    def save(self, filename):
+        obj = copy.deepcopy(self)
+        if hasattr(self, 'data'):
+            data = dill.dumps(self.data)
+            obj.data = data
 
+        with open(filename, 'wb') as f:
+            dill.dump(obj, f)
+
+    def load(filename):
+        with open(filename, 'rb') as f:
+            obj = dill.load(f)
+            if hasattr(obj, 'data'):
+                obj.data = dill.loads(obj.data)
+        return obj
 
 # TODO: remove this part, which should be covered by the examples
 if __name__ == '__main__':
