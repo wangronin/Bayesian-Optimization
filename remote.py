@@ -33,6 +33,8 @@ data = {
     }
 }
 
+address = 'http://207.246.97.250:7200'
+
 def obj_func_dict_eval(par):
     """Example mix-integer test function
     with dictionary as input 
@@ -45,14 +47,14 @@ def obj_func_dict_eval(par):
         tmp = 1
     return np.sum(x_r ** 2.) + abs(x_i - 10) / 123. + tmp * 2.
 
-r = requests.post('http://127.0.0.1:7200', json=data)
+r = requests.post(address, json=data)
 job_id = r.json()['job_id']
 
 for i in range(10):  
-    r = requests.get('http://127.0.0.1:7200', params={'ask' : 'null', 'job_id' : job_id})
+    r = requests.get(address, params={'ask' : 'null', 'job_id' : job_id})
     tell_data = r.json()
 
     y = [obj_func_dict_eval(_) for _ in tell_data['X']]
     tell_data['y'] = y 
     
-    r = requests.post('http://127.0.0.1:7200', json=tell_data)
+    r = requests.post(address, json=tell_data)
