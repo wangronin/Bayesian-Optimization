@@ -32,7 +32,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
         msg = "%s - - %s" % (self.address_string(), format%args)
         self.logger.info(msg)
 
-    def _check_job_id(self, info):
+    def _get_job_id(self, info):
         if 'job_id' not in info:
             raise Exception('`job_id` is necessary!')
         
@@ -41,9 +41,9 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             job_id = job_id[0]
         return job_id
 
-    def _check_dump_file(self, job_id):
+    def _get_dump_file(self, job_id, check=True):
         dump_file = os.path.join(self.work_dir, job_id + '.dump')
-        if not os.path.exists(dump_file):
+        if check and not os.path.exists(dump_file):
             raise Exception('The dump file of job %s is not found!'%(job_id))
 
         return dump_file
@@ -63,19 +63,15 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             return 
         
         rsp_data = {}
-        if 'initialize' in info: 
-            rsp_data = {'job_id' : random_string()}
-            self.send_response(200)
-
-        elif 'ask' in info:
+        if 'ask' in info:
             try:
                 n_point = int(info['ask'])
             except:
                 n_point = None
 
             try:
-                job_id = self._check_job_id(info)
-                dump_file = self._check_dump_file(job_id)
+                job_id = self._get_job_id(info)
+                dump_file = self._get_dump_file(job_id)
             except Exception as ex:
                 self.logger.error(str(ex))
                 self.send_error(500, str(ex))
@@ -84,11 +80,11 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
             try:
                 opt = BO.load(dump_file)
-
                 X = opt.ask(n_point)
                 X = [x.to_dict('var') for x in X]
-                rsp_data = {'X' : X}
-                print(X)
+
+                rsp_data['job_id'] = job_id
+                rsp_data['X'] = X
                 self.send_response(200)
             except Exception as ex:
                 self.logger.error(str(ex))
@@ -107,32 +103,27 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             self.logger.error('Received message: \n{}\nis not JSON!'.format(post_body))
             self.send_error(500, 'file not found')
             return 
-
-        try:
-            job_id = self._check_job_id(data)
-        except Exception as ex:
-            self.logger.error(str(ex))
-            self.send_error(500, str(ex))
-            self._send_response(rsp_data)
-            return
         
         if 'search_param' in data:  
             try:
+                job_id = random_string()
+                rsp_data = {'job_id' : job_id}
+                dump_file = self._get_dump_file(job_id, check=False) 
+                data_file = os.path.join(self.work_dir, job_id + '.csv')
+
                 search_param, bo_param = data['search_param'], data['bo_param']
                 search_space = from_dict(search_param, space_name=False)
                 n_obj = bo_param['n_obj']
                 del bo_param['n_obj']
 
-                dump_file = os.path.join(self.work_dir, job_id + '.dump')
-                data_file = os.path.join(self.work_dir, job_id + '.csv')
-                if n_obj == 1:   # invoke single-objective Bayesian optimizer
+                if n_obj == 1:   # single-objective Bayesian optimizer
                     opt = BO(search_space=search_space, obj_func=None, 
                              surrogate=RandomForest(levels=search_space.levels), 
-                             logger=None, data_file=data_file,
+                             logger=self.logger, data_file=data_file,
                              eval_type='dict', optimizer='MIES', **bo_param)
                 
                 # TODO: to test this part
-                elif n_obj > 1:  # invoke multi-objective Bayesian optimizer
+                elif n_obj > 1:  # multi-objective Bayesian optimizer
                     pass
                 
                 if os.path.exists(dump_file):
@@ -146,7 +137,15 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
         elif 'X' in data and 'y' in data:
             try:
-                dump_file = self._check_dump_file(job_id)
+                job_id = self._get_job_id(data)
+                dump_file = self._get_dump_file(job_id)
+            except Exception as ex:
+                self.logger.error(str(ex))
+                self.send_error(500, str(ex))
+                self._send_response(rsp_data)
+                return
+
+            try:
                 opt = BO.load(dump_file)
 
                 X = [list(x.values()) for x in data['X']]
@@ -186,11 +185,11 @@ class RemoteBODaemon(Daemon):
         print('initialize the remote BO server...')
 
         work_dir = str(port) if len(work_dir) == 0 else work_dir
-        log_file = os.path.join(work_dir, log_file)
-        self.set_logger(log_file, verbose)
-
         if not os.path.exists(work_dir):
             os.makedirs(work_dir)
+
+        log_file = os.path.join(work_dir, log_file)
+        self.set_logger(log_file, verbose)
 
         RemoteBO.logger = self.logger
         RemoteBO.verbose = verbose

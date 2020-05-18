@@ -9,9 +9,9 @@ from . import InfillCriteria, Surrogate
 from .BayesOpt import BO
 from .Surrogate import SurrogateAggregation
 from .base import Solution
-from .SearchSpace import OrdinalSpace, ContinuousSpace, NominalSpace
+from .SearchSpace import OrdinalSpace, ContinuousSpace, NominalSpace, from_dict
 
-__all__ = ['BO', 'Solution',
+__all__ = ['BO', 'Solution', 'from_dict',
            'InfillCriteria', 'Surrogate', 'OrdinalSpace', 'ContinuousSpace', 
            'NominalSpace', 'SurrogateAggregation']
 

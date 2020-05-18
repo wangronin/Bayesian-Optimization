@@ -1,8 +1,11 @@
+import numpy as np 
+from BayesOpt import ContinuousSpace, OrdinalSpace, NominalSpace, from_dict, Solution
+
 np.random.seed(1)
 
 C = ContinuousSpace([-5, 5]) * 3  # product of the same space
 I = OrdinalSpace([[-100, 100], [-5, 5]], 'heihei')
-N = NominalSpace([['OK', 'A', 'B', 'C', 'D', 'E']] * 2, ['x', 'y'])
+N = NominalSpace([['OK', 'A', 'B', 'C', 'D', 'E', 'A']] * 2, ['x', 'y'])
 
 I3 = 3 * I 
 print(I3.sampling())
@@ -26,8 +29,6 @@ print(C.var_name)
 
 # test for space names and save to dictionary
 if 1 < 2:
-    from .base import Solution
-
     C1 = ContinuousSpace([0, 1], name='C1') 
     C2 = OrdinalSpace([-5, 5], var_name='O1') * 4
     space = C1 + C2

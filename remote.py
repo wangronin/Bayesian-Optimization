@@ -1,5 +1,4 @@
-from pdb import set_trace
-import requests, subprocess, os, json
+import requests, json
 import numpy as np
 
 data = {
@@ -46,23 +45,14 @@ def obj_func_dict_eval(par):
         tmp = 1
     return np.sum(x_r ** 2.) + abs(x_i - 10) / 123. + tmp * 2.
 
-
-dir_path = os.path.dirname(os.path.realpath(__file__))
-# cmd = ['python3', os.path.join(dir_path, '../../Interface.py'), '&']
-# __ = subprocess.Popen(cmd, env=os.environ).wait()  
-
-r = requests.get('http://127.0.0.1:7200', params={'initialize' : 'null'})
-job_id = r.json()['job_id']
-
-data['job_id'] = job_id
 r = requests.post('http://127.0.0.1:7200', json=data)
+job_id = r.json()['job_id']
 
 for i in range(10):  
     r = requests.get('http://127.0.0.1:7200', params={'ask' : 'null', 'job_id' : job_id})
     tell_data = r.json()
 
     y = [obj_func_dict_eval(_) for _ in tell_data['X']]
-    
     tell_data['y'] = y 
-    tell_data['job_id'] = job_id
+    
     r = requests.post('http://127.0.0.1:7200', json=tell_data)
