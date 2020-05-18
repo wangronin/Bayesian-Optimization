@@ -570,19 +570,22 @@ class BO(object):
             raise Exception("the " + filename + " does not contain a valid set of solutions")
     
     def save(self, filename):
-        obj = copy.deepcopy(self)
         if hasattr(self, 'data'):
-            data = dill.dumps(self.data)
-            obj.data = data
+            self.data = dill.dumps(self.data)
 
         with open(filename, 'wb') as f:
-            dill.dump(obj, f)
+            dill.dump(self, f)
+        
+        if hasattr(self, 'data'):
+            self.data = dill.loads(self.data)
 
-    def load(filename):
+    @classmethod
+    def load(cls, filename):
         with open(filename, 'rb') as f:
             obj = dill.load(f)
             if hasattr(obj, 'data'):
                 obj.data = dill.loads(obj.data)
+                
         return obj
 
 # TODO: remove this part, which should be covered by the examples

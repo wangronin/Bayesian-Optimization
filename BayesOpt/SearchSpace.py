@@ -7,7 +7,6 @@ from pdb import set_trace
 
 import six, json
 from copy import deepcopy
-from collections import OrderedDict
 
 import numpy as np
 from numpy.random import randint, rand
@@ -39,9 +38,12 @@ class SearchSpace(object):
         ----------
         dim : int,
             dimensinality of the search space
-        bounds : list of lists
+        bounds : list of lists,
             each sub-list stores the lower and upper bound for continuous/ordinal variable
             and categorical values for nominal variable
+        levels : list of lists,
+            each sub-list stores the categorical levels for every nominal variable. It takes
+            `None` value when there is no nomimal variable
         var_name : list of str,
             variable names per dimension 
         var_type : list of str, 
@@ -58,6 +60,9 @@ class SearchSpace(object):
             
         self.dim = len(self.bounds)
         self.name = name
+        self.var_type = None 
+        self.levels = None
+
         if var_name is not None:
             if isinstance(var_name, str):
                 if self.dim > 1:
@@ -82,6 +87,13 @@ class SearchSpace(object):
         self.id_C = np.nonzero(self.C_mask)[0]
         self.id_O = np.nonzero(self.O_mask)[0]
         self.id_N = np.nonzero(self.N_mask)[0]
+
+    def _set_levels(self):
+        """Set categorical levels for all nominal variables
+        """
+        if hasattr(self, 'id_N') and len(self.id_N) > 0:
+            self.levels = {i : self.bounds[i] for i in self.id_N}
+            self._n_levels = {i : len(self.bounds[i]) for i in self.id_N}
 
     def __len__(self):
         return self.dim
@@ -114,35 +126,33 @@ class SearchSpace(object):
     
     # TODO: maybe this function should be moved to base.py
     def to_dict(self, solution=None):
+
         if self.name is None:
             return solution.to_dict() 
         else:
             return {self.name : solution.tolist()}
     
 
-
 # TODO: maybe implement the scalar multiplication for ProductSpace
 class ProductSpace(SearchSpace):
     """Cartesian product of the search spaces
     """
     def __init__(self, space1, space2):
+        # setup the space names
+        nameL = space1.name if isinstance(space1, ProductSpace) else [space1.name] 
+        nameR = space2.name if isinstance(space2, ProductSpace) else [space2.name]
+        self.name = nameL + nameR
+
         # TODO: avoid recursion here
         self.dim = space1.dim + space2.dim
-        # check coincides of variable names
+        # TODO: check coincides of variable names
         self.var_name = space1.var_name + space2.var_name             
         self.bounds = space1.bounds + space2.bounds
         self.var_type = space1.var_type + space2.var_type
         self._sub_space1 = deepcopy(space1)
         self._sub_space2 = deepcopy(space2)
         self._set_index()
-
-        # setup the space names
-        nameL = space1.name if isinstance(space1, ProductSpace) else [space1.name] 
-        nameR = space2.name if isinstance(space2, ProductSpace) else [space2.name]
-        self.name = nameL + nameR
-
-        if len(self.id_N) > 0:  # set levels only if Nominal variables present
-            self.levels = OrderedDict([(i, self.bounds[i]) for i in self.id_N]) 
+        self._set_levels()
     
     def sampling(self, N=1, method='uniform'):
         # TODO: should recursion be avoided here?
@@ -170,14 +180,8 @@ class ProductSpace(SearchSpace):
 class ContinuousSpace(SearchSpace):
     """Continuous Search Space Class
     """
-    def __init__(self, bounds, var_name=None, name=None):
+    def __init__(self, bounds, var_name='r', name=None):
         super(ContinuousSpace, self).__init__(bounds, var_name, name)
-        if not hasattr(self, 'var_name'):
-            if self.dim > 1:
-                self.var_name = ['r_' + str(i) for i in range(self.dim)]
-            else:
-                self.var_name = ['r']
-
         self.var_type = ['C'] * self.dim
         self._bounds = np.atleast_2d(self.bounds).T
         assert all(self._bounds[0, :] < self._bounds[1, :])
@@ -203,32 +207,29 @@ class ContinuousSpace(SearchSpace):
 class NominalSpace(SearchSpace):
     """Nominal (discrete) Search Space Class
     """
-    def __init__(self, levels, var_name=None, name=None):
-        super(NominalSpace, self).__init__(levels, var_name, name)
-        if not hasattr(self, 'var_name'):
-            if self.dim > 1:
-                self.var_name = ['d_' + str(i) for i in range(self.dim)]
-            else:
-                self.var_name = ['d']
+    def __init__(self, levels, var_name='d', name=None):
+        levels = np.atleast_2d(levels)
+        levels = [np.unique(l).tolist() for l in levels]
 
+        super(NominalSpace, self).__init__(levels, var_name, name)
         self.var_type = ['N'] * self.dim
         self._levels = [np.array(b) for b in self.bounds]
-        self._n_levels = [len(l) for l in self._levels]
         self._set_index()
+        self._set_levels()
         
     def __mul__(self, N):
         s = super(NominalSpace, self).__mul__(N)
-        s.levels = OrderedDict([(i, s.bounds[i]) for i in range(s.dim)])
-        s._levels = s._levels * N
-        s._n_levels = s._n_levels * N
         s._set_index()
+        s._set_levels()
         return s
     
     def sampling(self, N=1, method='uniform'):
-        # TODO: adding LHS sampling here
+        # NOTE: `LHS` sampling does not apply here since nominal variable is not ordered
         res = np.empty((N, self.dim), dtype=object)
         for i in range(self.dim):
-            res[:, i] = self._levels[i][randint(0, self._n_levels[i], N)]
+            idx = randint(0, self._n_levels[i], N)
+            res[:, i] = [self.levels[i][_] for _ in idx]
+
         return res.tolist()
 
 
@@ -236,14 +237,8 @@ class NominalSpace(SearchSpace):
 class OrdinalSpace(SearchSpace):
     """Ordinal (Integer) Search Space
     """
-    def __init__(self, bounds, var_name=None, name=None):
+    def __init__(self, bounds, var_name='i', name=None):
         super(OrdinalSpace, self).__init__(bounds, var_name, name)
-        if not hasattr(self, 'var_name'):
-            if self.dim > 1:
-                self.var_name = ['i_' + str(i) for i in range(self.dim)]
-            else:
-                self.var_name = ['i']
-
         self.var_type = ['O'] * self.dim
         self._lb, self._ub = zip(*self.bounds)        # for sampling
         assert all(np.array(self._lb) < np.array(self._ub))
