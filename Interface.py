@@ -185,6 +185,7 @@ class RemoteBODaemon(Daemon):
         print('initialize the remote BO server...')
 
         work_dir = str(port) if len(work_dir) == 0 else work_dir
+        work_dir = os.path.join(os.path.expanduser('~'), work_dir)
         if not os.path.exists(work_dir):
             os.makedirs(work_dir)
 
