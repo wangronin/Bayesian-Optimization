@@ -85,10 +85,27 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
                 rsp_data['job_id'] = job_id
                 rsp_data['X'] = X
+                self.logger('ask request from job %s'%job_id)
                 self.send_response(200)
             except Exception as ex:
                 self.logger.error(str(ex))
                 self.send_error(500, str(ex))
+
+        elif 'finalize' in info:
+            try:
+                job_id = self._get_job_id(info)
+                dump_file = self._get_dump_file(job_id)
+                data_file = os.path.join(self.work_dir, job_id + '.csv')
+            except Exception as ex:
+                self.logger.error(str(ex))
+                self.send_error(500, str(ex))
+                self._send_response(rsp_data)
+                return
+            
+            os.remove(dump_file)
+            os.remove(data_file)
+            self.logger('finalize request from job %s'%job_id)
+            self.send_response(200)
 
         self._send_response(rsp_data)
         
@@ -130,6 +147,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                     self.logger.info('overwritting the dump file!')
 
                 opt.save(dump_file)
+                self.logger('create job %s'%job_id)
                 self.send_response(200)
             except Exception as ex:
                 self.logger.error(str(ex))
@@ -151,7 +169,11 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 X = [list(x.values()) for x in data['X']]
                 opt.tell(X, data['y'])
                 opt.save(dump_file)
-                
+
+                rsp_data['xopt'] = opt.xopt.to_dict()
+                rsp_data['fopt'] = opt.fopt
+
+                self.logger('tell request from job %s'%job_id)
                 self.send_response(200)
             except Exception as ex:
                 self.logger.error(str(ex))

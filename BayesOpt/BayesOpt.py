@@ -452,15 +452,16 @@ class BO(object):
                 acquisition_func = PI(self.surrogate, plugin, minimize=self.minimize)
             elif self.infill == 'MGFI':
                 # TODO: move this part to adaptive BayesOpt
-                acquisition_func = MGFI(self.surrogate, plugin, minimize=self.minimize, t=self.t)
+                acquisition_func = MGFI(self.surrogate, plugin, 
+                                        minimize=self.minimize, t=self.t)
                 self._annealling()
             elif self.infill == 'UCB':
                 raise NotImplementedError
                 
         return functools.partial(acquisition_func, dx=dx) 
     
-    # TODO: this function goes to the child class 
     def _annealling(self):
+        # TODO: this function goes to the child class 
         if self.schedule == 'exp':  
              self.t *= self.alpha
         elif self.schedule == 'linear':
