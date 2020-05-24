@@ -85,7 +85,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
                 rsp_data['job_id'] = job_id
                 rsp_data['X'] = X
-                self.logger('ask request from job %s'%job_id)
+                self.logger.info('ask request from job %s'%job_id)
                 self.send_response(200)
             except Exception as ex:
                 self.logger.error(str(ex))
@@ -104,7 +104,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             
             os.remove(dump_file)
             os.remove(data_file)
-            self.logger('finalize request from job %s'%job_id)
+            self.logger.info('finalize request from job %s'%job_id)
             self.send_response(200)
 
         self._send_response(rsp_data)
@@ -147,7 +147,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                     self.logger.info('overwritting the dump file!')
 
                 opt.save(dump_file)
-                self.logger('create job %s'%job_id)
+                self.logger.info('create job %s'%job_id)
                 self.send_response(200)
             except Exception as ex:
                 self.logger.error(str(ex))
@@ -173,7 +173,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 rsp_data['xopt'] = opt.xopt.to_dict()
                 rsp_data['fopt'] = opt.fopt
 
-                self.logger('tell request from job %s'%job_id)
+                self.logger.info('tell request from job %s'%job_id)
                 self.send_response(200)
             except Exception as ex:
                 self.logger.error(str(ex))
