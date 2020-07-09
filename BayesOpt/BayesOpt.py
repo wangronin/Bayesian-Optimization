@@ -24,6 +24,9 @@ from .InfillCriteria import EI, PI, MGFI
 from .Surrogate import SurrogateAggregation
 from .misc import proportional_selection, non_dominated_set_2d, bcolors, MyFormatter
 
+os.environ['LOKY_PICKLER'] = 'dill' # to use `dill` for the pickling, which works for
+                                    # much more python objects
+
 # TODO: this goes to utils.py
 verbose = {
     False : logging.NOTSET,

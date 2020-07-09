@@ -94,6 +94,8 @@ class SearchSpace(object):
         if hasattr(self, 'id_N') and len(self.id_N) > 0:
             self.levels = {i : self.bounds[i] for i in self.id_N}
             self._n_levels = {i : len(self.bounds[i]) for i in self.id_N}
+        else:
+            self.levels, self._n_levels = None, None 
 
     def __len__(self):
         return self.dim
@@ -199,7 +201,7 @@ class ContinuousSpace(SearchSpace):
             return ((ub - lb) * rand(N, self.dim) + lb).tolist()
         elif method == 'LHS':     # Latin hypercube sampling
             if N == 1:
-                raise ValueError('LHS: number of sample cannot be 1')
+                return ((ub - lb) * rand(N, self.dim) + lb).tolist()
             else:
                 return ((ub - lb) * lhs(self.dim, samples=N, criterion='cm') + lb).tolist()
 
