@@ -8,15 +8,19 @@ Created on Thu Sep 14 15:42:52 2017
 
 from pdb import set_trace
 import os, sys, json, logging, dill
+import numpy as np
 
 import urllib.parse as urlparse
 from optparse import OptionParser
 from http.server import BaseHTTPRequestHandler, HTTPServer
     
+from GaussianProcess import GaussianProcess
+from GaussianProcess.trend import constant_trend
+
 from BayesOpt.utils import Daemon
 from BayesOpt import BO
 from BayesOpt.Surrogate import RandomForest
-from BayesOpt.SearchSpace import from_dict
+from BayesOpt.SearchSpace import from_dict, ContinuousSpace
 from BayesOpt.misc import random_string
 
 # Configuration request Handler
@@ -79,13 +83,13 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 return 
 
             try:
+                self.logger.info('ask request from job %s'%job_id)
                 opt = BO.load(dump_file)
                 X = opt.ask(n_point)
                 X = [x.to_dict('var') for x in X]
 
                 rsp_data['job_id'] = job_id
                 rsp_data['X'] = X
-                self.logger.info('ask request from job %s'%job_id)
                 self.send_response(200)
             except Exception as ex:
                 self.logger.error(str(ex))
@@ -94,6 +98,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
         elif 'finalize' in info:
             try:
                 job_id = self._get_job_id(info)
+                self.logger.info('finalize request from job %s'%job_id)
                 dump_file = self._get_dump_file(job_id)
                 data_file = os.path.join(self.work_dir, job_id + '.csv')
             except Exception as ex:
@@ -104,11 +109,53 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             
             os.remove(dump_file)
             os.remove(data_file)
-            self.logger.info('finalize request from job %s'%job_id)
             self.send_response(200)
 
         self._send_response(rsp_data)
+    
+    def _create_optimizer(self, search_param, bo_param, data_file):
+        search_space = from_dict(search_param, space_name=False)
+        n_obj = bo_param['n_obj']
+        del bo_param['n_obj']
+
+        if len(search_space.id_N) == 0 and len(search_space.id_O) == 0:
+            dim = search_space.dim
+            lb, ub = np.atleast_2d(search_space.bounds).T 
+            # autocorrelation parameters of GPR
+            thetaL = 1e-10 * (ub - lb) * np.ones(dim)
+            thetaU = 2 * (ub - lb) * np.ones(dim)
+            theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
+            mean = constant_trend(dim, beta=0) 
+            surrogate = GaussianProcess(
+                mean=mean, corr='matern',
+                theta0=theta0, thetaL=thetaL, thetaU=thetaU,
+                nugget=1e-10, noise_estim=True,
+                optimizer='BFGS', wait_iter=5, random_start=30 * dim,
+                likelihood='concentrated', eval_budget=200 * dim
+            )
+            optimizer = 'BFGS'
+        else :
+            surrogate = RandomForest(levels=search_space.levels)
+            optimizer = 'MIES'
+
+        if n_obj == 1:   # single-objective Bayesian optimizer
+            opt = BO(search_space=search_space, 
+                     obj_func=None, 
+                     surrogate=surrogate,
+                     logger=self.logger, 
+                     data_file=data_file,
+                     infill='PI',
+                     eval_type='dict', 
+                     optimizer=optimizer, 
+                     **bo_param)
         
+        # TODO: to test this part
+        elif n_obj > 1:  # multi-objective Bayesian optimizer
+            pass
+
+        return opt
+
     def do_POST(self):
         content_len = int(self.headers.get('content-length'))
         post_body = self.rfile.read(content_len)
@@ -128,21 +175,10 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 dump_file = self._get_dump_file(job_id, check=False) 
                 data_file = os.path.join(self.work_dir, job_id + '.csv')
 
-                search_param, bo_param = data['search_param'], data['bo_param']
-                search_space = from_dict(search_param, space_name=False)
-                n_obj = bo_param['n_obj']
-                del bo_param['n_obj']
+                opt = self._create_optimizer(
+                    data['search_param'], data['bo_param'], data_file
+                )
 
-                if n_obj == 1:   # single-objective Bayesian optimizer
-                    opt = BO(search_space=search_space, obj_func=None, 
-                             surrogate=RandomForest(levels=search_space.levels), 
-                             logger=self.logger, data_file=data_file,
-                             eval_type='dict', optimizer='MIES', **bo_param)
-                
-                # TODO: to test this part
-                elif n_obj > 1:  # multi-objective Bayesian optimizer
-                    pass
-                
                 if os.path.exists(dump_file):
                     self.logger.info('overwritting the dump file!')
 
@@ -164,6 +200,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 return
 
             try:
+                self.logger.info('tell request from job %s'%job_id)
                 opt = BO.load(dump_file)
 
                 X = [list(x.values()) for x in data['X']]
@@ -173,7 +210,6 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 rsp_data['xopt'] = opt.xopt.to_dict()
                 rsp_data['fopt'] = opt.fopt
 
-                self.logger.info('tell request from job %s'%job_id)
                 self.send_response(200)
             except Exception as ex:
                 self.logger.error(str(ex))
@@ -229,7 +265,7 @@ if __name__ == '__main__':
                           help='port number', default=7200, type='int')
     
     opt_parser.add_option('-H', '--host', action='store', dest='host', 
-                          help='host address', default='0.0.0.1', type='string')
+                          help='host address', default='127.0.0.1', type='string')
     
     opt_parser.add_option('-l', '--log', action='store', dest='log_file', 
                           help='log file name', default='log', type='string')

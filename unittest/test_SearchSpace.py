@@ -1,3 +1,4 @@
+from pdb import set_trace
 import numpy as np 
 from BayesOpt import ContinuousSpace, OrdinalSpace, NominalSpace, from_dict, Solution
 
@@ -13,6 +14,9 @@ print(I3.var_name)
 print(I3.var_type)
 
 print(C.sampling(1, 'uniform'))
+
+space = C + C + C
+print(space.sampling(2))
 
 # cartesian product of heterogeneous spaces
 space = C + I + N 

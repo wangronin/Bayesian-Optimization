@@ -24,9 +24,10 @@ from .InfillCriteria import EI, PI, MGFI
 from .Surrogate import SurrogateAggregation
 from .misc import proportional_selection, non_dominated_set_2d, bcolors, MyFormatter
 
-os.environ['LOKY_PICKLER'] = 'dill' # to use `dill` for the pickling, which works for
-                                    # much more python objects
-
+# To use `dill` for the pickling, which works for
+# much more python objects
+os.environ['LOKY_PICKLER'] = 'dill' 
+                                    
 # TODO: this goes to utils.py
 verbose = {
     False : logging.NOTSET,
@@ -35,16 +36,38 @@ verbose = {
 }
 
 # TODO: implement the automatic surrogate model selection
-# TODO: improve the efficiency; profiling
 class BO(object):
     """Bayesian Optimization base class"""
-    def __init__(self, search_space, obj_func, surrogate, parallel_obj_func=None, ftarget=None,
-                 eq_func=None, ineq_func=None, minimize=True, max_eval=None, 
-                 max_iter=None, init_points=None, warm_data=None,
-                 infill='EI', t0=2, tf=1e-1, schedule='exp', eval_type='list',
-                 n_init_sample=None, n_point=1, n_job=1,
-                 n_restart=None, max_infill_eval=None, wait_iter=3, optimizer='MIES', 
-                 data_file=None, verbose=False, random_seed=None, logger=None):
+    def __init__(self, 
+                 search_space, 
+                 obj_func,
+                 surrogate, 
+                 parallel_obj_func=None, 
+                 ftarget=None,
+                 eq_func=None, 
+                 ineq_func=None, 
+                 minimize=True, 
+                 max_eval=None, 
+                 max_iter=None, 
+                 init_points=None,
+                 warm_data=None,
+                 infill='EI', 
+                 noisy=False,
+                 t0=2, 
+                 tf=1e-1, 
+                 schedule='exp', 
+                 eval_type='list',
+                 n_init_sample=None, 
+                 n_point=1, 
+                 n_job=1,
+                 n_restart=None, 
+                 max_infill_eval=None, 
+                 wait_iter=3, 
+                 optimizer='MIES', 
+                 data_file=None, 
+                 verbose=False, 
+                 random_seed=None, 
+                 logger=None):
         """
 
         Parameters
@@ -93,9 +116,10 @@ class BO(object):
         self.minimize = minimize
         self.dim = len(self._space)
         self._best = min if self.minimize else max
-        self._eval_type = eval_type         # TODO: find a better name for this
+        self._eval_type = eval_type           # TODO: find a better name for this
         self.n_obj = 1
         self.init_points = init_points
+        self.noisy = noisy
         
         self.r_index = self._space.id_C       # index of continuous variable
         self.i_index = self._space.id_O       # index of integer variable
@@ -229,7 +253,10 @@ class BO(object):
             n_point = self.n_point if n_point is None else min(self.n_point, n_point)
 
             X = self.arg_max_acquisition(n_point=n_point)[0]
-            X = Solution(X, index=len(self.data) + np.arange(len(X)), var_name=self.var_names)
+            X = Solution(
+                X, index=len(self.data) + np.arange(len(X)), 
+                var_name=self.var_names
+            )
             
             X = self.pre_eval_check(X)
             # draw the remaining ones randomly
@@ -254,18 +281,19 @@ class BO(object):
             X = Solution(X, var_name=self.var_names)
 
         if self.iter_count == 0:
-            self.logger.info(bcolors.WARNING + \
-                'initial DoE of size {}:'.format(len(X)) + bcolors.ENDC)
+            self.logger.info('initial DoE of size {}:'.format(len(X)))
         else:
-            self.logger.info(bcolors.WARNING + \
-                'iteration {}, {} infill points:'.format(self.iter_count, len(X)) + \
-                    bcolors.ENDC)
+            self.logger.info(
+                'iteration {}, {} infill points:'.format(self.iter_count, len(X))
+            )
 
         for i in range(len(X)):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
-            self.logger.info('#{} - fitness: {},  solution: {}'.format(i + 1, func_vals[i], 
-                             self._space.to_dict(X[i])))
+            self.logger.info(
+                '#{} - fitness: {},  solution: {}'.format(i + 1, func_vals[i], 
+                self._space.to_dict(X[i]))
+            )
 
         X = self.post_eval_check(X)
         self.data = self.data + X if hasattr(self, 'data') else X
@@ -280,10 +308,8 @@ class BO(object):
         _ = np.nonzero(self.data.fitness == self.fopt)[0][0]
         self.xopt = self.data[_]   
 
-        self.logger.info(bcolors.WARNING + \
-            'fopt: {}'.format(self.fopt) + bcolors.ENDC)   
-        self.logger.info(bcolors.WARNING + \
-            'xopt: {}\n'.format(self._space.to_dict(self.xopt)) + bcolors.ENDC)     
+        self.logger.info('fopt: {}'.format(self.fopt))   
+        self.logger.info('xopt: {}\n'.format(self._space.to_dict(self.xopt)))     
 
         self.iter_count += 1
         self.hist_f.append(self.xopt.fitness)
@@ -436,7 +462,13 @@ class BO(object):
             Note that it should be given in the original scale
         """
         # objective values are normalized
-        plugin = 0 if plugin is None else (plugin - self.fmin) / self.frange
+        if self.noisy:
+            # use the model prediction to determine the plugin under noisy scenarios
+            if plugin is None:
+                plugin = min(self.surrogate.predict(self.data)) \
+                    if self.minimize else max(self.surrogate.predict(self.data))
+        else:
+            plugin = 0 if plugin is None else (plugin - self.fmin) / self.frange
             
         if self.n_point > 1:  # multi-point method
             # create a portofolio of n infill-criteria by 
@@ -474,7 +506,8 @@ class BO(object):
             self.t = self.c / np.log(self.iter_count + 1 + 1)
    
     def _argmax_multistart(self, obj_func):
-        # keep the list of optima in each restart for future usage
+        # lists of the best solutions and acquisition values
+        # from each restart
         xopt, fopt = [], []  
         eval_budget = self._max_eval
         best = -np.inf
@@ -483,37 +516,46 @@ class BO(object):
         for iteration in range(self._random_start):
             x0 = self._space.sampling(N=1, method='uniform')[0]
             
-            # TODO: add IPOP-CMA-ES here for testing
             # TODO: when the surrogate is GP, implement a GA-BFGS hybrid algorithm
             # TODO: BFGS only works with continuous parameters
             # TODO: add constraint handling for BFGS
             if self._optimizer == 'BFGS':
                 if self.N_d + self.N_i != 0:
                     raise ValueError('BFGS is not supported with mixed variable types.')
-                # TODO: find out why: somehow this local lambda function can be pickled...
-                # for minimization
+
                 func = lambda x: tuple(map(lambda x: -1. * x, obj_func(x)))
-                xopt_, fopt_, stop_dict = fmin_l_bfgs_b(func, x0, pgtol=1e-8,
-                                                        factr=1e6, bounds=self._bounds,
-                                                        maxfun=eval_budget)
+                xopt_, fopt_, stop_dict = fmin_l_bfgs_b(
+                    func, x0, pgtol=1e-8, factr=1e6, 
+                    bounds=self._bounds, maxfun=eval_budget
+                )
+
                 xopt_ = xopt_.flatten().tolist()
                 fopt_ = -np.asscalar(fopt_)
                 
                 if stop_dict["warnflag"] != 0:
-                    self.logger.debug("L-BFGS-B terminated abnormally with the "
-                                      " state: %s" % stop_dict)
+                    self.logger.debug(
+                        "L-BFGS-B terminated abnormally with the state: %s"%stop_dict
+                    )
                                 
             elif self._optimizer == 'MIES':
-                opt = mies(self._space, obj_func, eq_func=self.eq_func, ineq_func=self.ineq_func,
-                           max_eval=eval_budget, minimize=False, verbose=False, 
-                           eval_type=self._eval_type)                           
+                opt = mies(
+                    self._space, obj_func, 
+                    eq_func=self.eq_func, 
+                    ineq_func=self.ineq_func,
+                    max_eval=eval_budget, 
+                    minimize=False, 
+                    verbose=False, 
+                    eval_type=self._eval_type
+                )                           
                 xopt_, fopt_, stop_dict = opt.optimize()
 
             if fopt_ > best:
                 best = fopt_
                 wait_count = 0
-                self.logger.debug('restart : {} - funcalls : {} - Fopt : {}'.format(iteration + 1, 
-                                   stop_dict['funcalls'], fopt_))
+                self.logger.debug(
+                    'restart : %d - funcalls : %d - Fopt : %f'%(iteration + 1, 
+                    stop_dict['funcalls'], fopt_)
+                )
             else:
                 wait_count += 1
 
@@ -591,111 +633,3 @@ class BO(object):
                 obj.data = dill.loads(obj.data)
                 
         return obj
-
-# TODO: remove this part, which should be covered by the examples
-if __name__ == '__main__':
-    from .SearchSpace import ContinuousSpace, OrdinalSpace, NominalSpace
-    from .Surrogate import RandomForest
-
-    np.random.seed(666)
-
-    if 11 < 2: # test for flat fitness
-        def fitness(x):
-            return 1
-
-        space = ContinuousSpace([-5, 5]) * 2
-        levels = space.levels if hasattr(space, 'levels') else None
-        model = RandomForest(levels=levels)
-
-        opt = BO(space, fitness, model, max_eval=300, verbose=True, n_job=1, n_point=1)
-        print(opt.run())
-
-    if 1 < 2:
-        def fitness1(x):
-            x_r, x_i, x_d = np.array(x[:2]), x[2], x[3]
-            if x_d == 'OK':
-                tmp = 0
-            else:
-                tmp = 1
-            return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + tmp * 2
-
-        space = (ContinuousSpace([-5, 5]) * 2) + OrdinalSpace([5, 15]) + \
-            NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'])
-
-        levels = space.levels if hasattr(space, 'levels') else None
-        model = RandomForest(levels=levels)
-
-        opt = BO(space, fitness1, model, max_eval=300, verbose=True, n_job=1, n_point=3,
-                 n_init_sample=3,
-                 init_points=[[0, 0, 10, 'OK']])
-        xopt, fopt, stop_dict = opt.run()
-
-
-    # # TODO: this function should be removed
-    # def initialize(self):
-    #     """Generate the initial data set (DOE) and construct the surrogate model"""
-    #     if hasattr(self, 'data'):
-    #         self.logger.warn('initialization is already performed!') 
-    #         return
-
-    #     if hasattr(self, 'warm_data'):
-    #         self.logger.info('adding warm data to the initial model')
-    #         self.data = copy.deepcopy(self.warm_data)
-
-    #     self.logger.info('selected surrogate model: {}'.format(self.surrogate.__class__)) 
-    #     self.logger.info('building {:d} initial design points...'.format(self.n_init_sample))
-        
-    #     sampling_trial = self._init_flatfitness_trial
-    #     while True:
-    #         DOE = []
-    #         while len(DOE) < self.n_init_sample:
-    #             if len(DOE) > 0:
-    #                 self.logger.info('adding %d new points due to duplications...'
-    #                     %(self.n_init_sample - len(DOE)))
-    #                 DOE += Solution(self._space.sampling(self.n_init_sample - len(DOE)), 
-    #                                 var_name=self.var_names, n_obj=self.n_obj)
-    #             elif self.init_points is not None:
-    #                 n = len(self.init_points)
-    #                 DOE = self.init_points + self._space.sampling(self.n_init_sample - n)
-    #             else:
-    #                 DOE = self._space.sampling(self.n_init_sample)
-    #             if not isinstance(DOE, Solution):
-    #                 DOE = Solution(DOE, var_name=self.var_names, n_obj=self.n_obj)
-    #             DOE = self._remove_duplicate(DOE)
-
-    #         self.evaluate(DOE, runs=self.init_n_eval)
-    #         DOE = self.after_eval_check(DOE)
-            
-    #         if hasattr(self, 'data') and len(self.data) != 0:
-    #             self.data += DOE
-    #         else:
-    #             self.data = DOE
-
-    #         fmin, fmax = np.min(self.data.fitness), np.max(self.data.fitness)
-    #         if np.isclose(fmin, fmax): 
-    #             if sampling_trial > 0:
-    #                 self.logger.warning('flat objective value in the initialization!')
-    #                 self.logger.warning('resampling the initial points...')
-    #                 sampling_trial -= 1
-    #             else:
-    #                 self.logger.warning('flat objective value after taking {} '
-    #                 'samples (each has {} sample points)...'.format(self._init_flatfitness_trial, 
-    #                          self.n_init_sample))
-    #                 self.logger.warning('optimization terminates...')
-
-    #                 self.stop_dict['flatfitness'] = True
-    #                 self.fopt = self._best(self.data.fitness)
-    #                 _ = np.nonzero(self.data.fitness == self.fopt)[0][0]
-    #                 self.xopt = self.data[_]  
-    #                 return
-    #         else:
-    #             break
-
-    #     for i, x in enumerate(DOE):
-    #         self.logger.info('DOE {}, fitness: {} -- {}'.format(i + 1, x.fitness, 
-    #                          self._space.to_dict(x)))
-
-    #     self.fit_and_assess()
-    #     if self.data_file is not None: # save the initial design to csv
-    #         DOE.to_csv(self.data_file)
-    #         #self.data.to_csv(self.data_file)

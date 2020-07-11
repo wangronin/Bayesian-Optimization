@@ -24,9 +24,9 @@ class InfillCriteria:
         self.model = model
         self.minimize = minimize
         # change maximization problem to minimization
-        self.plugin = plugin if self.minimize else -plugin
+        self.plugin = plugin if self.minimize else -1.0 * plugin
         if self.plugin is None:
-            self.plugin = np.min(model.y) if minimize else -np.max(self.model.y)
+            self.plugin = np.min(model.y) if minimize else -1.0 * np.max(self.model.y)
     
     @abstractmethod
     def __call__(self, X):

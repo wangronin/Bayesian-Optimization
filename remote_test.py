@@ -28,11 +28,13 @@ data = {
         "max_iter" : 20,     # 最大迭代次数
         "n_init_sample" : 3, # 初始（第一代）采样点个数，其一般与`n_point`相等
         "minimize" : True,
+        "noisy" : True,
         "n_obj": 1
     }
 }
 
 address = 'http://207.246.97.250:7200'
+address = 'http://127.0.0.1:7200'
 
 def obj_func_dict_eval2(par):
     """范例目标函数，其输入`par`为一个包含了一组候选参数的字典
@@ -42,14 +44,17 @@ def obj_func_dict_eval2(par):
     x_r = np.asarray([par[k] for k in par.keys() if k.startswith('emissivity')])
     x_r2 = np.asarray([par[k] for k in par.keys() if k.startswith('offset')])
     x_i = par['power']
-    return np.sum(x_r ** 2.) + abs(x_i - 10) / 123. + np.sum(x_r2 ** 2.)
+    return np.sum(x_r ** 2.) + \
+        abs(x_i - 3.5) + \
+            np.sum(x_r2 ** 2.) + \
+                np.random.randn() * np.sqrt(.5)
 
 # 请求创建新的优化任务，其初始化数据由一个json数据`data`给定
 r = requests.post(address, json=data)
 job_id = r.json()['job_id']
 print('Job id is %s'%(job_id))
 
-for i in range(10):  
+for i in range(20):  
     print('iteration %d'%(i))
 
     # 请求一组候选参数值用于测试。请求时必须附加之前初始化时返回的任务id

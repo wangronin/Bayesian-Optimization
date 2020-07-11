@@ -89,9 +89,9 @@ seed = comm.scatter(seed, root=0)
 np.random.seed(seed)
 
     
-for func_name, func in functions.iteritems():    
+for func_name, func in functions.items():    
     if rank == 0:
-        print "testing on function:", func_name, "dim:", dim
+        print("testing on function: {} dim: {}".format(func_name, dim))
         
     y_hist_best = np.zeros((n_step, runs))
     
@@ -108,8 +108,8 @@ for func_name, func in functions.iteritems():
         data = data.T if data.shape[1] != runs else data
         mean_ = np.mean(data, axis=1)
         error_ = np.std(data, axis=1, ddof=1) / np.sqrt(runs)
-        print 'mean : ', mean_
-        print 'std error: ', error_
+        print('mean : %f'%mean_)
+        print('std error: %f'%error_)
         
         # append the new data the csv
         df = pd.DataFrame(data)
