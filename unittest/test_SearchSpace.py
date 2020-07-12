@@ -1,12 +1,24 @@
 from pdb import set_trace
+from copy import deepcopy
 import numpy as np 
 from BayesOpt import ContinuousSpace, OrdinalSpace, NominalSpace, from_dict, Solution
 
 np.random.seed(1)
 
-C = ContinuousSpace([-5, 5]) * 3  # product of the same space
+C = ContinuousSpace([-5, 5], precision=1) * 3  # product of the same space
 I = OrdinalSpace([[-100, 100], [-5, 5]], 'heihei')
 N = NominalSpace([['OK', 'A', 'B', 'C', 'D', 'E', 'A']] * 2, ['x', 'y'])
+
+C2 = ContinuousSpace([[-5, 5]] * 3, precision=[2, None, 3])
+# print(C2.sampling(3))
+
+S = N + I + C2
+S2 = N + I + ContinuousSpace([[-5, 5]] * 3)
+X = S2.sampling(5)
+
+print(X)
+X2 = S.round(X)
+print(X2)
 
 I3 = 3 * I 
 print(I3.sampling())

@@ -253,6 +253,7 @@ class BO(object):
             n_point = self.n_point if n_point is None else min(self.n_point, n_point)
 
             X = self.arg_max_acquisition(n_point=n_point)[0]
+            X = self._space.round(X)
             X = Solution(
                 X, index=len(self.data) + np.arange(len(X)), 
                 var_name=self.var_names

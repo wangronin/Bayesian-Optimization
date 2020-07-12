@@ -145,7 +145,6 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                      surrogate=surrogate,
                      logger=self.logger, 
                      data_file=data_file,
-                     infill='PI',
                      eval_type='dict', 
                      optimizer=optimizer, 
                      **bo_param)

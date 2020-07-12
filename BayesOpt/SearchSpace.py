@@ -97,6 +97,16 @@ class SearchSpace(object):
         else:
             self.levels, self._n_levels = None, None 
 
+    def round(self, X):
+        if hasattr(self, 'precision'):
+            X = deepcopy(X)
+            if not isinstance(X[0], list):
+                X = [X]
+            for k, v in self.precision.items():
+                for i in range(len(X)):
+                    X[i][k] = np.round(X[i][k], v)
+        return X
+
     def __len__(self):
         return self.dim
 
@@ -155,6 +165,13 @@ class ProductSpace(SearchSpace):
         self._sub_space2 = deepcopy(space2)
         self._set_index()
         self._set_levels()
+
+        p1 = deepcopy(space1.precision) if hasattr(space1, 'precision') else {}
+        p2 = {(k + space1.dim) : v for k, v in space2.precision.items()} \
+            if hasattr(space2, 'precision') else {}
+        p1.update(p2)
+        if len(p1) != 0:
+            self.precision = p1
     
     def sampling(self, N=1, method='uniform'):
         # TODO: should recursion be avoided here?
@@ -182,28 +199,42 @@ class ProductSpace(SearchSpace):
 class ContinuousSpace(SearchSpace):
     """Continuous Search Space Class
     """
-    def __init__(self, bounds, var_name='r', name=None):
+    def __init__(self, bounds, var_name='r', name=None, precision=None):
         super(ContinuousSpace, self).__init__(bounds, var_name, name)
         self.var_type = ['C'] * self.dim
         self._bounds = np.atleast_2d(self.bounds).T
         assert all(self._bounds[0, :] < self._bounds[1, :])
         self._set_index()
 
+        if hasattr(precision, '__iter__'):
+            assert len(precision) == self.dim
+            self.precision = {i : precision[i] \
+                for i in range(self.dim) if precision[i] is not None}
+        else:
+            if precision is not None:
+                self.precision = {i : precision for i in range(self.dim)}
+
     def __mul__(self, N):
         s = super(ContinuousSpace, self).__mul__(N)
         s._bounds = np.tile(s._bounds, (1, N))
         s._set_index()
+        s.precision = {}
+        L = [{(k + self.dim * i) : v for k, v in self.precision.items()} for i in range(N)]
+        for d in L:
+            s.precision.update(d)
         return s
     
     def sampling(self, N=1, method='uniform'):
         lb, ub = self._bounds
         if method == 'uniform':   # uniform random samples
-            return ((ub - lb) * rand(N, self.dim) + lb).tolist()
+            X = ((ub - lb) * rand(N, self.dim) + lb).tolist()
         elif method == 'LHS':     # Latin hypercube sampling
             if N == 1:
-                return ((ub - lb) * rand(N, self.dim) + lb).tolist()
+                X = ((ub - lb) * rand(N, self.dim) + lb).tolist()
             else:
-                return ((ub - lb) * lhs(self.dim, samples=N, criterion='cm') + lb).tolist()
+                X = ((ub - lb) * lhs(self.dim, samples=N, criterion='cm') + lb).tolist()
+
+        return self.round(X)
 
 
 class NominalSpace(SearchSpace):
@@ -275,7 +306,14 @@ def from_dict(param, space_name=True):
 
         # IMPORTANT: name argument is necessary for the variable grouping
         if v['type'] == 'r':        # real-valued parameter
-            space_ = ContinuousSpace(bounds, var_name=k, name=name) 
+            try:
+                precision = v['precision']
+            except:
+                precision = None 
+            space_ = ContinuousSpace(
+                bounds, var_name=k, name=name, 
+                precision=precision
+            ) 
         elif v['type'] == 'i':      # integer-valued parameter
             space_ = OrdinalSpace(bounds, var_name=k, name=name)
         elif v['type'] == 'c':      # category-valued parameter
