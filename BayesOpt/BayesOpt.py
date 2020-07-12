@@ -97,7 +97,7 @@ class BO(object):
                 the optimization algorithm for infill-criteria,
                 supported options are:
                     'MIES' (Mixed-Integer Evolution Strategy), 
-                    'BFGS' (quasi-Newtion for GPR)
+                    'BFGS' (quasi-Newton for GPR)
         """
         # TODO: clean up and split this function into sub-procedures.
         self.verbose = verbose
