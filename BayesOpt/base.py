@@ -45,10 +45,8 @@ class Solution(np.ndarray):
                 and to_dict
         Note
         ----
-            Instead of `__init__`, the `__new__` function is used here because sometimes we
-            would like to return an object of its subclasses, e.g., when slicing a subclass of 
-            `ndarray`, `ndarray.__new__(subclass, ...)` will return an object of type `subclass` while `ndarray.__init__(self, ...)` will return an object of `ndarray` 
-            (of course, `__init__` would work if the user also overloads the slicing function, which is not convenient).
+            Instead of using `__init__`, the `__new__` function is used here because 
+            sometimes we would like to return an object of its subclasses, e.g., when slicing a subclass of `ndarray`, `ndarray.__new__(subclass, ...)` will return an object of type `subclass` while `ndarray.__init__(self, ...)` will return an object of `ndarray` (of course, `__init__` would work if the user also overloads the slicing function, which is not convenient).
             If attributes `index`, `fitness`, `n_eval` are modified in a slice of Solution, 
             the corresponding attributes in the original object are also modified. 
             `var_name` is not affected by this behavior. 

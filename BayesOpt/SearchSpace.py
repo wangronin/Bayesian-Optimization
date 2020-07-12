@@ -2,23 +2,21 @@
 @author: Hao Wang
 @email: wangronin@gmail.com
 """
-from __future__ import print_function
 from pdb import set_trace
 
 import six, json
-from copy import deepcopy
+from copy import copy, deepcopy
 
 import numpy as np
 from numpy.random import randint, rand
 from abc import abstractmethod
 from pyDOE import lhs
 
-# TODO: fix bugs in bounds when calling __mul__
-# TODO: implement the sampling method: LHS for mixed search space
 class SearchSpace(object):
     def __init__(self, bounds, var_name, name):
         """Search Space Base Class
-        Arguments
+
+        Parameters
         ---------
         bounds : (list of) list,
             lower and upper bound for continuous/ordinal parameter type
@@ -38,20 +36,31 @@ class SearchSpace(object):
         ----------
         dim : int,
             dimensinality of the search space
-        bounds : list of lists,
+        bounds : a list of lists,
             each sub-list stores the lower and upper bound for continuous/ordinal variable
             and categorical values for nominal variable
-        levels : list of lists,
+        levels : a list of lists,
             each sub-list stores the categorical levels for every nominal variable. It takes
             `None` value when there is no nomimal variable
-        var_name : list of str,
+        precision : a list of double,
+            the numerical precison (granularity) of continuous parameters, which usually  
+            very practical in real-world applications
+        var_name : a list of str,
             variable names per dimension 
-        var_type : list of str, 
+        var_type : a list of str, 
             variable type per dimension, 'C': continuous, 'N': nominal, 'O': ordinal
-        C_mask : bool array,
-            the mask array to index continuous variables
-        id_C : int array,
+        C_mask : a bool array,
+            the mask array for continuous variables
+        O_mask : a bool array,
+            the mask array for integer variables
+        N_mask : a bool array,
+            the mask array for discrete variables
+        id_C : an int array,
             the index array for continuous variables
+        id_O : an int array,
+            the index array for integer variables
+        id_N : an int array,
+            the index array for discrete variables
         """
         if hasattr(bounds[0], '__iter__') and not isinstance(bounds[0], str):
             self.bounds = [tuple(b) for b in bounds]
@@ -62,6 +71,7 @@ class SearchSpace(object):
         self.name = name
         self.var_type = None 
         self.levels = None
+        self.precision = None
 
         if var_name is not None:
             if isinstance(var_name, str):
@@ -74,8 +84,7 @@ class SearchSpace(object):
 
     @abstractmethod
     def sampling(self, N=1):
-        """
-        The output is a list of shape (N, self.dim)
+        """The output is a list of shape (N, self.dim)
         """
         pass
     
@@ -94,6 +103,37 @@ class SearchSpace(object):
         if hasattr(self, 'id_N') and len(self.id_N) > 0:
             self.levels = {i : self.bounds[i] for i in self.id_N}
             self._n_levels = {i : len(self.bounds[i]) for i in self.id_N}
+        else:
+            self.levels, self._n_levels = None, None 
+
+    # TODO: this functionality should be more generic. See `pandas.to_dict`
+    def to_dict(self, solution):
+        """Convert a `Solution` object to a dictionary
+
+        Parameters
+        ----------
+        solution : Solution
+            an instance of .base.Solution class
+
+        Returns
+        -------
+        dict
+            A dictionary containing the data of solution
+        """
+        if self.name is None:
+            return solution.to_dict() 
+        else:
+            return {self.name : solution.tolist()}
+
+    def round(self, X):
+        if self.precision is not None:
+            X = deepcopy(X)
+            if not isinstance(X[0], list):
+                X = [X]
+            for k, v in self.precision.items():
+                for i in range(len(X)):
+                    X[i][k] = np.round(X[i][k], v)
+        return X
 
     def __len__(self):
         return self.dim
@@ -124,51 +164,58 @@ class SearchSpace(object):
     def __rmul__(self, N):
         return self.__mul__(N)
     
-    # TODO: maybe this function should be moved to base.py
-    def to_dict(self, solution=None):
-
-        if self.name is None:
-            return solution.to_dict() 
-        else:
-            return {self.name : solution.tolist()}
-    
 
 # TODO: maybe implement the scalar multiplication for ProductSpace
 class ProductSpace(SearchSpace):
     """Cartesian product of the search spaces
     """
-    def __init__(self, space1, space2):
+    def __init__(self, spaceL, spaceR):
         # setup the space names
-        nameL = space1.name if isinstance(space1, ProductSpace) else [space1.name] 
-        nameR = space2.name if isinstance(space2, ProductSpace) else [space2.name]
+        nameL = spaceL.name if isinstance(spaceL, ProductSpace) else [spaceL.name] 
+        nameR = spaceR.name if isinstance(spaceR, ProductSpace) else [spaceR.name]
         self.name = nameL + nameR
-
-        # TODO: avoid recursion here
-        self.dim = space1.dim + space2.dim
+        self.dim = spaceL.dim + spaceR.dim
         # TODO: check coincides of variable names
-        self.var_name = space1.var_name + space2.var_name             
-        self.bounds = space1.bounds + space2.bounds
-        self.var_type = space1.var_type + space2.var_type
-        self._sub_space1 = deepcopy(space1)
-        self._sub_space2 = deepcopy(space2)
+        self.var_name = spaceL.var_name + spaceR.var_name             
+        self.bounds = spaceL.bounds + spaceR.bounds
+        self.var_type = spaceL.var_type + spaceR.var_type
+
+        self._subspaceL = deepcopy(spaceL)
+        self._subspaceR = deepcopy(spaceR)
         self._set_index()
         self._set_levels()
+
+        precision = copy(spaceL.precision) if spaceL.precision is not None else {}
+        _ = {(k + spaceL.dim) : v for k, v in spaceR.precision.items()} \
+            if spaceR.precision is not None else {}
+        precision.update(_)
+        self.precision = precision if precision else None 
     
     def sampling(self, N=1, method='uniform'):
-        # TODO: should recursion be avoided here?
-        a = self._sub_space1.sampling(N, method)
-        b = self._sub_space2.sampling(N, method)
+        a = self._subspaceL.sampling(N, method)
+        b = self._subspaceR.sampling(N, method)
         return [a[i] + b[i] for i in range(N)]
     
     def to_dict(self, solution):
-        """Save a Solution instance to dict, grouped by sub-spaces
-            This is meant for vector-valued parameters for the configuration 
+        """Save a Solution instance to a dictionary 
+        
+        The result is grouped by sub-spaces, which is meant for vector-valued 
+        parameters for the configuration 
+
+        Parameters
+        ----------
+        solution : .base.Solution
+            A solution object
+
+        Returns
+        -------
+        dict
         """
-        id1 = list(range(self._sub_space1.dim))
-        id2 = list(range(self._sub_space1.dim, self.dim))
+        id1 = list(range(self._subspaceL.dim))
+        id2 = list(range(self._subspaceL.dim, self.dim))
         L = solution[id1] if len(solution.shape) == 1 else solution[:, id1]
         R = solution[id2] if len(solution.shape) == 1 else solution[:, id2]
-        return {**self._sub_space1.to_dict(L), **self._sub_space2.to_dict(R)}
+        return {**self._subspaceL.to_dict(L), **self._subspaceR.to_dict(R)}
 
     def __mul__(self, space):
         raise ValueError('Unsupported operation')
@@ -178,34 +225,54 @@ class ProductSpace(SearchSpace):
 
 
 class ContinuousSpace(SearchSpace):
-    """Continuous Search Space Class
+    """Continuous (real-valued) Search Space
     """
-    def __init__(self, bounds, var_name='r', name=None):
+    def __init__(self, bounds, var_name='r', name=None, precision=None):
         super(ContinuousSpace, self).__init__(bounds, var_name, name)
         self.var_type = ['C'] * self.dim
         self._bounds = np.atleast_2d(self.bounds).T
-        assert all(self._bounds[0, :] < self._bounds[1, :])
         self._set_index()
+        
+        # set up precisions for each dimension
+        if hasattr(precision, '__iter__'):
+            assert len(precision) == self.dim
+            self.precision = {i : precision[i] \
+                for i in range(self.dim) if precision[i] is not None}
+        else:
+            if precision is not None:
+                self.precision = {i : precision for i in range(self.dim)}
+        
+        assert all(self._bounds[0, :] < self._bounds[1, :])
 
     def __mul__(self, N):
         s = super(ContinuousSpace, self).__mul__(N)
         s._bounds = np.tile(s._bounds, (1, N))
         s._set_index()
+        if self.precision is None:
+            s.precision = None
+        else:
+            s.precision = {}
+            for i in range(N):
+                s.precision.update(
+                    {(k + self.dim * i) : v for k, v in self.precision.items()}
+                )
         return s
     
     def sampling(self, N=1, method='uniform'):
         lb, ub = self._bounds
         if method == 'uniform':   # uniform random samples
-            return ((ub - lb) * rand(N, self.dim) + lb).tolist()
+            X = ((ub - lb) * rand(N, self.dim) + lb).tolist()
         elif method == 'LHS':     # Latin hypercube sampling
             if N == 1:
-                raise ValueError('LHS: number of sample cannot be 1')
+                X = ((ub - lb) * rand(N, self.dim) + lb).tolist()
             else:
-                return ((ub - lb) * lhs(self.dim, samples=N, criterion='cm') + lb).tolist()
+                X = ((ub - lb) * lhs(self.dim, samples=N, criterion='cm') + lb).tolist()
+
+        return self.round(X)
 
 
 class NominalSpace(SearchSpace):
-    """Nominal (discrete) Search Space Class
+    """Nominal (discrete) Search Space
     """
     def __init__(self, levels, var_name='d', name=None):
         levels = np.atleast_2d(levels)
@@ -233,9 +300,8 @@ class NominalSpace(SearchSpace):
         return res.tolist()
 
 
-# TODO: add integer multiplication for OrdinalSpace
 class OrdinalSpace(SearchSpace):
-    """Ordinal (Integer) Search Space
+    """Ordinal (integer) Search Space
     """
     def __init__(self, bounds, var_name='i', name=None):
         super(OrdinalSpace, self).__init__(bounds, var_name, name)
@@ -259,7 +325,22 @@ class OrdinalSpace(SearchSpace):
 
 
 def from_dict(param, space_name=True):
-    """Create a seach space from input dictionary
+    """Create a search space object from input dictionary
+
+    Parameters
+    ----------
+    param : dict
+        A dictionary that describes the search space
+    space_name : bool, optional
+        Whether a (multi-dimensional) subspace should be named. If this named space 
+        is a subspace a whole search space, for a solution sampled from the whole space, its 
+        components pertaining to this subspace will be grouped together under the key 
+        `space_name`, when this solution is converted to a dictionary/json
+        (see `SearchSpace.to_dict`).
+
+    Returns
+    -------
+    SearchSpace
     """
     assert isinstance(param, dict)
     # construct the search space
@@ -273,7 +354,11 @@ def from_dict(param, space_name=True):
 
         # IMPORTANT: name argument is necessary for the variable grouping
         if v['type'] == 'r':        # real-valued parameter
-            space_ = ContinuousSpace(bounds, var_name=k, name=name) 
+            precision = v['precision'] if 'precision' in v else None 
+            space_ = ContinuousSpace(
+                bounds, var_name=k, name=name, 
+                precision=precision
+            ) 
         elif v['type'] == 'i':      # integer-valued parameter
             space_ = OrdinalSpace(bounds, var_name=k, name=name)
         elif v['type'] == 'c':      # category-valued parameter
@@ -287,6 +372,18 @@ def from_dict(param, space_name=True):
     return space
 
 def from_json(file):
+    """Create a seach space from a json file
+
+    Parameters
+    ----------
+    file : str
+        Path to the input json file
+
+    Returns
+    -------
+    SearchSpace
+        an `SearchSpace` object converted from the json file
+    """
     with open(file, 'r') as f:
         space = from_dict(json.load(f))
     return space

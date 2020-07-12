@@ -50,5 +50,5 @@ opt = BO(search_space, obj_func, model, max_iter=n_step,
          n_job=1,
          optimizer='BFGS'  # when using GPR model, 'BFGS' converges faster than 'MIES'        
          )
-               
+
 opt.run()
