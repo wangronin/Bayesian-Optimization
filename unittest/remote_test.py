@@ -31,13 +31,14 @@ data = {
         "max_iter" : 20,     # 最大迭代次数
         "n_init_sample" : 3, # 初始（第一代）采样点个数，其一般与`n_point`相等
         "minimize" : True,   # 最大化/最小化
-        "noisy" : True,      # 设置为True，若一直目标值的噪声很大
-        "infill" : 'PI',     # 两种选择：'PI' --> 保守; 'EI'反之
+        "noisy" : True,      # 设置为True，若我们已知目标值的噪声很大
+        "infill" : 'PI',     # 两种选择优化策略：'PI' --> 保守; 'EI'反之
         "n_obj": 1
     }
 }
 
 address = 'http://207.246.97.250:7200'
+# address = 'http://127.0.0.1:7200'
 
 def obj_func_dict_eval2(par):
     """范例目标函数，其输入`par`为一个包含了一组候选参数的字典

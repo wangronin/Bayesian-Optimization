@@ -262,15 +262,18 @@ class BO(object):
             X = self.pre_eval_check(X)
             # draw the remaining ones randomly
             if len(X) < n_point:
+                
                 self.logger.warn("iteration {}: duplicated solution found " 
                                  "by optimization! New points is taken from random "
                                  "design".format(self.iter_count))
                 N = n_point - len(X)
                 method = 'LHS' if N > 1 else 'uniform'
                 s = self._space.sampling(N=N, method=method) 
-                X = Solution(X.tolist() + s, 
-                             index=len(self.data) + np.arange(len(X)), 
-                             var_name=self.var_names)
+                X = X.tolist() + s
+                X = Solution(
+                    X, index=len(self.data) + np.arange(len(X)), 
+                    var_name=self.var_names
+                )
 
         else: # initial DoE
             X = self.create_DoE(self.n_init_sample)
