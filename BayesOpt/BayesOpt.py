@@ -27,7 +27,7 @@ from .misc import proportional_selection, non_dominated_set_2d, bcolors, MyForma
 # To use `dill` for the pickling, which works for
 # much more python objects
 os.environ['LOKY_PICKLER'] = 'dill' 
-                                    
+
 # TODO: this goes to utils.py
 verbose = {
     False : logging.NOTSET,
@@ -40,25 +40,17 @@ class BO(object):
     """Bayesian Optimization base class"""
     def __init__(self, 
                  search_space, 
-                 obj_func,
                  surrogate, 
-                 parallel_obj_func=None, 
+                 obj_func,
+                 parallel_obj_func=None,
+                 eval_type='list',
+                 DoE_size='auto', 
+                 acquisition_func='EI',
                  ftarget=None,
                  eq_func=None, 
                  ineq_func=None, 
                  minimize=True, 
                  max_eval=None, 
-                 max_iter=None, 
-                 init_points=None,
-                 warm_data=None,
-                 infill='EI', 
-                 noisy=False,
-                 t0=2, 
-                 tf=1e-1, 
-                 schedule='exp', 
-                 eval_type='list',
-                 n_init_sample=None, 
-                 n_point=1, 
                  n_job=1,
                  n_restart=None, 
                  max_infill_eval=None, 
@@ -67,7 +59,9 @@ class BO(object):
                  data_file=None, 
                  verbose=False, 
                  random_seed=None, 
-                 logger=None):
+                 logger=None,
+                 args,
+                 **kwargs):
         """
 
         Parameters
@@ -99,7 +93,6 @@ class BO(object):
                     'MIES' (Mixed-Integer Evolution Strategy), 
                     'BFGS' (quasi-Newtion for GPR)
         """
-        # TODO: clean up and split this function into sub-procedures.
         self.verbose = verbose
         self.data_file = data_file
         self._space = search_space
@@ -109,7 +102,6 @@ class BO(object):
         self.eq_func = eq_func
         self.ineq_func = ineq_func
         self.surrogate = surrogate
-        self.n_point = int(n_point)
         self.n_job = int(n_job)
         self.ftarget = ftarget 
         self.infill = infill
@@ -118,8 +110,8 @@ class BO(object):
         self._best = min if self.minimize else max
         self._eval_type = eval_type           # TODO: find a better name for this
         self.n_obj = 1
-        self.init_points = init_points
-        self.noisy = noisy
+
+        self.DoE_size = self.dim * 20 if DoE_size is None else int(DoE_size)
         
         self.r_index = self._space.id_C       # index of continuous variable
         self.i_index = self._space.id_O       # index of integer variable
@@ -137,69 +129,36 @@ class BO(object):
         self.init_n_eval = 1      
         self.max_eval = int(max_eval) if max_eval else np.inf
         self.max_iter = int(max_iter) if max_iter else np.inf
-        self.n_init_sample = self.dim * 20 if n_init_sample is None else int(n_init_sample)
+        
         self.eval_hist = []
         self.eval_hist_id = []
         self.iter_count = 0
         self.eval_count = 0
 
-        # TODO: this is just an ad-hoc fix 
-        if self.n_point > 1:
-            self.infill = 'MGFI'
-        
-        # setting up cooling schedule
-        # subclassing this part
-        if self.infill == 'MGFI':
-            self.t0 = t0
-            self.tf = tf
-            self.t = t0
-            self.schedule = schedule
-            
-            # TODO: find a nicer way to integrate this part
-            # cooling down to 1e-1
-            max_iter = self.max_eval - self.n_init_sample
-            if self.schedule == 'exp':                         # exponential
-                self.alpha = (self.tf / t0) ** (1. / max_iter) 
-            elif self.schedule == 'linear':
-                self.eta = (t0 - self.tf) / max_iter           # linear
-            elif self.schedule == 'log':
-                self.c = self.tf * np.log(max_iter + 1)        # logarithmic 
-            elif self.schedule == 'self-adaptive':
-                raise NotImplementedError
-
-        # paramter: acquisition function optimziation
-        mask = np.nonzero(self._space.C_mask | self._space.O_mask)[0]
-
-        # bounds for continuous and integer variable
-        self._bounds = np.array([self._space.bounds[i] for i in mask])  # continous and integer
-        self._levels = np.array([self._space.bounds[i] for i in self._space.id_N]) # discrete
-        self._optimizer = optimizer
-        # TODO: set this _max_eval smaller when using L-BFGS and larger for MIES
-        self._max_eval = int(5e2 * self.dim) if max_infill_eval is None else max_infill_eval
-        self._random_start = int(5 * self.dim) if n_restart is None else n_restart
-        self._wait_iter = int(wait_iter)    # maximal restarts when optimal value does not change
-
         # stop criteria
+        self.t = 2
         self.stop_dict = {}
         self.hist_f = []
         self._check_params()
 
-        # set the random seed
+        self._set_internal_optimizer(optimizer, max_infill_eval, n_restart, wait_iter)
+        self.set_logger(logger)
+
+    def _set_random_seed(self):
         self.random_seed = random_seed
         if self.random_seed:
             np.random.seed(self.random_seed)
-        
-        # setup the logger
-        self.set_logger(logger)
 
-        # load initial data 
-        if (warm_data is not None 
-                and isinstance(warm_data, Solution)):
-            self._check_var_name_consistency(warm_data.var_name)
-            self.warm_data = warm_data
-        elif (warm_data is not None 
-                and isinstance(warm_data, str)):
-            self._load_initial_data(warm_data)
+    def _set_internal_optimizer(self, optimizer, max_infill_eval, n_restart, wait_iter):
+        mask = np.nonzero(self._space.C_mask | self._space.O_mask)[0]
+        self._bounds = np.array([self._space.bounds[i] for i in mask]) 
+        self._levels = np.array([self._space.bounds[i] for i in self._space.id_N]) 
+        self._optimizer = optimizer
+
+        # TODO: set this _max_eval smaller when using L-BFGS and larger for MIES
+        self._max_eval = int(5e2 * self.dim) if max_infill_eval is None else max_infill_eval
+        self._random_start = int(5 * self.dim) if n_restart is None else n_restart
+        self._wait_iter = int(wait_iter)    # maximal restarts when optimal value does not change
 
     def set_logger(self, logger):
         """Create the logging object
@@ -276,7 +235,7 @@ class BO(object):
                 )
 
         else: # initial DoE
-            X = self.create_DoE(self.n_init_sample)
+            X = self.create_DoE(self.DoE_size)
         
         return X
     
@@ -482,7 +441,6 @@ class BO(object):
             # TODO: other method: niching, UCB, q-EI
             tt = np.exp(self.t * np.random.randn())
             acquisition_func = MGFI(self.surrogate, plugin, minimize=self.minimize, t=tt)
-            self._annealling()
             
         elif self.n_point == 1:   # sequential excution
             if self.infill == 'EI':
@@ -493,22 +451,11 @@ class BO(object):
                 # TODO: move this part to adaptive BayesOpt
                 acquisition_func = MGFI(self.surrogate, plugin, 
                                         minimize=self.minimize, t=self.t)
-                self._annealling()
             elif self.infill == 'UCB':
                 raise NotImplementedError
                 
         return functools.partial(acquisition_func, dx=dx) 
     
-    def _annealling(self):
-        # TODO: this function goes to the child class 
-        if self.schedule == 'exp':  
-             self.t *= self.alpha
-        elif self.schedule == 'linear':
-            self.t -= self.eta
-        elif self.schedule == 'log':
-            # TODO: verify this
-            self.t = self.c / np.log(self.iter_count + 1 + 1)
-   
     def _argmax_multistart(self, obj_func):
         # lists of the best solutions and acquisition values
         # from each restart

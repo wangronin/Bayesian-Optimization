@@ -11,6 +11,45 @@ import numpy as np
 from .BayesOpt import BO
 from .InfillCriteria import EI, PI, MGFI
 
+
+# Backup code snippet
+    # def _annealling(self):
+    #     # TODO: this function goes to the child class 
+    #     if self.schedule == 'exp':  
+    #          self.t *= self.alpha
+    #     elif self.schedule == 'linear':
+    #         self.t -= self.eta
+    #     elif self.schedule == 'log':
+    #         # TODO: verify this
+    #         self.t = self.c / np.log(self.iter_count + 1 + 1)
+
+# if self.infill == 'MGFI':
+#     self.t0 = t0
+#     self.tf = tf
+#     self.t = t0
+#     self.schedule = schedule
+    
+#     # TODO: find a nicer way to integrate this part
+#     # cooling down to 1e-1
+#     max_iter = self.max_eval - self.n_init_sample
+#     if self.schedule == 'exp':                         # exponential
+#         self.alpha = (self.tf / t0) ** (1. / max_iter) 
+#     elif self.schedule == 'linear':
+#         self.eta = (t0 - self.tf) / max_iter           # linear
+#     elif self.schedule == 'log':
+#         self.c = self.tf * np.log(max_iter + 1)        # logarithmic 
+#     elif self.schedule == 'self-adaptive':
+#         raise NotImplementedError
+
+#     # load initial data 
+#     if (warm_data is not None 
+#             and isinstance(warm_data, Solution)):
+#         self._check_var_name_consistency(warm_data.var_name)
+#         self.warm_data = warm_data
+#     elif (warm_data is not None 
+#             and isinstance(warm_data, str)):
+#         self._load_initial_data(warm_data)
+
 class ConstrainedBO(BO):
     def __init__(self, constraint_func, *argv, **kwargs):
         super(ConstrainedBO, self).__init__(*argv, **kwargs)
@@ -33,7 +72,7 @@ class BOAnnealing(BO):
         self.t = t0
         self.schedule = schedule
             
-        max_iter = self.max_eval - self.n_init_sample
+        max_iter = self.max_eval - self.DoE_size
         if self.schedule == 'exp':                         # exponential
             self.alpha = (self.tf / t0) ** (1. / max_iter) 
         elif self.schedule == 'linear':
