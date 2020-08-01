@@ -275,15 +275,23 @@ class NominalSpace(SearchSpace):
     """Nominal (discrete) Search Space
     """
     def __init__(self, levels, var_name='d', name=None):
-        levels = np.atleast_2d(levels)
-        levels = [np.unique(l).tolist() for l in levels]
-
+        levels = self._get_unique_levels(levels)
         super(NominalSpace, self).__init__(levels, var_name, name)
         self.var_type = ['N'] * self.dim
         self._levels = [np.array(b) for b in self.bounds]
         self._set_index()
         self._set_levels()
-        
+    
+    def _get_unique_levels(self, levels):
+        index = list(hasattr(l, '__iter__') and not isinstance(l, str) for l in levels)
+        if any(index):
+            return [
+                list(set(levels[k] if i else [levels[k]])) \
+                    for k, i in enumerate(index)
+            ]
+        else: 
+            return [list(set(levels))]
+
     def __mul__(self, N):
         s = super(NominalSpace, self).__mul__(N)
         s._set_index()
