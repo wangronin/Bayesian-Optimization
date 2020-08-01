@@ -7,6 +7,20 @@ from BayesOpt import ContinuousSpace, OrdinalSpace, NominalSpace, from_dict, Sol
 
 np.random.seed(1)
 
+def test_NominalSpace():
+    S = NominalSpace(
+        [['OK', 'A', 'B', 'C', 'D', 'E', 'A']] * 2, ['x', 'y']
+    )
+    assert all(
+        set(v) == set(['OK', 'A', 'B', 'C', 'D', 'E']) for k, v in S.levels.items()
+    )
+
+    S = NominalSpace([['A'] * 3, 'B', ['x', 'y']])
+    assert set(S.levels[2]) == set(['x', 'y'])
+
+    S = NominalSpace(['x', 'y', 'z'])
+    assert set(S.levels[0]) == set(['x', 'y', 'z'])
+
 def test_sampling():
     C = ContinuousSpace([-5, 5], precision=1) * 3 
     I = OrdinalSpace([[-100, 100], [-5, 5]], 'heihei')
