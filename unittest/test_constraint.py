@@ -32,7 +32,7 @@ if 11 < 2:
 
 else:
     model = RandomForest(levels=space.levels)
-    opt = BO(space, obj_func, model, eq_func=None, ineq_func=None, 
+    opt = BO(space, obj_func, model, eq_fun=None, ineq_fun=None, 
              minimize=True,
              n_init_sample=3, max_eval=50, verbose=True, optimizer='MIES')
     xopt, fopt, stop_dict = opt.run()

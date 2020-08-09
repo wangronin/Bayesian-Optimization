@@ -123,6 +123,7 @@ class SearchSpace(object):
         if self.name is None:
             return solution.to_dict() 
         else:
+            # TODO: check this `self.name` which appears to be a list
             return {self.name : solution.tolist()}
 
     def round(self, X):
