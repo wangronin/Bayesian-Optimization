@@ -141,7 +141,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
         if n_obj == 1:   # single-objective Bayesian optimizer
             opt = BO(search_space=search_space, 
-                     obj_func=None, 
+                     obj_fun=None, 
                      surrogate=surrogate,
                      logger=self.logger, 
                      data_file=data_file,
