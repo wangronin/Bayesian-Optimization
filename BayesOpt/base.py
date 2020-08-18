@@ -17,11 +17,12 @@ from joblib import Parallel, delayed
 from sklearn.metrics import r2_score
 from sklearn.cluster import KMeans
 
+from . import InfillCriteria as IC
 from .Solution import Solution
 from .SearchSpace import SearchSpace
 from .utils import arg_to_int
 from .misc import LoggerFormatter
-from .optimizer import argmax_multistart
+from .optimizer import argmax_restart
 
 class baseBO(ABC):
     def __init__(
@@ -112,7 +113,8 @@ class baseBO(ABC):
         self.search_space = search_space
         self.DoE_size = DoE_size
         self.acquisition_fun = acquisition_fun
-        self.acquisition_par = acquisition_par
+        self._acquisition_par = acquisition_par
+        self._acquisition_callbacks = []
         self.model = model
         self.logger = logger
         self.random_seed = random_seed
@@ -220,8 +222,6 @@ class baseBO(ABC):
     def _set_aux_vars(self):
         self.iter_count = 0
         self.eval_count = 0
-        self.eval_hist = []
-        self.eval_hist_id = []
         self.stop_dict = {}
         self.hist_f = []
 
@@ -251,8 +251,8 @@ class baseBO(ABC):
         self.AQ_wait_iter = 3 if 'wait_iter' not in kwargs \
             else arg_to_int(kwargs['wait_iter'])
 
-        self._argmax_multistart = functools.partial(
-            argmax_multistart, 
+        self._argmax_restart = functools.partial(
+            argmax_restart, 
             search_space=self._search_space,
             h=self.h,
             g=self.g,
@@ -280,17 +280,20 @@ class baseBO(ABC):
 
     def step(self):
         X = self.ask()    
+
         t0 = time.time()
         func_vals = self.evaluate(X)
         self._logger.info('evaluation takes {:.4f}s'.format(time.time() - t0))
+
         self.tell(X, func_vals)
+        self.iter_count += 1
 
     def ask(self, n_point=None):
-        if hasattr(self, 'data'):  
+        if self.model.is_fitted:
             n_point = self.n_point if n_point is None else self.n_point
 
-            X, _ = self.arg_max_acquisition(n_point=n_point)
-            X = self._search_space.round(X)
+            X = self.arg_max_acquisition(n_point=n_point)
+            X = self._search_space.round(X)  # round to precision if specified
             X = Solution(
                 X, index=len(self.data) + np.arange(len(X)), 
                 var_name=self.var_names
@@ -313,10 +316,8 @@ class baseBO(ABC):
                     X, index=len(self.data) + np.arange(len(X)), 
                     var_name=self.var_names
                 )
-
         else: # initial DoE
             X = self.create_DoE(self._DoE_size)
-        
         return X
     
     def tell(self, X, func_vals):
@@ -360,7 +361,6 @@ class baseBO(ABC):
         self._logger.info('fopt: {}'.format(self.fopt))   
         self._logger.info('xopt: {}\n'.format(self._search_space.to_dict(self.xopt)))     
 
-        self.iter_count += 1
         self.hist_f.append(self.xopt.fitness)
         self.stop_dict['n_eval'] = self.eval_count
         self.stop_dict['n_iter'] = self.iter_count
@@ -398,7 +398,7 @@ class baseBO(ABC):
         else: 
             if self.n_job > 1: # or by ourselves..
                 func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for x in X)
-            else:
+            else:              # or sequential execution
                 func_vals = [self.obj_fun(x) for x in X]
                 
         self.eval_count += len(data)
@@ -433,7 +433,7 @@ class baseBO(ABC):
         self._logger.info('Surrogate model r2: {}'.format(r2))
         return r2
 
-    def arg_max_acquisition(self, plugin=None, n_point=None):
+    def arg_max_acquisition(self, plugin=None, n_point=None, return_value=False):
         """
         Global Optimization of the acqusition function / Infill criterion
         Returns
@@ -443,25 +443,51 @@ class baseBO(ABC):
             values: tuple,
                 criterion value of the candidate solution
         """
-        self._logger.debug('infill criteria optimziation...')
+        self._logger.debug('acquisition optimziation...')
         t0 = time.time()
+        n_point = self.n_point if n_point is None else int(n_point)
+        return_dx = True if self._optimizer == 'BFGS' else False
 
-        n_point = self.n_point if n_point is None else min(self.n_point, n_point)
-        dx = True if self._optimizer == 'BFGS' else False
-        criteria = [self.create_acquisition(plugin, dx=dx) for i in range(n_point)]
-        
-        if self.n_job > 1:
-            __ = Parallel(n_jobs=self.n_job)(
-                delayed(self._argmax_multistart)(c) for c in criteria
+        if n_point > 1:  # multi-point/batch sequential strategy
+            candidates, values = self._batch_arg_max_acquisition(
+                n_point, plugin, return_dx
             )
-        else:
-            __ = [list(self._argmax_multistart(_)) for _ in criteria]
+        else:            # single-point strategy
+            criteria = self._create_acquisition(plugin=plugin, return_dx=return_dx)
+            candidates, values = self._argmax_restart(criteria)
 
-        candidates, values = tuple(zip(*__))
         self._logger.debug(
-            'infill criteria optimziation takes {:.4f}s'.format(time.time() - t0)
+            'acquisition optimziation takes {:.4f}s'.format(time.time() - t0)
         )
-        return candidates, values
+
+        for callback in self._acquisition_callbacks: callback()
+
+        return (candidates, values) if return_value else candidates
+
+    def _create_acquisition(self, plugin=None, return_dx=False, acquisition_par=None):
+        """
+        plugin : float,
+            the minimal objective value used in improvement-based infill criteria
+            Note that it should be given in the original scale
+        """
+        # TODO: `plugin` is typicall f_min as in EI/PI/MFGI. We need to add support for 
+        # parameters of other acquisition functions, e.g. UCB and GEI
+        plugin = 0 if plugin is None else (plugin - self.fmin) / self.frange
+        acquisition_par = self._acquisition_par if acquisition_par is None else acquisition_par
+
+        kwargs = {
+            'model' : self.model, 
+            'plugin' : plugin, 
+            'minimize' : self.minimize
+        }
+        kwargs.update(acquisition_par)
+
+        criterion = getattr(IC, self._acquisition_fun)(**kwargs)
+        return functools.partial(criterion, return_dx=return_dx)
+
+    @abstractmethod
+    def _batch_arg_max_acquisition(self, n_point, plugin, return_dx):
+        raise NotImplementedError
 
     def check_stop(self):
         if self.eval_count >= self.max_FEs:
@@ -473,10 +499,6 @@ class baseBO(ABC):
 
         return any([v for v in self.stop_dict.values() if isinstance(v, bool)])
     
-    @abstractmethod
-    def create_acquisition(self, plugin=None, dx=False):
-        raise NotImplementedError
-
     def save(self, filename):
         with open(filename, 'wb') as f:
             if hasattr(self, 'data'):
@@ -494,47 +516,4 @@ class baseBO(ABC):
                 obj.data = dill.loads(obj.data)
                 
         return obj
-
-    # TODO: to fix the warm data loading
-    # def _check_var_name_consistency(self, var_name):
-    #     if len(self._search_space.var_name) == len(var_name):
-    #         for a,b in zip(self._search_space.var_name, var_name):
-    #             if a != b:
-    #                 raise Exception("Var name inconsistency (" + str(a) + ", " + str(b) +")")
-    #     else:
-    #         raise Exception("Search space dim does not mathc with the warm data file")
-    
-    # # TODO: to fix the warm data loading
-    # def _load_initial_data(self, filename, sep=","):
-    #     try:
-    #         var_name = None
-    #         index_pos = 0
-    #         with open(filename, "r") as f:
-    #             line = f.readline()
-    #             while line:
-    #                 line = line.replace("\n", "").split(sep)
-    #                 if var_name is None:
-    #                     var_name = line
-    #                     fitness_pos = line.index("fitness")
-    #                     n_eval_pos = line.index("n_eval")
-    #                     var_pos = min(fitness_pos, n_eval_pos)
-    #                     var_name.remove("fitness")
-    #                     var_name.remove("n_eval")
-    #                     if line[0] == "":
-    #                        index_pos = 1
-    #                        var_name.remove("")
-    #                     # Check the consistency of the csv file and the search space
-    #                     self._check_var_name_consistency(var_name)
-    #                 elif len(var_name) > 0:
-    #                     var = [int(p) if p.isnumeric() else float(p) if re.match(r"^\d+?\.\d+?$", p) else p for p in line[index_pos:var_pos]]
-    #                     sol = Solution(var, var_name=var_name, fitness=float(line[fitness_pos]), n_eval=int(line[n_eval_pos]))
-    #                     if hasattr(self, 'warm_data') and len(self.warm_data) > 0:
-    #                         self.warm_data += sol
-    #                     else:
-    #                         self.warm_data = sol
-    #                 line = f.readline()
-    #         f.close()
-    #         self._logger.info(str(len(self.warm_data)) + " points loaded from " + filename)
-    #     except IOError:
-    #         raise Exception("the " + filename + " does not contain a valid set of solutions")
     

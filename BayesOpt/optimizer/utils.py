@@ -4,7 +4,7 @@ from scipy.optimize import fmin_l_bfgs_b
 from .cma_es import cma_es
 from .mies import mies
 
-def argmax_multistart(
+def argmax_restart(
     obj_func,
     search_space,
     h=None,
