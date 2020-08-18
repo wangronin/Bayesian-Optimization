@@ -1,12 +1,11 @@
 import numpy as np
+import sys, os
 
-from BayesOpt import BO
-from BayesOpt.SearchSpace import ContinuousSpace, OrdinalSpace, NominalSpace
-from BayesOpt.Surrogate import RandomForest
+sys.path.insert(0, os.getcwd() + '/../BayesOpt')
+from BayesOpt import BO, ContinuousSpace, OrdinalSpace, NominalSpace, RandomForest
 
 np.random.seed(666)
-
-if 11 < 2: # test for flat fitness
+def test__flat_fitness():
     def fitness(x):
         return 1
 
@@ -14,11 +13,18 @@ if 11 < 2: # test for flat fitness
     levels = space.levels if hasattr(space, 'levels') else None
     model = RandomForest(levels=levels)
 
-    opt = BO(space, fitness, model, max_eval=300, verbose=True, n_job=1, n_point=1)
+    opt = BO(
+        search_space=space, 
+        obj_fun=fitness, 
+        model=model, 
+        max_FEs=300, verbose=True, 
+        n_job=1, 
+        n_point=1
+    )
     print(opt.run())
 
-if 1 < 2:
-    def fitness1(x):
+def test_mixed_integer():
+    def fitness(x):
         x_r, x_i, x_d = np.array(x[:2]), x[2], x[3]
         if x_d == 'OK':
             tmp = 0
@@ -32,7 +38,18 @@ if 1 < 2:
     levels = space.levels if hasattr(space, 'levels') else None
     model = RandomForest(levels=levels)
 
-    opt = BO(space, fitness1, model, max_eval=300, verbose=True, n_job=1, n_point=3,
-                n_init_sample=3,
-                init_points=[[0, 0, 10, 'OK']])
-    xopt, fopt, stop_dict = opt.run()
+    opt = BO(
+        search_space=space, 
+        obj_fun=fitness, 
+        model=model, 
+        max_FEs=300, 
+        verbose=True, 
+        n_job=3, 
+        n_point=3,
+        acquisition_fun='MGFI',
+        acquisition_par={'t' : 2},
+        DoE_size=3
+    )
+    opt.run()
+
+test__flat_fitness()

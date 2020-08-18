@@ -5,19 +5,9 @@ Created on Mon May 19 10:17:43 2014
 @author: Hao Wang
 @email: wangronin@gmail.com
 """
-from __future__ import print_function
-
-import pdb
-import logging
-import random
-import string
-import re
-import os
+import logging, os, random, string, re
 from copy import copy
-
 import numpy as np
-from numpy import isfinite, mod, floor, shape, bitwise_and, zeros, newaxis
-
 
 # TODO: re-written those functions to C/Cython
 def non_dominated_set_2d(y, minimize=True):
@@ -28,7 +18,7 @@ def non_dominated_set_2d(y, minimize=True):
         where the each solution occupies a row
     """
     y = np.asarray(y)
-    N, dim = y.shape
+    N, _ = y.shape
 
     if isinstance(minimize, bool):
         minimize = [minimize]
@@ -94,7 +84,6 @@ def fast_non_dominated_sort(fitness):
         
     return fronts
 
-
 # TODO: implement this as a C procedure
 def proportional_selection(perf, N, minimize=True, replacement=True):
     def select(perf):
@@ -124,7 +113,6 @@ def proportional_selection(perf, N, minimize=True, replacement=True):
                 del idx[_]
     return res
 
-
 # TODO: double check this one. It causes the explosion of step-sizes in MIES
 def boundary_handling(x, lb, ub):
     """
@@ -148,27 +136,25 @@ def boundary_handling(x, lb, ub):
         transpose = True
     
     lb, ub = lb.flatten(), ub.flatten()
+    lb_index = np.isfinite(lb)
+    up_index = np.isfinite(ub)
     
-    lb_index = isfinite(lb)
-    up_index = isfinite(ub)
+    valid = np.bitwise_and(lb_index, up_index)
     
-    valid = bitwise_and(lb_index,  up_index)
-    
-    LB = lb[valid][:, newaxis]
-    UB = ub[valid][:, newaxis]
+    LB = lb[valid][:, np.newaxis]
+    UB = ub[valid][:, np.newaxis]
 
     y = (x[valid, :] - LB) / (UB - LB)
-    I = mod(floor(y), 2) == 0
-    yprime = zeros(shape(y))
-    yprime[I] = np.abs(y[I] - floor(y[I]))
-    yprime[~I] = 1.0 - np.abs(y[~I] - floor(y[~I]))
+    I = np.mod(np.floor(y), 2) == 0
+    yprime = np.zeros(y.shape)
+    yprime[I] = np.abs(y[I] - np.floor(y[I]))
+    yprime[~I] = 1.0 - np.abs(y[~I] - np.floor(y[~I]))
 
     x[valid, :] = LB + (UB - LB) * yprime
     
     if transpose:
         x = x.T
     return x.reshape(shape_ori)
-
 
 class bcolors:
     HEADER = '\033[95m'
@@ -180,10 +166,8 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-
-# Custom formatter
 # TODO: use relative path for %(pathname)s
-class MyFormatter(logging.Formatter):
+class LoggerFormatter(logging.Formatter):
     default_time_format = '%m/%d/%Y %H:%M:%S'
     default_msec_format = '%s,%02d'
 
@@ -195,7 +179,7 @@ class MyFormatter(logging.Formatter):
         'DEFAULT' : '%(asctime)s - %(levelname)s -- %(message)s'}
     
     def __init__(self, fmt='%(asctime)s - %(levelname)s -- %(message)s'):
-        MyFormatter.FORMATS['DEFAULT'] = fmt
+        LoggerFormatter.FORMATS['DEFAULT'] = fmt
         super().__init__(fmt=fmt, datefmt=None, style='%') 
     
     def format(self, record):
@@ -214,10 +198,8 @@ class MyFormatter(logging.Formatter):
         self._style._fmt = _fmt
         return fmt
 
-
 def random_string(k=15):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=15))
-
 
 def expand_replace(s):
     m = re.match(r'${.*}', s)
@@ -225,9 +207,8 @@ def expand_replace(s):
         s.replace(_, os.path.expandvars(_))
     return s
 
-
 if __name__ == '__main__':
-    # TODO: goes to unittest
+    # TODO: this goes to unittest
     np.random.seed(1)
     perf = np.random.randn(20)
     print(perf)
