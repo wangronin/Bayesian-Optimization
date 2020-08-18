@@ -5,42 +5,57 @@ Created on Mon Sep  4 21:44:21 2017
 @author: Hao Wang
 @email: wangronin@gmail.com
 """
-
-import pdb
-
 import warnings
 import numpy as np
 from numpy import sqrt, exp, pi
 from scipy.stats import norm
-from abc import ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 
 # TODO: implement noisy handling infill criteria, e.g., EQI (expected quantile improvement)
 # TODO: perphaps also enable acquisition function engineering here?
 # meaning the combination of the acquisition functions
-class InfillCriteria:
-    __metaclass__ = ABCMeta
-    def __init__(self, model, plugin=None, minimize=True):
-        assert hasattr(model, 'predict')
+class InfillCriteria(ABC):
+    def __init__(self, model=None, plugin=None, minimize=True):
         self.model = model
         self.minimize = minimize
-        # change maximization problem to minimization
-        self.plugin = plugin if self.minimize else -1.0 * plugin
-        if self.plugin is None:
-            self.plugin = np.min(model.y) if minimize else -1.0 * np.max(self.model.y)
+        self.plugin = plugin
     
+    @property
+    def model(self):
+        return self._model
+    
+    @model.setter
+    def model(self, model):
+        if model is not None:
+            self._model = model
+            assert hasattr(self._model, 'predict')
+
+    @property
+    def plugin(self):
+        return self._plugin
+    
+    @plugin.setter
+    def plugin(self, plugin):
+        if plugin is None:
+            if self._model is not None:
+                self._plugin = np.min(self._model.y) if self.minimize \
+                    else -1.0 * np.max(self._model.y)
+        else:
+            self._plugin = plugin if self.minimize else -1.0 * plugin
+
     @abstractmethod
     def __call__(self, X):
         raise NotImplementedError
 
     def _predict(self, X):
-        y_hat, sd2 = self.model.predict(X, eval_MSE=True)
+        y_hat, sd2 = self._model.predict(X, eval_MSE=True)
         sd = sqrt(sd2)
         if not self.minimize:
             y_hat = -y_hat
         return y_hat, sd
 
     def _gradient(self, X):
-        y_dx, sd2_dx = self.model.gradient(X)
+        y_dx, sd2_dx = self._model.gradient(X)
         if not self.minimize:
             y_dx = -y_dx
         return y_dx, sd2_dx
@@ -51,13 +66,11 @@ class InfillCriteria:
         return np.atleast_2d(X)
         # return [X] if not hasattr(X[0], '__iter__') else X
 
-# TODO: test UCB implementation
 class UCB(InfillCriteria):
-    """
-    Upper Confidence Bound 
-    """
     def __init__(self, model, plugin=None, minimize=True, alpha=1e-10):
-        super(EpsilonPI, self).__init__(model, plugin, minimize)
+        """Upper Confidence Bound 
+        """
+        super(UCB, self).__init__(model, plugin, minimize)
         self.alpha = alpha
 
     def __call__(self, X, dx=False):
@@ -80,9 +93,6 @@ class UCB(InfillCriteria):
         return f_value
 
 class EI(InfillCriteria):
-    """
-    Expected Improvement
-    """
     # perhaps separate the gradient computation here
     def __call__(self, X, dx=False):
         X = self.check_X(X)
@@ -90,8 +100,8 @@ class EI(InfillCriteria):
         y_hat, sd = self._predict(X)
         # if the Kriging variance is to small
         # TODO: check the rationale of 1e-6 and why the ratio if intended
-        if hasattr(self.model, 'sigma2'):
-            if sd / np.sqrt(self.model.sigma2) < 1e-6:
+        if hasattr(self._model, 'sigma2'):
+            if sd / np.sqrt(self._model.sigma2) < 1e-6:
                 return (0,  np.zeros((len(X[0]), 1))) if dx else 0.
         else: 
             # TODO: implement a counterpart of 'sigma2' for randomforest
@@ -99,7 +109,7 @@ class EI(InfillCriteria):
             if sd < 1e-10: 
                 return (0,  np.zeros((len(X[0]), 1))) if dx else 0.
         try:
-            xcr_ = self.plugin - y_hat
+            xcr_ = self._plugin - y_hat
             xcr = xcr_ / sd
             xcr_prob, xcr_dens = norm.cdf(xcr), norm.pdf(xcr)
             f_value = xcr_ * xcr_prob + sd * xcr_dens
@@ -134,7 +144,7 @@ class EpsilonPI(InfillCriteria):
 
         coef = 1 - self.epsilon if y_hat > 0 else (1 + self.epsilon)
         try:
-            xcr_ = self.plugin - coef * y_hat 
+            xcr_ = self._plugin - coef * y_hat 
             xcr = xcr_ / sd
             f_value = norm.cdf(xcr)
         except Exception:
@@ -158,18 +168,26 @@ class PI(EpsilonPI):
         super(PI, self).__init__(model, plugin, minimize, epsilon=0)
 
 class MGFI(InfillCriteria):
-    """
-    Moment-Generating Function of Improvement 
-    My new acquisition function proposed in SMC'17 paper
-    """
-    def __init__(self, model, plugin=None, minimize=True, t=1):
-        super(MGFI, self).__init__(model, plugin, minimize)
+    def __init__(self, t=1, *argv, **kwargs):
+        """Moment-Generating Function of Improvement proposed in SMC'17 paper
+        """
+        super(MGFI, self).__init__(*argv, **kwargs)
         self.t = t
+
+    @property
+    def t(self):
+        return self._t
+
+    @t.setter
+    def t(self, t):
+        assert t > 0 and isinstance(t, float)
+        self._t = t
 
     def __call__(self, X, dx=False):
         X = self.check_X(X)
         y_hat, sd = self._predict(X)
         n_sample = X.shape[0]
+
         # if the Kriging variance is to small
         # TODO: check the rationale of 1e-6 and why the ratio if intended
         if np.isclose(sd, 0):
@@ -178,10 +196,10 @@ class MGFI(InfillCriteria):
         with warnings.catch_warnings():
             warnings.filterwarnings('error')
             try:
-                y_hat_p = y_hat - self.t * sd ** 2.
-                beta_p = (self.plugin - y_hat_p) / sd
-                term = self.t * (self.plugin - y_hat - 1)
-                f_ = norm.cdf(beta_p) * exp(term + self.t ** 2. * sd ** 2. / 2.)
+                y_hat_p = y_hat - self._t * sd ** 2.
+                beta_p = (self._plugin - y_hat_p) / sd
+                term = self._t * (self._plugin - y_hat - 1)
+                f_ = norm.cdf(beta_p) * exp(term + self._t ** 2. * sd ** 2. / 2.)
                 if n_sample == 1:
                     f_ = sum(f_)
             except Exception: # in case of numerical errors
@@ -195,22 +213,21 @@ class MGFI(InfillCriteria):
             sd_dx = sd2_dx / (2. * sd)
 
             try:
-                term = exp(self.t * (self.plugin + self.t * sd ** 2. / 2 - y_hat - 1))
-                m_prime_dx = y_dx - 2. * self.t * sd * sd_dx
+                term = exp(self._t * (self._plugin + self._t * sd ** 2. / 2 - y_hat - 1))
+                m_prime_dx = y_dx - 2. * self._t * sd * sd_dx
                 beta_p_dx = -(m_prime_dx + beta_p * sd_dx) / sd
         
                 f_dx = term * (norm.pdf(beta_p) * beta_p_dx + \
-                    norm.cdf(beta_p) * ((self.t ** 2) * sd * sd_dx - self.t * y_dx))
+                    norm.cdf(beta_p) * ((self._t ** 2) * sd * sd_dx - self._t * y_dx))
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
             return f_, f_dx
         return f_
         
 class GEI(InfillCriteria):
-    """
-    Generalized Expected Improvement 
-    """
     def __init__(self, model, plugin=None, minimize=True, g=1):
+        """Generalized Expected Improvement 
+        """
         super(GEI, self).__init__(model, plugin, minimize)
         self.g = g
 
