@@ -14,15 +14,23 @@ import os, sys, dill, functools, logging, time
 import pandas as pd
 import numpy as np
 import json, copy, re 
+from joblib import Parallel, delayed
 
+from . import InfillCriteria as IC
 from .base import baseBO
 from .Solution import Solution
 from .SearchSpace import SearchSpace
-from . import InfillCriteria as IC
 from .Surrogate import SurrogateAggregation
 from .misc import proportional_selection, non_dominated_set_2d, bcolors, LoggerFormatter
 
 class BO(baseBO):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.n_point > 1:
+            if 't' not in self._acquisition_par:
+                self._acquisition_par['t'] = getattr(IC, self._acquisition_fun)().t
+            # TODO: add support for UCB as well
+
     def pre_eval_check(self, X):
         """check for the duplicated solutions, as it is not allowed
         for noiseless objective functions
@@ -47,65 +55,83 @@ class BO(baseBO):
 
         return X[_]
     
-    # TODO: this might be generic enough to be part of the baseBO class
-    def create_acquisition(self, plugin=None, dx=False):
-        """
-        plugin : float,
-            the minimal objective value used in improvement-based infill criteria
-            Note that it should be given in the original scale
-        """
-        plugin = 0 if plugin is None else (plugin - self.fmin) / self.frange
-        kwargs = {
-            'model' : self.model, 
-            'plugin' : plugin, 
-            'minimize' : self.minimize
-        }
-        kwargs.update(self.acquisition_par)
-
-        if self.n_point > 1:       # multi-point acquisitions
-            _t = np.exp(self.acquisition_par['t'] * np.random.randn())
-            kwargs.update({'t' : _t})
-            
-        fun = getattr(IC, self._acquisition_fun)(**kwargs)
-        fun = functools.partial(fun, dx=dx)
-        return fun
+    def _batch_arg_max_acquisition(self, n_point, plugin, return_dx):
+        criteria = []
+        for _ in range(n_point):
+            _t = np.exp(self._acquisition_par['t'] * np.random.randn())
+            _acquisition_par = copy.copy(self._acquisition_par).update({'t' : _t})
+            criteria.append(
+                self._create_acquisition(plugin, return_dx, _acquisition_par)
+            )
+        
+        if self.n_job > 1:
+            __ = Parallel(n_jobs=self.n_job)(
+                delayed(self._argmax_restart)(c) for c in criteria
+            )
+        else:
+            __ = [list(self._argmax_restart(_)) for _ in criteria]
+        
+        return tuple(zip(*__))
 
 class AnnealingBO(BO):
-    def annealing(self):
-        self.acquisition_par['t']
-        pass
-
-    def create_acquisition(self, plugin=None, dx=False):
-        # TODO: to implement this
-        """
-        plugin : float,
-            the minimal objective value used in improvement-based infill criteria
-            Note that it should be given in the original scale
-        """
-        plugin = 0 if plugin is None else (plugin - self.fmin) / self.frange
-        kwargs = {
-            'model' : self.model, 
-            'plugin' : plugin, 
-            'minimize' : self.minimize
-        }
-        kwargs.update(self.acquisition_par)
-
-        if self.n_point > 1:       # multi-point acquisitions
-            _t = np.exp(self.acquisition_par['t'] * np.random.randn())
-            kwargs.update({'t' : _t})
-            
-        fun = getattr(IC, self._acquisition_fun)(**kwargs)
-        fun = functools.partial(fun, dx=dx)
-        return fun
-
+    def __init__(self, t0=2, tf=1e-1, schedule='exp', *argv, **kwargs):
+        super().__init__(*argv, **kwargs)
+        self.t0 = t0
+        self.tf = tf
+        self.schedule = schedule
+        self._acquisition_par['t'] = t0
+        
+        max_iter = (self.max_FEs - self._DoE_size) / self.n_point
+        if self.schedule == 'exp':                          # exponential
+            self.alpha = (self.tf / t0) ** (1. / max_iter) 
+            self._anealer = lambda t: t * self.alpha
+        elif self.schedule == 'linear':
+            self.eta = (t0 - self.tf) / max_iter            # linear
+            self._anealer = lambda t: t - self.eta
+        elif self.schedule == 'log':
+            self.c = self.tf * np.log(max_iter + 1)         # logarithmic 
+            self._anealer = lambda t: t * self.c / np.log(self.iter_count + 2)
+        else:
+            raise NotImplementedError
+        
+        def callback():
+            self._acquisition_par['t'] = self._anealer(self._acquisition_par['t'])
+        self._acquisition_callbacks += [callback]
+    
 class SelfAdaptiveBO(BO):
-    pass
+    def __init__(self, *argv, **kwargs):
+        super.__init__(*argv, **kwargs)
+
+    def _batch_arg_max_acquisition(self, n_point, plugin, return_dx):
+        criteria = []
+        _t_list = []
+        N = int(n_point / 2)
+
+        for _ in range(n_point):
+            _t = np.exp(self._acquisition_par['t'] * np.random.randn())
+            _t_list.append(_t)
+            _acquisition_par = copy.copy(self._acquisition_par).update({'t' : _t})
+            criteria.append(
+                self._create_acquisition(plugin, return_dx, _acquisition_par)
+            )
+        
+        if self.n_job > 1:
+            __ = Parallel(n_jobs=self.n_job)(
+                delayed(self._argmax_restart)(c) for c in criteria
+            )
+        else:
+            __ = [list(self._argmax_restart(_)) for _ in criteria]
+        
+        idx = np.argsort(__[1])[::-1][:N]
+        self._acquisition_par['t'] = np.mean([_t_list[i] for i in idx])
+        return tuple(zip(*__))
+
 
 class NoisyBO(BO):
-    def create_acquisition(self, plugin=None, dx=False):
+    def _create_acquisition(self, plugin=None, return_dx=False, acquisition_par=None):
         # use the model prediction to determine the plugin under noisy scenarios
         if plugin is None:
             plugin = min(self.model.predict(self.data)) \
                 if self.minimize else max(self.model.predict(self.data))
         
-        return super().create_acquisition(plugin, dx)
+        return super()._create_acquisition(plugin, return_dx, acquisition_par)
