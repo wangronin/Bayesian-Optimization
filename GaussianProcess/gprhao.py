@@ -39,13 +39,13 @@ class GaussianProcess_extra(GaussianProcess):
     def __init__(self, regr='constant', corr='squared_exponential',
                  beta0=None, verbose=False, theta0=1e-1, thetaL=None, thetaU=None, sigma2=None,
                  optimizer='BFGS', random_start=10, wait_iter=5, likelihood='restricted',
-                 eval_budget=None, nugget=10. * MACHINE_EPSILON, nugget_estim=False, 
+                 eval_budget=None, nugget=10. * MACHINE_EPSILON, noise_estim=False, 
                  random_state=None):
 
         super(GaussianProcess_extra, self).__init__(regr=regr, corr=corr, beta0=beta0,
                  verbose=verbose, theta0=theta0, thetaL=thetaL, thetaU=thetaU,
                  optimizer=optimizer, random_start=random_start, likelihood=likelihood,
-                 nugget=nugget, nugget_estim=nugget_estim, wait_iter=wait_iter, 
+                 nugget=nugget, noise_estim=noise_estim, wait_iter=wait_iter, 
                  eval_budget=eval_budget, random_state=random_state)
 
     def gradient(self, x):

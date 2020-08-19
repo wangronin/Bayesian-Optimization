@@ -48,7 +48,7 @@ def eq_func(x):
 space = (OrdinalSpace([1, 3]) * LENGTH) + (NominalSpace(['Y', 'N']) * LENGTH)
 
 model = RandomForest(levels=space.levels)
-opt = BO(space, obj_func, model, eq_func=eq_func, ineq_func=None, minimize=True,
+opt = BO(space, obj_func, model, eq_fun=eq_func, ineq_fun=None, minimize=True,
          n_init_sample=3, max_eval=50, verbose=True, optimizer='MIES')
 xopt, fopt, stop_dict = opt.run()
 print(xopt, fopt, stop_dict)

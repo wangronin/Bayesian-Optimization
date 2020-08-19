@@ -249,6 +249,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         
         assert likelihood in self._likelihood_functions
         self.likelihood = likelihood  # or restricted
+        self.is_fitted = False
         
         # estimation mode for the trend
         if isinstance(self.mean, BasisExpansionTrend):
@@ -377,7 +378,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         # compute for beta and gamma
         self.compute_beta_gamma()
-
+        self.is_fitted = True
         return self
 
     def update(self, X, y):

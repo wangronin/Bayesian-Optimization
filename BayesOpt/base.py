@@ -6,276 +6,515 @@ Created on Mon Apr 23 17:16:39 2018
 
 """
 from pdb import set_trace
+
 import numpy as np
-from tabulate import tabulate
+import os, sys, dill, functools, logging, time, copy
 
-# TODO: test the performance against Pandas dataframe
-# TODO: maybe set var_name as a constant attribute
-# TODO: register the objective function the class and implement an eval function  
-# TODO: fix the maximum recursion problem when debugging
+from abc import ABC, abstractmethod
+from typing import Callable, Any, Tuple
+from joblib import Parallel, delayed
 
-class Solution(np.ndarray):
-    """Subclassing numpy array to represent set of solutions in the optimization
-       Goal to achieve: 
-        1) heterogenous data types, like pandas
-        2) easy indexing as np.ndarray
-        3) extra attributes (e.g., fitness) sliced together with the solution
-    """
-    # TODO: get rid of self.__dict__ for speed concern
-    # But __slots__ does NOT work with dill yet...
-    # __slots__ = 'N', 'dim', 'var_name', 'index', 'fitness', 'n_eval', 'verbose', 'n_obj'
-    def __new__(cls, x, fitness=None, n_eval=0, index=None, var_name=None, 
-                fitness_name=None, n_obj=1, verbose=True):
-        """
+from sklearn.metrics import r2_score
+from sklearn.cluster import KMeans
+
+from . import InfillCriteria as IC
+from .Solution import Solution
+from .SearchSpace import SearchSpace
+from .utils import arg_to_int
+from .misc import LoggerFormatter
+from .optimizer import argmax_restart
+
+class baseBO(ABC):
+    def __init__(
+        self, 
+        search_space: SearchSpace, 
+        obj_fun: Callable,
+        parallel_obj_fun: Callable = None,
+        eq_fun: Callable = None, 
+        ineq_fun: Callable = None, 
+        model = None,
+        eval_type: str = 'list',
+        DoE_size: int = None, 
+        n_point: int = 1,
+        acquisition_fun: str = 'EI',
+        acquisition_par: dict = {},
+        acquisition_optimization: dict = {},
+        ftarget: float = None,
+        max_FEs: int = None, 
+        minimize: bool = True, 
+        n_job: int = 1,
+        data_file: str = None, 
+        verbose: bool = False, 
+        random_seed: int = None, 
+        logger: str = None,
+        ):
+        """The base class for Bayesian Optimization
+
         Parameters
         ----------
-            x : array-like,
-            fitness : float (array),
-                objective values of solutions
-            n_eval : int (array),
-                number of evaluations per each solution           
-            index : int (array),
-                indices of solutions
-            var_name : str (array),
-                column names of variables
-            fitness_name : str (array),
-                column names of fitness values
-            verbose : bool,
-                controls if additional information are printed when calling __str__
-                and to_dict
-        Note
-        ----
-            Instead of using `__init__`, the `__new__` function is used here because 
-            sometimes we would like to return an object of its subclasses, e.g., when slicing a subclass of `ndarray`, `ndarray.__new__(subclass, ...)` will return an object of type `subclass` while `ndarray.__init__(self, ...)` will return an object of `ndarray` (of course, `__init__` would work if the user also overloads the slicing function, which is not convenient).
-            If attributes `index`, `fitness`, `n_eval` are modified in a slice of Solution, 
-            the corresponding attributes in the original object are also modified. 
-            `var_name` is not affected by this behavior. 
-            This function is only called when explicitly constructing the `Solution` object. For slicing and view casting, the extra attributes are handled in function
-            `__array_finalize__`.
-        """
-        obj = np.asarray(x, dtype='object').view(cls)
+        search_space : SearchSpace
+            The search space, an instance of `SearchSpace` class
+        obj_fun : Callable
+            The objective function to optimize
+        parallel_obj_fun : Callable, optional
+            The objective function that takes multiple solutions simultaneously and implement
+            the parallelization by itself, by default None
+        eq_fun : Callable, optional
+            The equality constraints, whose return value should have the same size as the 
+            number of equality constraints, by default None
+        ineq_fun : Callable, optional
+            The inequality constraints, whose return value should have the same size as the 
+            number of inequality constraints, by default None
+        model : optional
+            The surrogate mode, which will be automatically created if not passed in, by default None
+        eval_type : str, optional
+            type of arguments `obj_fun` or `parallel_obj_fun` takes: ['list', 'dict'], by default 'list'
+        DoE_size : int, optional
+            The size of inital Design of Experiment (DoE), by default None
+        n_point : int, optional
+            The number of candidate solutions proposed using infill-criteria, by default 1
+        acquisition_fun : str, optional
+            The acquisition function, by default 'EI'
+        acquisition_par : dict, optional
+            Extra parameters to the acquisition function, by default {}
+        acquisition_optimization : dict, optional
+            [description], by default {}
+        ftarget : float, optional
+            The target value to hit, by default None
+        max_FEs : int, optional
+            The maximal number of evaluations, by default None
+        minimize : bool, optional
+            To minimize or maximize, by default True
+        n_job : int, optional
+            The number of allowable jobs for parallelizing the function evaluation 
+            (if `parallel_obj_fun` is not specified) and Only Effective when n_point > 1 , by default 1
+        data_file : str, optional
+            The name of the file to store extra historical information during the run,
+            by default None
+        verbose : bool, optional
+            The verbosity, by default False
+        random_seed : int, optional
+            The seed for pseudo-random number generators, by default None
+        logger : str | logging.Logger, optional
+            [description], by default None
+        """        
+        self.obj_fun = obj_fun
+        self.parallel_obj_fun = parallel_obj_fun
+        self.h = eq_fun
+        self.g = ineq_fun
+        self.n_job = max(1, int(n_job))
+        self.n_point = max(1, int(n_point))
+        self.ftarget = ftarget 
+        self.minimize = minimize
+        self.verbose = verbose
+        self.data_file = data_file
+        self.max_FEs = int(max_FEs) if max_FEs else np.inf  
 
-        if len(obj.shape) > 2:
-            raise Exception('More than 2D is not supported')
-        
-        obj.N = 1 if len(obj.shape) == 1 else obj.shape[0]
-        obj.dim = obj.shape[0] if len(obj.shape) == 1 else obj.shape[1]
-        obj.n_obj = int(n_obj)
-        
-        if obj.n_obj > 1:  # multi-objective 
-            if not hasattr(fitness, '__iter__'):
-                fitness = [[fitness] * obj.n_obj] * obj.N
-            elif not hasattr(fitness[0], '__iter__'):
-                assert len(fitness) == obj.n_obj
-                fitness = [fitness] * obj.N
-            assert all([len(_) == obj.n_obj for _ in fitness])
-        elif obj.n_obj == 1:
-            if not hasattr(fitness, '__iter__'):
-                fitness = [fitness] * obj.N
-        assert len(fitness) == obj.N
-
-        if not hasattr(n_eval, '__iter__'):
-            n_eval = [n_eval] * obj.N
-            
-        if index is None:
-            index = list(range(obj.N))
-        elif isinstance(index, int):
-            index = [index]
-        assert len(index) == obj.N
-        
-        if var_name is None:
-            if obj.dim == 1:
-                var_name = ['x']
-            else:
-                var_name = ['x' + str(i) for i in range(obj.dim)]
-        assert len(var_name) == obj.dim
-
-        if fitness_name is None:
-            if obj.n_obj == 1:
-                fitness_name = ['f']
-            else:
-                fitness_name = ['f' + str(i) for i in range(obj.n_obj)]
-        assert len(fitness_name) == obj.n_obj
-
-        # a np.ndarray is used for those attributes because slicing it returns references
-        # avoid calling self.__setattr__ for attributes fitness, n_eval and index
-        super(Solution, obj).__setattr__('fitness', np.asarray(fitness, dtype='float'))
-        super(Solution, obj).__setattr__('n_eval', np.asarray(n_eval, dtype='int'))
-        super(Solution, obj).__setattr__('index', np.asarray(index, dtype='int'))
-        obj.var_name = np.asarray(var_name)
-        obj.fitness_name = fitness_name
-        obj.verbose = verbose
-        
-        return obj      
-
-    def _check_attr(self):
-        # TODO: check for the compatibility of fitness and n_eval
-        pass
-
-    def __iadd__(self, other):
-        return self.__add__(other)
-
-    def __add__(self, other):
-        """
-        Concatenate two sets of solutions 
-        """
-        assert isinstance(other, Solution)
-        assert self.dim == other.dim
-        assert self.n_obj == other.n_obj
-        assert len(set(self.fitness_name).symmetric_difference(other.fitness_name)) == 0
-        assert len(set(self.var_name).symmetric_difference(other.var_name)) == 0
-
-        _ = [self.tolist()] if len(self.shape) == 1 else self.tolist()
-        __ = [other.tolist()] if len(other.shape) == 1 else other.tolist()
-        return Solution(_ + __,  self.fitness.tolist() + other.fitness.tolist(),
-                        self.n_eval.tolist() + other.n_eval.tolist(), 
-                        var_name=self.var_name, fitness_name=self.fitness_name,
-                        n_obj=self.n_obj, 
-                        verbose=self.verbose)
-
-    def __mul__(self, N):
-        """
-        repeat a solution N times
-        """
-        assert isinstance(N, int)
-        if self.N > 1:
-            raise Exception('Replication is not supported for 2D')
-        return Solution([self.tolist()] * N, self.fitness.tolist() * N, 
-                         self.n_eval.tolist() * N, var_name=self.var_name, 
-                         fitness_name=self.fitness_name,
-                         n_obj=self.n_obj, verbose=self.verbose)
-
-    def __rmul__(self, N):
-        return self.__mul__(N)
+        self.search_space = search_space
+        self.DoE_size = DoE_size
+        self.acquisition_fun = acquisition_fun
+        self._acquisition_par = acquisition_par
+        # the callback functions executed after every call of `arg_max_acquisition`
+        self._acquisition_callbacks = []  
+        self.model = model
+        self.logger = logger
+        self.random_seed = random_seed
+        self._set_internal_optimization(**acquisition_optimization)
+        self._get_best = np.min if self.minimize else np.max
+        self._eval_type = eval_type   
+        self._init_flatfitness_trial = 2
+        self._set_aux_vars()
+        self._check_params()
     
-    def __setattr__(self, name, value):
-        attr = getattr(self, name, None)
-        if hasattr(attr, '__iter__') and name in ['fitness', 'n_eval', 'index']:
-            attr[:] = value  # IMPORTANT: copy the value (not reference) to the attribute
+    @property
+    def acquisition_fun(self):
+        return self._acquisition_fun
+
+    @acquisition_fun.setter
+    def acquisition_fun(self, fun):
+        if isinstance(fun, str):
+            self._acquisition_fun = fun
         else:
-            super(Solution, self).__setattr__(name, value)
+            assert hasattr(fun, '__call__')
+        self._acquisition_fun = fun
 
-    def __setitem__(self, index, value):
-        # TODO: maybe add variable type checker here...
-        super(Solution, self).__setitem__(index, value)
-    
-    def __getitem__(self, index):
-        _, __ = index, slice(None, None)
-        if isinstance(index, tuple):
-            _ = index[0]
-            if len(index) == 2:
-                if isinstance(index[1], int):
-                    __ = slice(index[1], index[1] + 1)
-                    index = (_, __)
-                else:
-                    __ = index[1]
+    @property
+    def DoE_size(self):
+        return self._DoE_size
 
-        subarr = super(Solution, self).__getitem__(index)
-
-        # sub-slicing the attributes
-        if isinstance(subarr, Solution):
-            # NOTE: `slice` is needed here to make sure an array is always returned 
-            # after slicing attributes `fitness`, `n_eval, `index`
-            # Otherwise setting the attribute of a slice is by value...
-            _ = slice(_, _ + 1) if isinstance(_, (int, np.int_)) else _
-            if len(self.shape) == 1:   # `self` is a 1-d array
-                subarr.var_name = subarr.var_name[_]
-            else:
-                # NOTE: 1-d array should have 1-d `fitness`
-                fitness = subarr.fitness[_]
-                if len(subarr.shape) == 1:
-                    fitness = fitness.ravel()
-                    
-                super(Solution, subarr).__setattr__('fitness', fitness)
-                super(Solution, subarr).__setattr__('n_eval', subarr.n_eval[_])
-                super(Solution, subarr).__setattr__('index', subarr.index[_])
-
-                # multiple solutions and the column is indexed
-                subarr.var_name = subarr.var_name[__]
-
-            subarr.N = 1 if len(subarr.shape) == 1 else subarr.shape[0]
-            subarr.dim = subarr.shape[0] if len(subarr.shape) == 1 else subarr.shape[1]
-        
-        return subarr
-
-    def unique(self):
-        _, index = np.unique(self.tolist(), axis=0, return_index=True)
-        return self[np.sort(index)]
-
-    def __array_finalize__(self, obj):
-        """
-        `__array_finalize__` is called after new `Solution` instance is created: from calling
-        1) `__new__`, 2) view casting (`ndarray`.`view()`) or 3) slicing (`__getitem__`) 
-        """
-        if obj is None: return
-        # Needed for array slicing (__getitem__)
-        super(Solution, self).__setattr__('fitness', getattr(obj, 'fitness', None))
-        super(Solution, self).__setattr__('n_eval', getattr(obj, 'n_eval', None))
-        super(Solution, self).__setattr__('index', getattr(obj, 'index', None))
-        self.var_name = getattr(obj, 'var_name', None)
-        self.fitness_name = getattr(obj, 'fitness_name', None)
-        self.verbose = getattr(obj, 'verbose', None)
-        self.dim = getattr(obj, 'dim', None)
-        self.N = getattr(obj, 'N', None)
-        self.n_obj = getattr(obj, 'n_obj', None)
-    
-    def to_dict(self, orient='var'):
-        # NOTE: avoid calling self.__getitem__
-        if orient == 'index':
-            index = lambda i: i if len(self.shape) == 1 else (i, slice(None, None))
-            res = {k : super(Solution, self).__getitem__(index(i)).to_dict('var') \
-                for i, k in enumerate(self.index)} 
-        elif orient == 'var':
-            index = lambda i: i if len(self.shape) == 1 else (slice(None, None), i)
-            if len(self.shape) == 1:
-                res = {k : super(Solution, self).__getitem__(index(i)) \
-                    for i, k in enumerate(self.var_name)}
-            else:
-                res = {k : super(Solution, self).__getitem__(index(i)).tolist() \
-                    for i, k in enumerate(self.var_name)}
-
-        # if show_attr:
-        #     res['index'] = self.index.tolist()
-        #     res['fitness'] = self.fitness.tolist()
-        #     res['n_eval'] = self.n_eval.tolist()
-        return res
-
-    def __str__(self):
-        var_name = self.var_name.tolist()
-        headers = var_name + ['n_eval'] + self.fitness_name if self.verbose else var_name
-        if len(self.shape) == 1:
-            t = [self.tolist() + self.n_eval.tolist() + self.fitness.tolist()] \
-                if self.verbose else [self.tolist()]
+    @DoE_size.setter
+    def DoE_size(self, DoE_size):
+        if DoE_size:
+            if isinstance(DoE_size, str):
+                self._DoE_size = int(eval(DoE_size))
+            elif isinstance(DoE_size, (int, float)):
+                self._DoE_size = int(DoE_size)
+            else: 
+                raise ValueError
         else:
-            t = np.c_[self, self.n_eval, self.fitness].tolist() \
-                if self.verbose else self.tolist()
-        
-        return tabulate(t, headers=headers, showindex=self.index.tolist(), tablefmt='grid')
+            self._DoE_size = int(self.dim * 20)
 
-    def __repr__(self):
-        return self.__str__()
-                        
-    def to_csv(self, fname, delimiter=',', append=False, header=True, index=True, 
-               show_attr=True):
-        var_name = self.var_name.tolist()
-        if header:
-            _header = var_name
-            if index:
-                _header = [''] + _header
-            if show_attr:
-                attr_name = ['n_eval'] + self.fitness_name
-                _header += attr_name
-            _header = ','.join(_header) + '\n'
-        
-        data = self.reshape(1, -1) if len(self.shape) == 1 else self
-        if index:
-            data = np.c_[self.index, data]
-        if show_attr:
-            data = np.c_[data, self.n_eval, self.fitness] 
+    @property
+    def random_seed(self):
+        return self._random_seed
+    
+    @random_seed.setter
+    def random_seed(self, seed):
+        if seed:
+            self._random_seed = int(seed)
+            if self._random_seed:
+                np.random.seed(self._random_seed)
 
-        out = [','.join(map(str, row)) + '\n' for row in data.tolist()]
-        mode = 'a' if append else 'w'
-        with open(fname, mode) as f:
-            if header:
-                f.writelines(_header)
-            f.writelines(out)
+    @property
+    def search_space(self):
+        return self._search_space
+
+    @search_space.setter
+    def search_space(self, search_space):
+        self._search_space = search_space
+        self.dim = len(self._search_space)
+        self.var_names = self._search_space.var_name
+        self.r_index = self._search_space.id_C       # indices of continuous variable
+        self.i_index = self._search_space.id_O       # indices of integer variable
+        self.d_index = self._search_space.id_N       # indices of categorical variable
+
+        self.param_type = self._search_space.var_type
+        self.N_r = len(self.r_index)
+        self.N_i = len(self.i_index)
+        self.N_d = len(self.d_index)
+
+    @property
+    def logger(self):
+        return self._logger
+
+    @logger.setter
+    def logger(self, logger):
+        """Create the logging object
+        Params:
+            logger : str, None or logging.Logger,
+                either a logger file name, None (no logging) or a logger object
+        """
+        if isinstance(logger, logging.Logger):
+            self._logger = logger
+            self._logger.propagate = False
+            return
+
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger.setLevel(logging.DEBUG)
+        fmt = LoggerFormatter()
+
+        if self.verbose != 0:
+            # create console handler and set level to warning
+            ch = logging.StreamHandler(sys.stdout)
+            ch.setLevel(logging.INFO)
+            ch.setFormatter(fmt)
+            self._logger.addHandler(ch)
+
+        # create file handler and set level to debug
+        if logger is not None:
+            fh = logging.FileHandler(logger)
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(fmt)
+            self._logger.addHandler(fh)
+
+        if hasattr(self, 'logger'):
+            self._logger.propagate = False
+    
+    def _set_aux_vars(self):
+        self.iter_count = 0
+        self.eval_count = 0
+        self.stop_dict = {}
+        self.hist_f = []
+
+        if self._eval_type == 'list':
+            self._to_pheno = lambda x: x.tolist()
+        elif self._eval_type == 'dict':
+            self._to_pheno = lambda x: self._search_space.to_dict(x)
+
+    def _set_internal_optimization(self, **kwargs):
+        if 'optimizer' in kwargs:
+            self._optimizer = kwargs['optimizer']
+        else:
+            if self.N_d + self.N_i > 0:
+                self._optimizer = 'MIES'
+            else:
+                self._optimizer = 'BFGS'
+
+        # NOTE: `AQ`: acquisition
+        if 'max_FEs' in kwargs:
+            self.AQ_max_FEs = arg_to_int(kwargs['max_FEs'])
+        else:
+            self.AQ_max_FEs = int(5e2 * self.dim) if self._optimizer == 'MIES' else \
+                int(1e2 * self.dim)
+        
+        self.AQ_n_restart = int(5 * self.dim) if 'n_restart' not in kwargs \
+            else arg_to_int(kwargs['n_restart'])
+        self.AQ_wait_iter = 3 if 'wait_iter' not in kwargs \
+            else arg_to_int(kwargs['wait_iter'])
+
+        self._argmax_restart = functools.partial(
+            argmax_restart, 
+            search_space=self._search_space,
+            h=self.h,
+            g=self.g,
+            eval_budget=self.AQ_max_FEs,
+            n_restart=self.AQ_n_restart,
+            wait_iter=self.AQ_wait_iter,
+            optimizer=self._optimizer,
+            logger=self._logger
+        ) 
+
+    def _check_params(self):
+        # TODO: add more parameter check-ups
+        if np.isinf(self.max_FEs):
+            raise ValueError('max_FEs cannot be infinite')
+    
+    def _compare(self, f1, f2):
+        """Test if objecctive value f1 is better than f2
+        """
+        return f1 < f2 if self.minimize else f2 > f1
+
+    def run(self):
+        while not self.check_stop():
+            self.step()
+        return self._to_pheno(self.xopt), self.xopt.fitness, self.stop_dict
+
+    def step(self):
+        X = self.ask()    
+
+        t0 = time.time()
+        func_vals = self.evaluate(X)
+        self._logger.info('evaluation takes {:.4f}s'.format(time.time() - t0))
+
+        self.tell(X, func_vals)
+        self.iter_count += 1
+
+    def ask(self, n_point=None):
+        if self.model.is_fitted:
+            n_point = self.n_point if n_point is None else self.n_point
+
+            X = self.arg_max_acquisition(n_point=n_point)
+            X = self._search_space.round(X)  # round to precision if specified
+            X = Solution(
+                X, index=len(self.data) + np.arange(len(X)), 
+                var_name=self.var_names
+            )
+            X = self.pre_eval_check(X)
+
+            # TODO: handle the constrains when performing random sampling
+            # draw the remaining ones randomly
+            if len(X) < n_point:
+                self._logger.warn(
+                    "iteration {}: duplicated solution found " 
+                    "by optimization! New points is taken from random "
+                    "design".format(self.iter_count)
+                )
+                N = n_point - len(X)
+                method = 'LHS' if N > 1 else 'uniform'
+                s = self._search_space.sampling(N=N, method=method) 
+                X = X.tolist() + s
+                X = Solution(
+                    X, index=len(self.data) + np.arange(len(X)), 
+                    var_name=self.var_names
+                )
+        else: # initial DoE
+            X = self.create_DoE(self._DoE_size)
+        return X
+    
+    def tell(self, X, func_vals):
+        """Tell the BO about the function values of proposed candidate solutions
+
+        Parameters
+        ----------
+        X : List of Lists or Solution
+            The candidate solutions which are usually proposed by the `self.ask` function
+        func_vals : List/np.ndarray of reals
+            The corresponding function values
+        """
+        if not isinstance(X, Solution):
+            X = Solution(X, var_name=self.var_names)
+
+        msg = 'initial DoE of size {}:'.format(len(X)) if self.iter_count == 0 else \
+            'iteration {}, {} infill points:'.format(self.iter_count, len(X))
+        self._logger.info(msg)
+
+        for i in range(len(X)):
+            X[i].fitness = func_vals[i]
+            X[i].n_eval += 1
+            self._logger.info(
+                '#{} - fitness: {},  solution: {}'.format(i + 1, func_vals[i], 
+                self._search_space.to_dict(X[i]))
+            )
+
+        X = self.post_eval_check(X)
+        self.data = self.data + X if hasattr(self, 'data') else X
+
+        # re-train the surrogate model 
+        self.update_model()   
+
+        if self.data_file is not None:
+            X.to_csv(self.data_file, header=False, append=True)
+
+        self.fopt = self._get_best(self.data.fitness)
+        _ = np.nonzero(self.data.fitness == self.fopt)[0][0]
+        self.xopt = self.data[_]   
+
+        self._logger.info('fopt: {}'.format(self.fopt))   
+        self._logger.info('xopt: {}\n'.format(self._search_space.to_dict(self.xopt)))     
+
+        self.hist_f.append(self.xopt.fitness)
+        self.stop_dict['n_eval'] = self.eval_count
+        self.stop_dict['n_iter'] = self.iter_count
+
+    def create_DoE(self, n_point=None):
+        DoE = []
+
+        while len(DoE) < n_point:
+            DoE += self._search_space.sampling(n_point - len(DoE), method='LHS')
+            DoE = self.pre_eval_check(DoE).tolist()
+        
+        return Solution(DoE, var_name=self.var_names)
+
+    @abstractmethod
+    def pre_eval_check(self, X):
+        raise NotImplementedError
+    
+    def post_eval_check(self, X):
+        _ = np.isnan(X.fitness) | np.isinf(X.fitness)
+        if np.any(_):
+            self._logger.warn('{} candidate solutions are removed '
+                             'due to falied fitness evaluation: \n{}'.format(sum(_), str(X[_, :])))
+            X = X[~_, :] 
+
+        return X
+        
+    def evaluate(self, data):
+        """Evaluate the candidate points and update evaluation info in the dataframe
+        """
+        X = [self._to_pheno(_) for _ in data]
+
+        # Parallelization is handled by the objective function itself
+        if self.parallel_obj_fun is not None:  
+            func_vals = self.parallel_obj_fun(X)
+        else: 
+            if self.n_job > 1: # or by ourselves..
+                func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for x in X)
+            else:              # or sequential execution
+                func_vals = [self.obj_fun(x) for x in X]
+                
+        self.eval_count += len(data)
+        return func_vals
+
+    def update_model(self):
+        # TODO: implement the automatic surrogate model selection
+        # adding the warm-start data when fitting the surrogate model
+        # data = self.data + self.warm_data if hasattr(self, 'warm_data') else self.data
+        data = self.data
+        fitness = data.fitness
+
+        # normalization the response for the numerical stability
+        # e.g., for MGF-based acquisition function
+        self.fmin, self.fmax = np.min(fitness), np.max(fitness)
+
+        # flat_fitness = np.isclose(self.fmin, self.fmax)
+        fitness_scaled = (fitness - self.fmin) / (self.fmax - self.fmin)
+        self.frange = self.fmax - self.fmin
+
+        # fit the surrogate model
+        self.model.fit(data, fitness_scaled)
+        
+        fitness_hat = self.model.predict(data)
+        r2 = r2_score(fitness_scaled, fitness_hat)
+
+        # TODO: adding cross validation for the model? 
+        # TODO: how to prevent overfitting in this case
+        # TODO: in case r2 is really poor, re-fit the model or transform the input? 
+        # TODO: perform diagnostic/validation on the surrogate model
+        # consider the performance metric transformation in SMAC
+        self._logger.info('Surrogate model r2: {}'.format(r2))
+        return r2
+
+    def arg_max_acquisition(self, plugin=None, n_point=None, return_value=False):
+        """
+        Global Optimization of the acqusition function / Infill criterion
+        Returns
+        -------
+            candidates: tuple of list,
+                candidate solution (in list)
+            values: tuple,
+                criterion value of the candidate solution
+        """
+        self._logger.debug('acquisition optimziation...')
+        t0 = time.time()
+        n_point = self.n_point if n_point is None else int(n_point)
+        return_dx = True if self._optimizer == 'BFGS' else False
+
+        if n_point > 1:  # multi-point/batch sequential strategy
+            candidates, values = self._batch_arg_max_acquisition(
+                n_point, plugin, return_dx
+            )
+        else:            # single-point strategy
+            criteria = self._create_acquisition(plugin=plugin, return_dx=return_dx)
+            candidates, values = self._argmax_restart(criteria)
+
+        self._logger.debug(
+            'acquisition optimziation takes {:.4f}s'.format(time.time() - t0)
+        )
+
+        for callback in self._acquisition_callbacks: callback()
+
+        return (candidates, values) if return_value else candidates
+
+    def _create_acquisition(self, plugin=None, return_dx=False, acquisition_par=None):
+        """
+        plugin : float,
+            the minimal objective value used in improvement-based infill criteria
+            Note that it should be given in the original scale
+        """
+        # TODO: `plugin` is typicall f_min as in EI/PI/MFGI. We need to add support for 
+        # parameters of other acquisition functions, e.g. UCB and GEI
+        plugin = 0 if plugin is None else (plugin - self.fmin) / self.frange
+        acquisition_par = self._acquisition_par if acquisition_par is None else acquisition_par
+
+        kwargs = {
+            'model' : self.model, 
+            'plugin' : plugin, 
+            'minimize' : self.minimize
+        }
+        kwargs.update(acquisition_par)
+
+        criterion = getattr(IC, self._acquisition_fun)(**kwargs)
+        return functools.partial(criterion, return_dx=return_dx)
+
+    @abstractmethod
+    def _batch_arg_max_acquisition(self, n_point, plugin, return_dx):
+        raise NotImplementedError
+
+    def check_stop(self):
+        if self.eval_count >= self.max_FEs:
+            self.stop_dict['max_FEs'] = True
+        
+        if self.ftarget is not None and hasattr(self, 'xopt'):
+            if self._compare(self.xopt.fitness, self.ftarget):
+                self.stop_dict['ftarget'] = True
+
+        return any([v for v in self.stop_dict.values() if isinstance(v, bool)])
+    
+    def save(self, filename):
+        with open(filename, 'wb') as f:
+            if hasattr(self, 'data'):
+                data = dill.dumps(self.data)
+
+            obj = copy.deepcopy(self)
+            obj.data = data
+            dill.dump(obj, f)
+        
+    @classmethod
+    def load(cls, filename):
+        with open(filename, 'rb') as f:
+            obj = dill.load(f)
+            if hasattr(obj, 'data'):
+                obj.data = dill.loads(obj.data)
+                
+        return obj
+    

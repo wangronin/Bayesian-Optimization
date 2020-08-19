@@ -36,9 +36,9 @@ The parameters of the class constructor are listed below:
         the number of candidate solutions proposed using infill-criteria,
         default : 1
 * n_jobs : int,
-        the number of jobs scheduled for parallelizing the evaluation. 
-        Only Effective when n_point > 1 
-* backend : str, 
+        the number of jobs scheduled for parallelizing the evaluation.
+        Only Effective when n_point > 1
+* backend : str,
         the parallelization backend, supporting: 'multiprocessing', 'MPI', 'SPARC'
 * optimizer: str,
         the optimization algorithm for infill-criteria,

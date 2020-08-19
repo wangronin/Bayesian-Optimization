@@ -76,10 +76,13 @@ class RandomForest(RandomForestRegressor):
             keys: indices of categorical variables
             values: list of levels of categorical variables
         """
-        super(RandomForest, self).__init__(n_estimators=n_estimators,
-                                           max_features=max_features,
-                                           min_samples_leaf=min_samples_leaf,
-                                           **kwargs)
+        super(RandomForest, self).__init__(
+            n_estimators=n_estimators,
+            max_features=max_features,
+            min_samples_leaf=min_samples_leaf,
+            **kwargs
+        )
+        self.is_fitted = False
 
         # TODO: using such encoding, feature number will increase drastically
         # TODO: investigate the upper bound (in the sense of cpu time)
@@ -110,6 +113,7 @@ class RandomForest(RandomForestRegressor):
         X = self._check_X(X)
         y = y.ravel()
         self.y = y
+        self.is_fitted = True
         return super(RandomForest, self).fit(X, y)
 
     def predict(self, X, eval_MSE=False):
