@@ -12,9 +12,11 @@ from .Solution import Solution
 from .Surrogate import RandomForest
 from .SearchSpace import OrdinalSpace, ContinuousSpace, NominalSpace, from_dict
 
-__all__ = ['BO', 'NoisyBO', 'AnnealingBO', 'Solution', 'from_dict',
-           'InfillCriteria', 'Surrogate', 'OrdinalSpace', 'ContinuousSpace', 
-           'NominalSpace', 'RandomForest']
+__all__ = [
+    'BO', 'NoisyBO', 'AnnealingBO', 'Solution', 'from_dict',
+    'InfillCriteria', 'Surrogate', 'OrdinalSpace', 'ContinuousSpace', 
+    'NominalSpace', 'RandomForest'
+]
 
 # To use `dill` for the pickling, which works for
 # much more python objects
@@ -25,3 +27,5 @@ verbose = {
     'DEBUG' : logging.DEBUG,
     'INFO' : logging.INFO
 }
+
+# TODO: add an interface function `fmin`

@@ -114,7 +114,8 @@ class baseBO(ABC):
         self.DoE_size = DoE_size
         self.acquisition_fun = acquisition_fun
         self._acquisition_par = acquisition_par
-        self._acquisition_callbacks = []
+        # the callback functions executed after every call of `arg_max_acquisition`
+        self._acquisition_callbacks = []  
         self.model = model
         self.logger = logger
         self.random_seed = random_seed

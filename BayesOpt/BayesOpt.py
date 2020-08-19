@@ -24,13 +24,6 @@ from .Surrogate import SurrogateAggregation
 from .misc import proportional_selection, non_dominated_set_2d, bcolors, LoggerFormatter
 
 class BO(baseBO):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        if self.n_point > 1:
-            if 't' not in self._acquisition_par:
-                self._acquisition_par['t'] = getattr(IC, self._acquisition_fun)().t
-            # TODO: add support for UCB as well
-
     def pre_eval_check(self, X):
         """check for the duplicated solutions, as it is not allowed
         for noiseless objective functions
@@ -54,7 +47,16 @@ class BO(baseBO):
                 _ += [i]
 
         return X[_]
-    
+
+# TODO: add other Parallelization options: 1) niching-based 2) Pareto-front of PI-EI
+class ParallelBO(BO):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.n_point > 1:
+            if 't' not in self._acquisition_par:
+                self._acquisition_par['t'] = getattr(IC, self._acquisition_fun)().t
+            # TODO: add support for UCB as well
+
     def _batch_arg_max_acquisition(self, n_point, plugin, return_dx):
         criteria = []
         for _ in range(n_point):
@@ -73,7 +75,7 @@ class BO(baseBO):
         
         return tuple(zip(*__))
 
-class AnnealingBO(BO):
+class AnnealingBO(ParallelBO):
     def __init__(self, t0=2, tf=1e-1, schedule='exp', *argv, **kwargs):
         super().__init__(*argv, **kwargs)
         self.t0 = t0
@@ -98,9 +100,10 @@ class AnnealingBO(BO):
             self._acquisition_par['t'] = self._anealer(self._acquisition_par['t'])
         self._acquisition_callbacks += [callback]
     
-class SelfAdaptiveBO(BO):
+class SelfAdaptiveBO(ParallelBO):
     def __init__(self, *argv, **kwargs):
         super.__init__(*argv, **kwargs)
+        assert self.n_point > 1
 
     def _batch_arg_max_acquisition(self, n_point, plugin, return_dx):
         criteria = []
@@ -122,12 +125,16 @@ class SelfAdaptiveBO(BO):
         else:
             __ = [list(self._argmax_restart(_)) for _ in criteria]
         
+        # NOTE: this adaptation is different from what I did in the LeGO paper..
         idx = np.argsort(__[1])[::-1][:N]
         self._acquisition_par['t'] = np.mean([_t_list[i] for i in idx])
         return tuple(zip(*__))
 
+class NoisyBO(ParallelBO):
+    # TODO: implement the strategy for re-evaluation
+    def pre_eval_check(self, X):
+        pass
 
-class NoisyBO(BO):
     def _create_acquisition(self, plugin=None, return_dx=False, acquisition_par=None):
         # use the model prediction to determine the plugin under noisy scenarios
         if plugin is None:
