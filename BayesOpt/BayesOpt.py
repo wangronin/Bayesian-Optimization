@@ -14,9 +14,10 @@ import os, sys, dill, functools, logging, time
 import pandas as pd
 import numpy as np
 import json, copy, re 
+from copy import copy
 from joblib import Parallel, delayed
 
-from . import InfillCriteria as IC
+from . import InfillCriteria
 from .base import baseBO
 from .Solution import Solution
 from .SearchSpace import SearchSpace
@@ -24,6 +25,20 @@ from .Surrogate import SurrogateAggregation
 from .misc import proportional_selection, non_dominated_set_2d, bcolors, LoggerFormatter
 
 class BO(baseBO):
+    def _create_acquisition(self, acquisition_par={}, return_dx=False):
+        """
+        plugin : float,
+            the minimal objective value used in improvement-based infill criteria
+            Note that it should be given in the original scale
+        """
+        # TODO: `plugin` is typically `f_min` in EI/PI/MFGI. We need to add support for 
+        # parameters of other acquisition functions, e.g. UCB and GEI
+        if hasattr(getattr(InfillCriteria, self._acquisition_fun), 'plugin'):
+            if 'plugin' not in acquisition_par:
+                acquisition_par.update({'plugin' : 0})
+        
+        return super()._create_acquisition(acquisition_par, return_dx)
+
     def pre_eval_check(self, X):
         """check for the duplicated solutions, as it is not allowed
         for noiseless objective functions
@@ -48,22 +63,37 @@ class BO(baseBO):
 
         return X[_]
 
-# TODO: add other Parallelization options: 1) niching-based 2) Pareto-front of PI-EI
+# TODO: add other Parallelization options: 
+# 1) niching-based (my EVOLVE paper) and 2) Pareto-front of PI-EI (my WCCI '16 paper)
+# 3) QEI?
 class ParallelBO(BO):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        if self.n_point > 1:
-            if 't' not in self._acquisition_par:
-                self._acquisition_par['t'] = getattr(IC, self._acquisition_fun)().t
-            # TODO: add support for UCB as well
+        assert self.n_point > 1
 
-    def _batch_arg_max_acquisition(self, n_point, plugin, return_dx):
+        if self._acquisition_fun == 'MGFI':
+            self._par_name = 't'
+            self._sampler = lambda x: np.exp(x['t'] * np.random.randn())
+        elif self._acquisition_fun == 'UCB':
+            self._par_name = 'alpha'
+            self._sampler = lambda x: 1 / (1 + np.exp((x['alpha'] * 4 - 2) \
+                + 0.6 * np.random.randn())) # Logit-normal distribution for `alpha`
+        else:
+            # TODO: add supports for epislon-PI..
+            raise NotImplementedError
+
+        _criterion = getattr(InfillCriteria, self._acquisition_fun)()
+        if self._par_name not in self._acquisition_par:
+            self._acquisition_par[self._par_name] = getattr(_criterion, self._par_name)
+        
+    def _batch_arg_max_acquisition(self, n_point, return_dx):
         criteria = []
         for _ in range(n_point):
-            _t = np.exp(self._acquisition_par['t'] * np.random.randn())
-            _acquisition_par = copy.copy(self._acquisition_par).update({'t' : _t})
+            _par = self._sampler(self._acquisition_par)
+            _acquisition_par = copy(self._acquisition_par).update({self._par_name : _par})
+
             criteria.append(
-                self._create_acquisition(plugin, return_dx, _acquisition_par)
+                self._create_acquisition(_acquisition_par, return_dx)
             )
         
         if self.n_job > 1:
@@ -83,6 +113,7 @@ class AnnealingBO(ParallelBO):
         self.schedule = schedule
         self._acquisition_par['t'] = t0
         
+        # TODO: add supports for UCB and epsilon-PI
         max_iter = (self.max_FEs - self._DoE_size) / self.n_point
         if self.schedule == 'exp':                          # exponential
             self.alpha = (self.tf / t0) ** (1. / max_iter) 
@@ -105,7 +136,7 @@ class SelfAdaptiveBO(ParallelBO):
         super.__init__(*argv, **kwargs)
         assert self.n_point > 1
 
-    def _batch_arg_max_acquisition(self, n_point, plugin, return_dx):
+    def _batch_arg_max_acquisition(self, n_point, return_dx):
         criteria = []
         _t_list = []
         N = int(n_point / 2)
@@ -113,9 +144,9 @@ class SelfAdaptiveBO(ParallelBO):
         for _ in range(n_point):
             _t = np.exp(self._acquisition_par['t'] * np.random.randn())
             _t_list.append(_t)
-            _acquisition_par = copy.copy(self._acquisition_par).update({'t' : _t})
+            _acquisition_par = copy(self._acquisition_par).update({'t' : _t})
             criteria.append(
-                self._create_acquisition(plugin, return_dx, _acquisition_par)
+                self._create_acquisition(_acquisition_par, return_dx)
             )
         
         if self.n_job > 1:
@@ -135,10 +166,16 @@ class NoisyBO(ParallelBO):
     def pre_eval_check(self, X):
         pass
 
-    def _create_acquisition(self, plugin=None, return_dx=False, acquisition_par=None):
-        # use the model prediction to determine the plugin under noisy scenarios
-        if plugin is None:
-            plugin = min(self.model.predict(self.data)) \
-                if self.minimize else max(self.model.predict(self.data))
+    def _create_acquisition(self, acquisition_par={}, return_dx=False):
+        if hasattr(getattr(InfillCriteria, self._acquisition_fun), 'plugin'):
+            # use the model prediction to determine the plugin under noisy scenarios
+            # TODO: add more options for determining the plugin value
+            y_ = self.model.predict(self.data)
+            plugin = np.min(y_) if self.minimize else np.max(y_)
+            acquisition_par.update({'plugin' : plugin})
         
-        return super()._create_acquisition(plugin, return_dx, acquisition_par)
+        return super()._create_acquisition(acquisition_par, return_dx)
+
+class PCABO(ParallelBO):
+    def __init__(self):
+        pass

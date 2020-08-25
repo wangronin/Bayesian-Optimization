@@ -13,7 +13,6 @@ from abc import ABC, abstractmethod
 
 # TODO: implement noisy handling infill criteria, e.g., EQI (expected quantile improvement)
 # TODO: perphaps also enable acquisition function engineering here?
-# meaning the combination of the acquisition functions
 class InfillCriteria(ABC):
     def __init__(self, model=None, plugin=None, minimize=True):
         self.model = model
@@ -66,8 +65,9 @@ class InfillCriteria(ABC):
         return np.atleast_2d(X)
         # return [X] if not hasattr(X[0], '__iter__') else X
 
+
 class UCB(InfillCriteria):
-    def __init__(self, model, plugin=None, minimize=True, alpha=1e-10):
+    def __init__(self, model, plugin=None, minimize=True, alpha=0.5):
         """Upper Confidence Bound 
         """
         super(UCB, self).__init__(model, plugin, minimize)
@@ -110,12 +110,12 @@ class EI(InfillCriteria):
         # TODO: check the rationale of 1e-6 and why the ratio if intended
         if hasattr(self._model, 'sigma2'):
             if sd / np.sqrt(self._model.sigma2) < 1e-6:
-                return (0,  np.zeros((len(X[0]), 1))) if return_dx else 0.
+                return (0, np.zeros((len(X[0]), 1))) if return_dx else 0
         else: 
             # TODO: implement a counterpart of 'sigma2' for randomforest
             # or simply put a try...except around the code below
             if sd < 1e-10: 
-                return (0,  np.zeros((len(X[0]), 1))) if return_dx else 0.
+                return (0, np.zeros((len(X[0]), 1))) if return_dx else 0
         try:
             xcr_ = self._plugin - y_hat
             xcr = xcr_ / sd

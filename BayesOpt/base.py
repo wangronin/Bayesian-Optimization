@@ -17,7 +17,7 @@ from joblib import Parallel, delayed
 from sklearn.metrics import r2_score
 from sklearn.cluster import KMeans
 
-from . import InfillCriteria as IC
+from . import InfillCriteria
 from .Solution import Solution
 from .SearchSpace import SearchSpace
 from .utils import arg_to_int
@@ -268,6 +268,8 @@ class baseBO(ABC):
         # TODO: add more parameter check-ups
         if np.isinf(self.max_FEs):
             raise ValueError('max_FEs cannot be infinite')
+
+        assert hasattr(InfillCriteria, self._acquisition_fun)
     
     def _compare(self, f1, f2):
         """Test if objecctive value f1 is better than f2
@@ -434,7 +436,7 @@ class baseBO(ABC):
         self._logger.info('Surrogate model r2: {}'.format(r2))
         return r2
 
-    def arg_max_acquisition(self, plugin=None, n_point=None, return_value=False):
+    def arg_max_acquisition(self, n_point=None, return_value=False):
         """
         Global Optimization of the acqusition function / Infill criterion
         Returns
@@ -451,43 +453,27 @@ class baseBO(ABC):
 
         if n_point > 1:  # multi-point/batch sequential strategy
             candidates, values = self._batch_arg_max_acquisition(
-                n_point, plugin, return_dx
+                n_point=n_point, return_dx=return_dx
             )
         else:            # single-point strategy
-            criteria = self._create_acquisition(plugin=plugin, return_dx=return_dx)
+            criteria = self._create_acquisition(acquisition_par={}, return_dx=return_dx)
             candidates, values = self._argmax_restart(criteria)
 
         self._logger.debug(
             'acquisition optimziation takes {:.4f}s'.format(time.time() - t0)
         )
-
         for callback in self._acquisition_callbacks: callback()
 
         return (candidates, values) if return_value else candidates
 
-    def _create_acquisition(self, plugin=None, return_dx=False, acquisition_par=None):
-        """
-        plugin : float,
-            the minimal objective value used in improvement-based infill criteria
-            Note that it should be given in the original scale
-        """
-        # TODO: `plugin` is typicall f_min as in EI/PI/MFGI. We need to add support for 
-        # parameters of other acquisition functions, e.g. UCB and GEI
-        plugin = 0 if plugin is None else (plugin - self.fmin) / self.frange
-        acquisition_par = self._acquisition_par if acquisition_par is None else acquisition_par
-
-        kwargs = {
-            'model' : self.model, 
-            'plugin' : plugin, 
-            'minimize' : self.minimize
-        }
-        kwargs.update(acquisition_par)
-
-        criterion = getattr(IC, self._acquisition_fun)(**kwargs)
+    def _create_acquisition(self, acquisition_par={}, return_dx=False):
+        acquisition_par = self._acquisition_par if not acquisition_par else acquisition_par
+        acquisition_par.update({'model' : self.model, 'minimize' : self.minimize})
+        criterion = getattr(InfillCriteria, self._acquisition_fun)(**acquisition_par)
         return functools.partial(criterion, return_dx=return_dx)
 
     @abstractmethod
-    def _batch_arg_max_acquisition(self, n_point, plugin, return_dx):
+    def _batch_arg_max_acquisition(self, n_point, return_dx):
         raise NotImplementedError
 
     def check_stop(self):
