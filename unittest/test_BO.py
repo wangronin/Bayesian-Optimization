@@ -1,7 +1,8 @@
+from pdb import set_trace
 import numpy as np
 import sys, os
 
-sys.path.insert(0, os.getcwd() + '/BayesOpt')
+sys.path.insert(0, os.getcwd())
 from BayesOpt import AnnealingBO, BO, ContinuousSpace, OrdinalSpace, NominalSpace, RandomForest
 
 np.random.seed(666)

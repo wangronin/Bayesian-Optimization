@@ -28,6 +28,8 @@ class InfillCriteria(ABC):
         if model is not None:
             self._model = model
             assert hasattr(self._model, 'predict')
+        else: 
+            self._model = None
 
     @property
     def plugin(self):
@@ -39,6 +41,8 @@ class InfillCriteria(ABC):
             if self._model is not None:
                 self._plugin = np.min(self._model.y) if self.minimize \
                     else -1.0 * np.max(self._model.y)
+            else:
+                self._plugin = None
         else:
             self._plugin = plugin if self.minimize else -1.0 * plugin
 

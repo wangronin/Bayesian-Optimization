@@ -89,7 +89,8 @@ class ParallelBO(BO):
         criteria = []
         for _ in range(n_point):
             _par = self._sampler(self._acquisition_par)
-            _acquisition_par = copy(self._acquisition_par).update({self._par_name : _par})
+            _acquisition_par = copy(self._acquisition_par)
+            _acquisition_par.update({self._par_name : _par})
             criteria.append(self._create_acquisition(par=_acquisition_par, return_dx=return_dx))
         
         if self.n_job > 1:
@@ -140,7 +141,8 @@ class SelfAdaptiveBO(ParallelBO):
         for _ in range(n_point):
             _t = np.exp(self._acquisition_par['t'] * np.random.randn())
             _t_list.append(_t)
-            _acquisition_par = copy(self._acquisition_par).update({'t' : _t})
+            _acquisition_par = copy(self._acquisition_par)
+            _acquisition_par.update({'t' : _t})
             criteria.append(
                 self._create_acquisition(par=_acquisition_par, return_dx=return_dx)
             )

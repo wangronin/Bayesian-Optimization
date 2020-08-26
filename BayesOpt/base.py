@@ -345,7 +345,7 @@ class baseBO(ABC):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
             self._logger.info(
-                '#{} - fitness: {},  solution: {}'.format(i + 1, func_vals[i], 
+                '#{} - fitness: {}, solution: {}'.format(i + 1, func_vals[i], 
                 self._search_space.to_dict(X[i]))
             )
 
