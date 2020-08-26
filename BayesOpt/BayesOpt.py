@@ -22,10 +22,9 @@ from .base import baseBO
 from .Solution import Solution
 from .SearchSpace import SearchSpace
 from .Surrogate import SurrogateAggregation
-from .misc import proportional_selection, non_dominated_set_2d, bcolors, LoggerFormatter
 
 class BO(baseBO):
-    def _create_acquisition(self, acquisition_par={}, return_dx=False):
+    def _create_acquisition(self, fun=None, par={}, return_dx=False):
         """
         plugin : float,
             the minimal objective value used in improvement-based infill criteria
@@ -34,10 +33,10 @@ class BO(baseBO):
         # TODO: `plugin` is typically `f_min` in EI/PI/MFGI. We need to add support for 
         # parameters of other acquisition functions, e.g. UCB and GEI
         if hasattr(getattr(InfillCriteria, self._acquisition_fun), 'plugin'):
-            if 'plugin' not in acquisition_par:
-                acquisition_par.update({'plugin' : 0})
+            if 'plugin' not in par:
+                par.update({'plugin' : 0})
         
-        return super()._create_acquisition(acquisition_par, return_dx)
+        return super()._create_acquisition(fun, par, return_dx)
 
     def pre_eval_check(self, X):
         """check for the duplicated solutions, as it is not allowed
@@ -63,10 +62,10 @@ class BO(baseBO):
 
         return X[_]
 
-# TODO: add other Parallelization options: 
-# 1) niching-based (my EVOLVE paper) and 2) Pareto-front of PI-EI (my WCCI '16 paper)
-# 3) QEI?
 class ParallelBO(BO):
+    # TODO: add other Parallelization options: 
+    # 1) niching-based (my EVOLVE paper) and 2) Pareto-front of PI-EI (my WCCI '16 paper)
+    # 3) QEI?
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         assert self.n_point > 1
@@ -91,10 +90,7 @@ class ParallelBO(BO):
         for _ in range(n_point):
             _par = self._sampler(self._acquisition_par)
             _acquisition_par = copy(self._acquisition_par).update({self._par_name : _par})
-
-            criteria.append(
-                self._create_acquisition(_acquisition_par, return_dx)
-            )
+            criteria.append(self._create_acquisition(par=_acquisition_par, return_dx=return_dx))
         
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(
@@ -146,7 +142,7 @@ class SelfAdaptiveBO(ParallelBO):
             _t_list.append(_t)
             _acquisition_par = copy(self._acquisition_par).update({'t' : _t})
             criteria.append(
-                self._create_acquisition(_acquisition_par, return_dx)
+                self._create_acquisition(par=_acquisition_par, return_dx=return_dx)
             )
         
         if self.n_job > 1:
@@ -162,8 +158,8 @@ class SelfAdaptiveBO(ParallelBO):
         return tuple(zip(*__))
 
 class NoisyBO(ParallelBO):
-    # TODO: implement the strategy for re-evaluation
     def pre_eval_check(self, X):
+        # TODO: implement the strategy for re-evaluation
         pass
 
     def _create_acquisition(self, acquisition_par={}, return_dx=False):
@@ -174,7 +170,7 @@ class NoisyBO(ParallelBO):
             plugin = np.min(y_) if self.minimize else np.max(y_)
             acquisition_par.update({'plugin' : plugin})
         
-        return super()._create_acquisition(acquisition_par, return_dx)
+        return super()._create_acquisition(par=acquisition_par, return_dx=return_dx)
 
 class PCABO(ParallelBO):
     def __init__(self):

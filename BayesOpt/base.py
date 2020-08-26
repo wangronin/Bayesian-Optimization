@@ -8,9 +8,10 @@ Created on Mon Apr 23 17:16:39 2018
 from pdb import set_trace
 
 import numpy as np
-import os, sys, dill, functools, logging, time, copy
+import os, sys, dill, functools, logging, time
 
 from abc import ABC, abstractmethod
+from copy import copy, deepcopy
 from typing import Callable, Any, Tuple
 from joblib import Parallel, delayed
 
@@ -456,7 +457,7 @@ class baseBO(ABC):
                 n_point=n_point, return_dx=return_dx
             )
         else:            # single-point strategy
-            criteria = self._create_acquisition(acquisition_par={}, return_dx=return_dx)
+            criteria = self._create_acquisition(par={}, return_dx=return_dx)
             candidates, values = self._argmax_restart(criteria)
 
         self._logger.debug(
@@ -466,10 +467,12 @@ class baseBO(ABC):
 
         return (candidates, values) if return_value else candidates
 
-    def _create_acquisition(self, acquisition_par={}, return_dx=False):
-        acquisition_par = self._acquisition_par if not acquisition_par else acquisition_par
-        acquisition_par.update({'model' : self.model, 'minimize' : self.minimize})
-        criterion = getattr(InfillCriteria, self._acquisition_fun)(**acquisition_par)
+    def _create_acquisition(self, fun=None, par={}, return_dx=False):
+        fun = fun if fun is not None else self._acquisition_fun
+        par = copy(self._acquisition_par) if not par else par
+        par.update({'model' : self.model, 'minimize' : self.minimize})
+
+        criterion = getattr(InfillCriteria, fun)(**par)
         return functools.partial(criterion, return_dx=return_dx)
 
     @abstractmethod
@@ -491,7 +494,7 @@ class baseBO(ABC):
             if hasattr(self, 'data'):
                 data = dill.dumps(self.data)
 
-            obj = copy.deepcopy(self)
+            obj = deepcopy(self)
             obj.data = data
             dill.dump(obj, f)
         
