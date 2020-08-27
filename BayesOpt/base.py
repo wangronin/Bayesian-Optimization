@@ -290,7 +290,6 @@ class baseBO(ABC):
         self._logger.info('evaluation takes {:.4f}s'.format(time.time() - t0))
 
         self.tell(X, func_vals)
-        self.iter_count += 1
 
     def ask(self, n_point=None):
         if self.model.is_fitted:
@@ -344,6 +343,7 @@ class baseBO(ABC):
         for i in range(len(X)):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
+            self.eval_count += 1
             self._logger.info(
                 '#{} - fitness: {}, solution: {}'.format(i + 1, func_vals[i], 
                 self._search_space.to_dict(X[i]))
@@ -352,19 +352,21 @@ class baseBO(ABC):
         X = self.post_eval_check(X)
         self.data = self.data + X if hasattr(self, 'data') else X
 
-        # re-train the surrogate model 
-        self.update_model()   
-
         if self.data_file is not None:
             X.to_csv(self.data_file, header=False, append=True)
 
         self.fopt = self._get_best(self.data.fitness)
-        _ = np.nonzero(self.data.fitness == self.fopt)[0][0]
-        self.xopt = self.data[_]   
-
+        self.xopt = self.data[np.where(self.data.fitness == self.fopt)]  
         self._logger.info('fopt: {}'.format(self.fopt))   
-        self._logger.info('xopt: {}\n'.format(self._search_space.to_dict(self.xopt)))     
+        self._logger.info('xopt: {}\n'.format(self._search_space.to_dict(self.xopt))) 
 
+        if not self.model.is_fitted: # DoE phase
+            self._fBest_DoE = copy(self.fopt)
+
+        # re-train the surrogate model 
+        self.update_model()   
+
+        self.iter_count += 1
         self.hist_f.append(self.xopt.fitness)
         self.stop_dict['n_eval'] = self.eval_count
         self.stop_dict['n_iter'] = self.iter_count
@@ -405,7 +407,6 @@ class baseBO(ABC):
             else:              # or sequential execution
                 func_vals = [self.obj_fun(x) for x in X]
                 
-        self.eval_count += len(data)
         return func_vals
 
     def update_model(self):

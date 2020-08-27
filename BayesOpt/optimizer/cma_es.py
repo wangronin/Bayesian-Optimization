@@ -6,10 +6,8 @@ Created on Tue Jan 29 11:26:41 2013
 """
 
 import numpy as np
-# import hello as h
 from ..misc import boundary_handling
 from scipy.stats import chi
-#from function import rand_orth_mat
 from numpy.linalg import eigh, LinAlgError, qr, cond
 from numpy.random import randn, rand, shuffle
 from numpy import sqrt, eye, exp, dot, add, inf, triu, isreal, isinf,\
@@ -58,9 +56,9 @@ class cma_es(object):
             self.restart_budget = opts['restart_budget'] if 'restart_budget' in opts else int(20)
 
         # Initialize internal strategy parameters
-        self.wcm = eval(init_wcm) if isinstance(init_wcm, basestring) else init_wcm
-        self.lb = eval(opts['lb']) if isinstance(opts['lb'], basestring) else opts['lb']
-        self.ub = eval(opts['ub']) if isinstance(opts['ub'], basestring) else opts['ub']
+        self.wcm = eval(init_wcm) if isinstance(init_wcm, str) else init_wcm
+        self.lb = eval(opts['lb']) if isinstance(opts['lb'], str) else opts['lb']
+        self.ub = eval(opts['ub']) if isinstance(opts['ub'], str) else opts['ub']
         self.lb = atleast_2d(self.lb)
         self.ub = atleast_2d(self.ub)
         
@@ -70,7 +68,7 @@ class cma_es(object):
             self.ub = self.ub.T 
             
         self.eval_budget = int(eval(opts['eval_budget'])) if isinstance(opts['eval_budget'],
-                                                                        basestring) \
+                                                                        str) \
                                                           else int(opts['eval_budget'])
                                                           
         self.wcm = np.atleast_2d(self.wcm).reshape(-1, 1)
@@ -81,10 +79,10 @@ class cma_es(object):
 
         # Strategy parameters: Selection
         self._lambda = opts['_lambda'] if opts.has_key('_lambda') else int(4 + floor(3*log(dim)))
-        if isinstance(self._lambda, basestring): self._lambda = eval(self._lambda)
+        if isinstance(self._lambda, str): self._lambda = eval(self._lambda)
         _mu_prime = (self._lambda-1) / 2.0
         self._mu = opts['_mu'] if opts.has_key('_mu') else int(ceil(_mu_prime))
-        if isinstance(self._mu, basestring): self._mu = eval(self._mu)
+        if isinstance(self._mu, str): self._mu = eval(self._mu)
 
         # TODO : new weight setting weighted recombination
         self.weights = log(_mu_prime+1.0)-log(arange(1, self._mu+1)[:, newaxis])
@@ -260,7 +258,8 @@ class cma_es(object):
             self.half = half
         # Orthogonal sampling (random rotation)
         elif mode == 5:
-            z = dot(rand_orth_mat(dim), eye(dim))
+            # z = dot(rand_orth_mat(dim), eye(dim))
+            z = eye(dim)
             n = dim
             if dim > _lambda:
                 p = arange(0, dim)
@@ -477,7 +476,7 @@ class cma_es(object):
         self.sigma = self.sigma0
 
     def reset_stop_dict(self):
-        for key, _ in self.stop_dict.iteritems():
+        for key, _ in self.stop_dict.items():
             self.stop_dict[key] = False
 
     def optimize(self):

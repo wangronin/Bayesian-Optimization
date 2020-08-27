@@ -262,7 +262,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         # Force data to 2D numpy.array
         X, y = check_X_y(X, y, multi_output=False, y_numeric=True)
         y = y.reshape(-1, 1)
-        n_samples, n_features = X.shape
+        n_samples, _ = X.shape
         self.X, self.y = X, y
 
         # Run input checks
@@ -506,8 +506,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 return y
 
     def gradient(self, x):
-        """
-        Calculate the gradient of the posterior mean and variance
+        """Calculate the gradient of the posterior mean and variance
         Note that the nugget effect will not the change the computation below
         """
 
@@ -550,9 +549,32 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         mse_dx = 2.0 * self.sigma2 * mse_dx
         return y_dx.T, mse_dx.T
 
-    # TODO: move corr_dx, corr_grad_theta the kernel module
-    # TODO: rename corr_grad_theta to something else
+    def Hessian(self, x):
+        """Calculate the Hessian matrix of the posterior mean at the input point `x`
+        """
+        x = np.atleast_2d(x)
+        n_eval, _ = x.shape
+        n_samples, n_features = self.X.shape
+
+        if _ != n_features:
+            raise Exception('x does not have the right size!')
+
+        if n_eval != 1:
+            raise Exception('x must be a vector!')
+
+        # The Hessian tensor of the trend
+        f_dx2 = self.mean.Hessian(x)
+        
+        # The Hessian tensor of the correlation
+        d = manhattan_distances(x, Y=self.X, sum_over_features=False)
+        r = self.corr(self.theta_, d).reshape(n_eval, n_samples)
+        r_dx2 = self.corr_Hessian(x, X=self.X, r=r)
+        
+        return f_dx2.dot(self.mean.beta) + r_dx2.dot(self.gamma)
+
     def corr_dx(self, x, X=None, theta=None, r=None, nu=1.5):
+        # TODO: move corr_dx, corr_grad_theta the kernel module
+        # TODO: rename corr_grad_theta to something else
         # Check input shapes
         x = np.atleast_2d(x)
         n_eval, _ = x.shape
@@ -613,6 +635,76 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         return grad
     
+    def corr_Hessian(self, x, X=None, theta=None, r=None, nu=1.5):
+        # Check input shapes
+        x = np.atleast_2d(x)
+        n_eval, _ = x.shape
+        n_samples, n_features = self.X.shape
+        assert n_samples == 1
+
+        if _ != n_features:
+            raise Exception('x does not have the right size!')
+
+        if n_eval != 1:
+            raise Exception('x must be a vector!')
+
+        if self.theta_ is None:
+            raise Exception('The model is not fitted yet!')
+
+        X = np.atleast_2d(X)
+        if X is None:
+            X = self.X
+
+        diff = (x - X).T
+        if theta is None:
+            theta = self.theta_
+        theta = theta.reshape(-1, 1)
+
+        # calculate the required variables if not given
+        if r is None:
+            r = self.corr(self.theta_, np.abs(diff).T)
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error')
+            try:
+                if self.corr_type == 'squared_exponential':
+                    diff_ = theta * diff
+                    g = -2 * r * diff_
+                    H = np.atleast_3d(
+                        [
+                            np.tile(g, (1, n_features)) * diff_[:, i] \
+                                + r[i] * np.diag(theta) for i in range(n_samples)
+                        ]
+                    )
+                    H *= -2
+                elif self.corr_type == 'matern':
+                    c = np.sqrt(3)
+                    D = np.sqrt(np.sum(theta * diff ** 2., axis=0))
+
+                    if nu == 0.5:
+                        grad = - diff * theta / D * r
+                    elif nu == 1.5:
+                        grad = diff * theta / D
+                        grad *= -3. * D * exp(-c * D)
+                    elif nu == 2.5:
+                        pass
+
+                elif self.corr_type == 'absolute_exponential':
+                    diff_ = theta * np.sign(diff)
+                    g = -1.0 * r * diff_
+                    H = np.atleast_3d([
+                        r[i] * np.diag(theta * diff[:, i] / np.sign(diff[:, i])) + \
+                            np.tile(g, (1, n_features)) * diff_[:, i] for i in range(n_samples)
+                        ]
+                    )
+                    H *= -1
+                elif self.corr_type == 'generalized_exponential':
+                    pass
+            except Warning:
+                H = np.zeros((n_features, n_samples))
+
+        return H
+
     def corr_grad_theta(self, theta, X, R, nu=1.5):
         # Check input shapes
         X = np.atleast_2d(X)
@@ -790,9 +882,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             return log_likelihood
 
     def log_likelihood_concentrated(self, par, env=None, eval_grad=False):
-        """
-        The concentrated log likelihood function
-        The MLE estimation of sigma2 is biased downwards, namely \hat{sigma2} < sigma2
+        """The concentrated log likelihood function, which underestimates `sigma2`
         
         Parameters that are concetrated out:
             beta : coeffiencts in the basis expansion trend function
