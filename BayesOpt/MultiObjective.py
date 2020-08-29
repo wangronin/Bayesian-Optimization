@@ -3,6 +3,7 @@ class SMS_BO(BO):
     pass
 
 
+# TODO: modify it according to the new project structure
 class MOBO_D(BO):
     """Decomposition-based Multi-Objective Bayesian Optimization (MO-EGO/D) 
     """

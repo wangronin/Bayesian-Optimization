@@ -1,7 +1,3 @@
-"""
-@author: Hao Wang
-@email: wangronin@gmail.com
-"""
 from pdb import set_trace
 
 import six, json

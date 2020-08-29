@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Created on Mon Apr 23 17:16:39 2018
 
@@ -25,11 +24,6 @@ from .Surrogate import SurrogateAggregation
 
 class BO(baseBO):
     def _create_acquisition(self, fun=None, par={}, return_dx=False):
-        """
-        plugin : float,
-            the minimal objective value used in improvement-based infill criteria
-            Note that it should be given in the original scale
-        """
         # TODO: `plugin` is typically `f_min` in EI/PI/MFGI. We need to add support for 
         # parameters of other acquisition functions, e.g. UCB and GEI
         if hasattr(getattr(InfillCriteria, self._acquisition_fun), 'plugin'):
@@ -39,8 +33,7 @@ class BO(baseBO):
         return super()._create_acquisition(fun, par, return_dx)
 
     def pre_eval_check(self, X):
-        """check for the duplicated solutions, as it is not allowed
-        for noiseless objective functions
+        """Check for the duplicated solutions as it is not allowed in noiseless cases
         """
         if not isinstance(X, Solution):
             X = Solution(X, var_name=self.var_names)
@@ -64,8 +57,9 @@ class BO(baseBO):
 
 class ParallelBO(BO):
     # TODO: add other Parallelization options: 
-    # 1) niching-based (my EVOLVE paper) and 2) Pareto-front of PI-EI (my WCCI '16 paper)
-    # 3) QEI?
+    # 1) niching-based approach (my EVOLVE paper),
+    # 2) bi-objective Pareto-front (PI vs. EI) (my WCCI '16 paper), and
+    # 3) maybe QEI?
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         assert self.n_point > 1

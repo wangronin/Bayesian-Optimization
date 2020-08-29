@@ -1,9 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Nov 13 20:45:21 2015
-
-@author: wangronin
-"""
 import os, logging
 
 from . import InfillCriteria, Surrogate

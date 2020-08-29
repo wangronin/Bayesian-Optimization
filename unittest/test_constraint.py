@@ -3,7 +3,7 @@ import numpy as np
 from BayesOpt import BO
 from BayesOpt.Surrogate import RandomForest
 from BayesOpt.SearchSpace import ContinuousSpace, OrdinalSpace, NominalSpace
-from BayesOpt.optimizer import mies
+from BayesOpt.optimizer import MIES
 
 
 def obj_func(x):
@@ -26,7 +26,7 @@ space = (ContinuousSpace([-10, 10]) * 2) + OrdinalSpace([5, 15]) + \
     NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'])
 
 if 11 < 2:
-    opt = mies(space, obj_func, eq_func=eq_func, ineq_func=ineq_func, 
+    opt = MIES(space, obj_func, eq_func=eq_func, ineq_func=ineq_func, 
                max_eval=1e3, verbose=True)
     xopt, fopt, stop_dict = opt.optimize()
 

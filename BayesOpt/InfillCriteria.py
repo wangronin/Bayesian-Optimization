@@ -61,6 +61,7 @@ class InfillCriteria(ABC):
         y_dx, sd2_dx = self._model.gradient(X)
         if not self.minimize:
             y_dx = -y_dx
+            
         return y_dx, sd2_dx
 
     def check_X(self, X):

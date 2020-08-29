@@ -1,8 +1,10 @@
-import pytest
+import pytest, sys
 
 from pdb import set_trace
 from copy import deepcopy
 import numpy as np 
+
+sys.path.insert(0, '../')
 from BayesOpt import ContinuousSpace, OrdinalSpace, NominalSpace, from_dict, Solution
 
 np.random.seed(1)

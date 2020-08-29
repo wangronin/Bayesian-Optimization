@@ -1,8 +1,8 @@
 import numpy as np
 
 from scipy.optimize import fmin_l_bfgs_b
-from .cma_es import cma_es
-from .mies import mies
+from .MIES import MIES
+# from .OnePlusOne_CMA import OnePlusOne_Cholesky_CMA
 
 def argmax_restart(
     obj_func,
@@ -49,7 +49,7 @@ def argmax_restart(
                 )
                             
         elif optimizer == 'MIES':
-            opt = mies(
+            opt = MIES(
                 search_space, 
                 obj_func, 
                 eq_func=h, 

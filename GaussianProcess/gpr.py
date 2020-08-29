@@ -1,9 +1,5 @@
-# -*- coding: utf-8 -*-
-
 # Author: Hao Wang 
 # Email: wangronin@gmail.com
-
-from __future__ import print_function
 
 import pdb
 import warnings 
@@ -509,9 +505,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         """Calculate the gradient of the posterior mean and variance
         Note that the nugget effect will not the change the computation below
         """
-
-        # check_is_fitted(self, 'X')
-        # Check input shapes
         x = np.atleast_2d(x)
         n_eval, _ = x.shape
         n_samples, n_features = self.X.shape

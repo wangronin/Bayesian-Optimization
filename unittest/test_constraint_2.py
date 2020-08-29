@@ -3,7 +3,7 @@ import numpy as np
 from BayesOpt import BO
 from BayesOpt.Surrogate import RandomForest
 from BayesOpt.SearchSpace import ContinuousSpace, OrdinalSpace, NominalSpace
-from BayesOpt.optimizer import mies
+from BayesOpt.optimizer import MIES
 
 np.random.seed(10)
 

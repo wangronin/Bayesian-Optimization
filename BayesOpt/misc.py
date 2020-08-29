@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Created on Mon May 19 10:17:43 2014
 
@@ -114,10 +113,8 @@ def proportional_selection(perf, N, minimize=True, replacement=True):
     return res
 
 # TODO: double check this one. It causes the explosion of step-sizes in MIES
-def boundary_handling(x, lb, ub):
-    """
-    
-    This function transforms x to t w.r.t. the low and high
+def handle_box_constraint(x, lb, ub):
+    """This function transforms x to t w.r.t. the low and high
     boundaries lb and ub. It implements the function T^{r}_{[a,b]} as
     described in Rui Li's PhD thesis "Mixed-Integer Evolution Strategies
     for Parameter Optimization and Their Applications to Medical Image 
