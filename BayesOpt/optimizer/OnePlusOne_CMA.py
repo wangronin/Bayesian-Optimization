@@ -58,13 +58,13 @@ class OnePlusOne_CMA(object):
         
     def _init_aux_var(self, opts):
         self.prob_target = opts['p_succ_target'] if 'p_succ_target' in opts else 2 / 11
-        self.prob_threshold = opts['p_threshold'] if 'p_threshold' in opts else 0.44
+        self.threshold = opts['p_threshold'] if 'p_threshold' in opts else 0.44
         self.d = opts['d'] if 'd' in opts else 1 + self.dim / 2
         self.ccov = opts['ccov'] if 'ccov' in opts else 2 / (self.dim ** 2 + 6)
         self.cp = opts['cp'] if 'cp' in opts else 1 / 12
         self.cc = opts['cc'] if 'cc' in opts else 2 / (self.dim + 2)
 
-        self.success_prob = self.prob_target
+        self.success_rate = self.prob_target
         self.pc = np.zeros(self.dim)
         self._coeff = self.cc * (2 - self.cc)
 
@@ -156,7 +156,7 @@ class OnePlusOne_CMA(object):
         return not bool(self.stop_dict)
 
     def _update_covariance(self, z):
-        if self.success_prob < self.prob_threshold:
+        if self.success_rate < self.threshold:
             self.pc = (1 - self.cc) * self.pc + np.sqrt(self._coeff) * z
             self.C = (1 - self.ccov) * self.C + self.ccov * np.outer(self.pc, self.pc)
         else:
@@ -168,9 +168,9 @@ class OnePlusOne_CMA(object):
         self._update_A(self.C)
 
     def _update_step_size(self, success):
-        self.success_prob = (1 - self.cp) * self.success_prob + self.cp * success
+        self.success_rate = (1 - self.cp) * self.success_rate + self.cp * success
         self.sigma *= np.exp(
-            (self.success_prob - self.prob_target) / (1 - self.prob_target) / self.d
+            (self.success_rate - self.prob_target) / (1 - self.prob_target) / self.d
         )
     
     def _update_A(self, C):
@@ -197,7 +197,6 @@ class OnePlusOne_CMA(object):
             self._sigma = self.sigma0
             self._exception = False
 
-    
 class OnePlusOne_Cholesky_CMA(OnePlusOne_CMA):
     def _init_covariance(self, C=None):
         if C:
@@ -215,26 +214,24 @@ class OnePlusOne_Cholesky_CMA(OnePlusOne_CMA):
             self.A = np.eye(self.dim)
             self.A_inv = np.eye(self.dim)
 
-    def _update_covariance(self, x):
-        z = (x - self._x) / self._sigma
+    def _update_covariance(self, z):
         cb = self.ccov
-
-        if self.success_prob < self.prob_threshold:
+        if self.success_rate < self.threshold:
             self.pc = (1 - self.cc) * self.pc + np.sqrt(self._coeff) * z
             ca = (1 - self.ccov)
         else:
             self.pc = (1 - self.cc) * self.pc
             ca = (1 - self.ccov) + self.ccov * self.cc * (2 - self.cc)
 
-        w = self.A_inv.dot(z)
+        w = self.pc.dot(self.A_inv.T)
         w_ = w.dot(self.A_inv)
         L = np.sum(w ** 2)
         
+        self.A += (np.sqrt(1 + L * cb / ca) - 1) / L * np.outer(self.pc, w)
         self.A *= np.sqrt(ca)
-        self.A += np.sqrt(ca) / L * (np.sqrt(1 + L * cb/ ca) - 1) * np.outer(self.pc, w)
 
+        self.A_inv -= (1 - 1 / np.sqrt(1 + L * cb / ca)) / L * np.outer(w, w_)
         self.A_inv *= 1 / np.sqrt(ca)
-        self.A_inv -= (1 - 1 / np.sqrt(1 + L * cb / ca)) / np.sqrt(ca) / L * np.outer(w, w_)
 
     def _handle_exception(self):
         pass
