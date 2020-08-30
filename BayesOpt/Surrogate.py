@@ -212,18 +212,6 @@ if __name__ == '__main__':
         print('r2:', r2_score(y_test, y_hat))
         print()
 
-    if 11 < 2:
-        # R randomForest
-        rf = RrandomForest(levels={2: levels}, seed=1, max_features='sqrt')
-        rf.fit(X_train, y_train)
-        y_hat, mse = rf.predict(X_test, eval_MSE=True)
-
-        print('R randomForest:')
-        print('target :', y_test)
-        print('predicted:', y_hat)
-        print('MSE:', mse)
-        print('r2:', r2_score(y_test, y_hat))
-
     # TODO: those settings should be in test file as inputs to surroagtes
     # leaf_size = max(1, int(n_sample / 20.))
     # ntree=100,
