@@ -1,13 +1,13 @@
 import os, logging
 
 from . import InfillCriteria, Surrogate
-from .BayesOpt import BO, NoisyBO, AnnealingBO
+from .BayesOpt import BO, ParallelBO, NoisyBO, AnnealingBO
 from .Solution import Solution
 from .Surrogate import RandomForest
 from .SearchSpace import OrdinalSpace, ContinuousSpace, NominalSpace, from_dict
 
 __all__ = [
-    'BO', 'NoisyBO', 'AnnealingBO', 'Solution', 'from_dict',
+    'BO', 'ParallelBO', 'NoisyBO', 'AnnealingBO', 'Solution', 'from_dict',
     'InfillCriteria', 'Surrogate', 'OrdinalSpace', 'ContinuousSpace', 
     'NominalSpace', 'RandomForest'
 ]

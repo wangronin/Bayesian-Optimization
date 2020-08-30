@@ -125,7 +125,7 @@ class baseBO(ABC):
         self._eval_type = eval_type   
         self._init_flatfitness_trial = 2
         self._set_aux_vars()
-        self._check_params()
+        # self._check_params()
     
     @property
     def acquisition_fun(self):
@@ -306,6 +306,7 @@ class baseBO(ABC):
             # TODO: handle the constrains when performing random sampling
             # draw the remaining ones randomly
             if len(X) < n_point:
+                set_trace()
                 self._logger.warn(
                     "iteration {}: duplicated solution found " 
                     "by optimization! New points is taken from random "
@@ -368,12 +369,9 @@ class baseBO(ABC):
 
         self.iter_count += 1
         self.hist_f.append(self.xopt.fitness)
-        self.stop_dict['n_eval'] = self.eval_count
-        self.stop_dict['n_iter'] = self.iter_count
 
     def create_DoE(self, n_point=None):
         DoE = []
-
         while len(DoE) < n_point:
             DoE += self._search_space.sampling(n_point - len(DoE), method='LHS')
             DoE = self.pre_eval_check(DoE).tolist()
@@ -421,7 +419,8 @@ class baseBO(ABC):
         self.fmin, self.fmax = np.min(fitness), np.max(fitness)
 
         # flat_fitness = np.isclose(self.fmin, self.fmax)
-        fitness_scaled = (fitness - self.fmin) / (self.fmax - self.fmin)
+        # fitness_scaled = (fitness - self.fmin) / (self.fmax - self.fmin)
+        fitness_scaled = fitness
         self.frange = self.fmax - self.fmin
 
         # fit the surrogate model
@@ -460,6 +459,7 @@ class baseBO(ABC):
         else:            # single-point strategy
             criteria = self._create_acquisition(par={}, return_dx=return_dx)
             candidates, values = self._argmax_restart(criteria)
+            candidates, values = [candidates], [values]
 
         self._logger.debug(
             'acquisition optimziation takes {:.4f}s'.format(time.time() - t0)
@@ -476,19 +476,18 @@ class baseBO(ABC):
         criterion = getattr(InfillCriteria, fun)(**par)
         return functools.partial(criterion, return_dx=return_dx)
 
-    @abstractmethod
     def _batch_arg_max_acquisition(self, n_point, return_dx):
         raise NotImplementedError
 
     def check_stop(self):
         if self.eval_count >= self.max_FEs:
-            self.stop_dict['max_FEs'] = True
+            self.stop_dict['max_FEs'] = self.eval_count
         
         if self.ftarget is not None and hasattr(self, 'xopt'):
             if self._compare(self.xopt.fitness, self.ftarget):
-                self.stop_dict['ftarget'] = True
+                self.stop_dict['ftarget'] = self.fopt
 
-        return any([v for v in self.stop_dict.values() if isinstance(v, bool)])
+        return bool(self.stop_dict)
     
     def save(self, filename):
         with open(filename, 'wb') as f:

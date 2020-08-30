@@ -2,25 +2,44 @@ from pdb import set_trace
 import numpy as np
 import sys, os
 
-sys.path.insert(0, os.getcwd())
+sys.path.insert(0, '../')
 from BayesOpt import AnnealingBO, BO, ContinuousSpace, OrdinalSpace, NominalSpace, RandomForest
 
 np.random.seed(666)
-def test__flat_fitness():
+def test__continuous():
     def fitness(x):
-        return 1
+        x = np.asarray(x)
+        return np.sum(x ** 2)
 
-    space = ContinuousSpace([-5, 5]) * 2
+    from GaussianProcess import GaussianProcess
+    from GaussianProcess.trend import constant_trend
+
+    dim = 5
+    lb, ub = -5, 5
+    space = ContinuousSpace([lb, ub]) * dim
     levels = space.levels if hasattr(space, 'levels') else None
     model = RandomForest(levels=levels)
+
+    mean = constant_trend(dim, beta=None)
+    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
+    thetaU = 10 * (ub - lb) * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
+    model = GaussianProcess(mean=mean, corr='squared_exponential',
+                            theta0=theta0, thetaL=thetaL, thetaU=thetaU,
+                            nugget=0, noise_estim=False,
+                            optimizer='BFGS', wait_iter=3, random_start=10,
+                            likelihood='concentrated', eval_budget=100 * dim)
 
     opt = BO(
         search_space=space, 
         obj_fun=fitness, 
         model=model, 
-        max_FEs=300, verbose=True, 
+        DoE_size=5,
+        max_FEs=30, verbose=True, 
         n_job=1, 
-        n_point=1
+        n_point=1,
+        acquisition_optimization={'optimizer': 'MIES'}
     )
     print(opt.run())
 
@@ -54,4 +73,4 @@ def test__mixed_integer():
     )
     opt.run()
 
-test__mixed_integer()
+test__continuous()

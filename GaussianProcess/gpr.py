@@ -214,6 +214,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.sigma2 = sigma2  # variance of the stationary process
         self.verbose = verbose
         self.corr_type = corr
+        self.is_fitted = False
         
         # hyperparameters: kernel function
         self.theta0 = np.array(theta0).flatten()
@@ -320,8 +321,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             return C_prior
 
     def fit(self, X, y):
-        """
-        The Gaussian Process model fitting method.
+        """The Gaussian Process model fitting method.
 
         Parameters
         ----------
@@ -633,7 +633,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         x = np.atleast_2d(x)
         n_eval, _ = x.shape
         n_samples, n_features = self.X.shape
-        assert n_samples == 1
+        assert n_eval == 1
 
         if _ != n_features:
             raise Exception('x does not have the right size!')
@@ -666,7 +666,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     H = np.atleast_3d(
                         [
                             np.tile(g, (1, n_features)) * diff_[:, i] \
-                                + r[i] * np.diag(theta) for i in range(n_samples)
+                                + r[i] * np.diag(theta.ravel()) for i in range(n_samples)
                         ]
                     )
                     H *= -2

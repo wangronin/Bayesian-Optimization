@@ -1,8 +1,9 @@
+from pdb import set_trace
 import numpy as np
 
 from scipy.optimize import fmin_l_bfgs_b
 from .MIES import MIES
-# from .OnePlusOne_CMA import OnePlusOne_Cholesky_CMA
+from .OnePlusOne_CMA import OnePlusOne_Cholesky_CMA
 
 def argmax_restart(
     obj_func,
@@ -31,7 +32,7 @@ def argmax_restart(
             mask = np.nonzero(search_space.C_mask | search_space.O_mask)[0]
             bounds = np.array([search_space.bounds[i] for i in mask]) 
 
-            if not all(isinstance(x0, float)):
+            if not all([isinstance(_, float) for _ in x0]):
                 raise ValueError('BFGS is not supported with mixed variable types.')
 
             func = lambda x: tuple(map(lambda x: -1. * x, obj_func(x)))
@@ -41,7 +42,9 @@ def argmax_restart(
             )
 
             xopt_ = xopt_.flatten().tolist()
-            fopt_ = -np.asscalar(fopt_)
+            if not isinstance(fopt_, float):
+                fopt_ = float(fopt_)
+            fopt_ = -fopt_
             
             if logger is not None and stop_dict["warnflag"] != 0:
                 logger.debug(
@@ -80,6 +83,5 @@ def argmax_restart(
         if eval_budget <= 0 or wait_count >= wait_iter:
             break
 
-    # maximization: sort the optima in descending order
     idx = np.argsort(fopt)[::-1]
     return xopt[idx[0]], fopt[idx[0]]

@@ -32,16 +32,18 @@ class OnePlusOne_CMA(object):
         ub: Union[float, str, Vector, np.ndarray] = np.inf,
         ftarget: Union[int, float] = -np.inf,
         max_FEs: Union[int, str] = np.inf, 
+        minimize: bool = True,
         opts: dict = {},
         verbose: bool = False
         ):
 
         self.dim = dim
-        self.sigma0 = self.sigma = sigma0
         self.obj_fun = obj_fun
         self.ftarget = ftarget
+        self.minimize = minimize
         self.lb = set_bounds(lb, self.dim)
         self.ub = set_bounds(ub, self.dim)
+        self.sigma0 = self.sigma = sigma0
 
         self.x = x0
         self.max_FEs = int(eval(max_FEs)) if isinstance(max_FEs, str) else max_FEs
@@ -106,11 +108,14 @@ class OnePlusOne_CMA(object):
     
     @sigma.setter
     def sigma(self, sigma):
+        if not sigma:
+            assert all(~np.isinf(self.lb)) & all(~np.isinf(self.ub))
+            sigma = np.max(self.ub - self.lb) / 5
         assert sigma > 0
         self._sigma = sigma
 
     def run(self):
-        while self.check_stop():
+        while not self.check_stop():
             self.step()
             
         return self.xopt, self.fopt, self.stop_dict
@@ -153,7 +158,7 @@ class OnePlusOne_CMA(object):
         if self.eval_count >= self.max_FEs:
             self.stop_dict['FEs'] = self.eval_count
 
-        return not bool(self.stop_dict)
+        return bool(self.stop_dict)
 
     def _update_covariance(self, z):
         if self.success_rate < self.threshold:
