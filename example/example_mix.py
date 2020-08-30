@@ -4,11 +4,11 @@ import sys
 import numpy as np
 sys.path.insert(0, '../')
 
-from BayesOpt import AnnealingBO, BO, ContinuousSpace, OrdinalSpace, \
+from BayesOpt import ParallelBO, ContinuousSpace, OrdinalSpace, \
     NominalSpace, RandomForest
 
-np.random.seed(666)
-
+seed = 666
+np.random.seed(seed)
 dim_r = 2  # dimension of the real values
 
 def obj_fun(x):
@@ -42,7 +42,7 @@ search_space = C + I + N
 # For mixed variable type, the random forest is typically used
 model = RandomForest(levels=search_space.levels)
 
-opt = AnnealingBO(
+opt = ParallelBO(
     search_space=search_space, 
     obj_fun=obj_fun, 
     model=model, 
@@ -52,10 +52,10 @@ opt = AnnealingBO(
     acquisition_par={'t' : 2},
     n_job=3,       # number of processes
     n_point=3,     # number of the candidate solution proposed in each iteration
-    verbose=True,  # turn this off, if you prefer no output
+    verbose=True   # turn this off, if you prefer no output
 )
 xopt, fopt, stop_dict = opt.run()
 
 print('xopt: {}'.format(xopt))
-print('fopt: {}'.format(fitness))
+print('fopt: {}'.format(fopt))
 print('stop criteria: {}'.format(stop_dict))

@@ -9,7 +9,7 @@ from abc import abstractmethod
 from pyDOE import lhs
 
 class SearchSpace(object):
-    def __init__(self, bounds, var_name, name):
+    def __init__(self, bounds, var_name, name, random_seed=None):
         """Search Space Base Class
 
         Parameters
@@ -65,6 +65,7 @@ class SearchSpace(object):
             
         self.dim = len(self.bounds)
         self.name = name
+        self.random_seed = random_seed
         self.var_type = None 
         self.levels = None
         self.precision = None
@@ -77,6 +78,16 @@ class SearchSpace(object):
                     var_name = [var_name]
             assert len(var_name) == self.dim
             self.var_name = var_name
+
+    @property
+    def random_seed(self):
+        return self._random_seed
+    
+    @random_seed.setter
+    def random_seed(self, seed):
+        if seed:
+            self._random_seed = int(seed)
+            np.random.seed(self._random_seed)
 
     @abstractmethod
     def sampling(self, N=1):
@@ -263,7 +274,6 @@ class ContinuousSpace(SearchSpace):
                 X = ((ub - lb) * rand(N, self.dim) + lb).tolist()
             else:
                 X = ((ub - lb) * lhs(self.dim, samples=N, criterion='cm') + lb).tolist()
-
         return self.round(X)
 
 
