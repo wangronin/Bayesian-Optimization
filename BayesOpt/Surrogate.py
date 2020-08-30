@@ -1,11 +1,9 @@
-# -*- coding: utf-8 -*-
 """
 Created on Mon Sep 11 10:48:14 2017
 
 @author: Hao Wang
 @email: wangronin@gmail.com
 """
-from __future__ import print_function
 from pdb import set_trace
 
 import pandas as pd
@@ -15,7 +13,7 @@ from numpy import std, array, atleast_2d
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.utils.validation import check_is_fitted
-from sklearn.ensemble.base import _partition_estimators
+from sklearn.ensemble._base import _partition_estimators
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 from sklearn.metrics import r2_score
 
@@ -58,17 +56,27 @@ class SurrogateAggregation(object):
         # TODO: implement
         pass
         
-# this function has to be globally visible
-def save(predict, X, index, out):
-    out[:, index] = predict(X, check_input=False)
+def _save_prediction(predict, X, index, out):
+    """
+    It can't go locally in ForestClassifier or ForestRegressor, because joblib
+    complains that it cannot pickle it when placed there.
+    """
+    out[..., index] = predict(X, check_input=False)
 
 class RandomForest(RandomForestRegressor):
+    """Extension on the sklearn's `RandomForestRegressor`
+    Added functionality: 
+        1) MSE estimate, 
+        2) OneHotEncoding to handle categorical variables
     """
-    Extension on the sklearn RandomForestRegressor class
-    Added functionality: empirical MSE of predictions
-    """
-    def __init__(self, n_estimators=100, max_features=5./6, min_samples_leaf=2, 
-                 levels=None, **kwargs):
+    def __init__(
+        self, 
+        n_estimators=100, 
+        max_features=5/6, 
+        min_samples_leaf=2, 
+        levels=None, 
+        **kwargs
+        ):
         """
         parameter
         ---------
@@ -84,8 +92,6 @@ class RandomForest(RandomForestRegressor):
         )
         self.is_fitted = False
 
-        # TODO: using such encoding, feature number will increase drastically
-        # TODO: investigate the upper bound (in the sense of cpu time)
         # for categorical levels/variable number
         # in the future, maybe implement binary/multi-value split
         if levels is not None:
@@ -98,7 +104,6 @@ class RandomForest(RandomForestRegressor):
             self._enc = OneHotEncoder(categories=self._categories, sparse=False)
 
     def _check_X(self, X):
-        # TODO: this line seems to cause problem sometimes
         X_ = array(X, dtype=object)
         if hasattr(self, '_levels'):
             X_cat = X_[:, self._cat_idx]
@@ -117,6 +122,21 @@ class RandomForest(RandomForestRegressor):
         return super(RandomForest, self).fit(X, y)
 
     def predict(self, X, eval_MSE=False):
+        """Predict regression target for `X`.
+        The predicted regression target of an input sample is computed as the
+        mean predicted regression targets of the trees in the forest.
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The input samples. Internally, its dtype will be converted to
+            ``dtype=np.float32``. If a sparse matrix is provided, it will be
+            converted into a sparse ``csr_matrix``.
+        Returns
+        -------
+        y : ndarray of shape (n_samples,) or (n_samples, n_outputs)
+            The predicted values.
+        """
+        check_is_fitted(self)
         # Check data
         X = self._check_X(X)
         X = self._validate_X_predict(X)
@@ -124,125 +144,26 @@ class RandomForest(RandomForestRegressor):
         # Assign chunk of trees to jobs
         n_jobs, _, _ = _partition_estimators(self.n_estimators, self.n_jobs)
 
-        # avoid storing the output of every estimator by summing them here
+        # storing the output of every estimator since those are required to estimate the MSE
         if self.n_outputs_ > 1:
-            y_hat_all = np.zeros((X.shape[0], self.n_outputs_, self.n_estimators), dtype=np.float64)
+            y_hat_all = np.zeros(
+                (X.shape[0], self.n_outputs_, self.n_estimators), dtype=np.float64
+            )
         else:
             y_hat_all = np.zeros((X.shape[0], self.n_estimators), dtype=np.float64)
 
         # Parallel loop
         Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
-            delayed(save)(e.predict, X, i, y_hat_all) for i, e in enumerate(self.estimators_))
+            delayed(_save_prediction)(e.predict, X, i, y_hat_all) \
+                for i, e in enumerate(self.estimators_)
+        )
 
         y_hat = np.mean(y_hat_all, axis=1).flatten()
         if eval_MSE:
-            sigma2 = np.std(y_hat_all, axis=1, ddof=1) ** 2.
-            sigma2 = sigma2.flatten()
-        return (y_hat, sigma2) if eval_MSE else y_hat
+            _MSE_hat = np.std(y_hat_all, axis=1, ddof=1) ** 2.
+            _MSE_hat = _MSE_hat.flatten()
 
-# TODO: find a way to wrap R randomforest package
-if 11 < 2:
-    import rpy2.robjects as ro
-    from rpy2.robjects.packages import importr
-    from rpy2.robjects import r, pandas2ri, numpy2ri
-
-    # numpy and pandas data type conversion to R
-    numpy2ri.activate()
-    pandas2ri.activate()
-
-    class RrandomForest(object):
-        """
-        Python wrapper for the R 'randomForest' library for regression
-        TODO: verify R randomForest uses CART trees instead of C45...
-        """
-        def __init__(self, levels=None, n_estimators=10, max_features='auto',
-                    min_samples_leaf=1, max_leaf_nodes=None, importance=False,
-                    nPerm=1, corr_bias=False, seed=None):
-            """
-            parameter
-            ---------
-            levels : dict
-                dict keys: indices of categorical variables
-                dict values: list of levels of categorical variables
-            seed : int, random seed
-            """
-            if max_leaf_nodes is None:
-                max_leaf_nodes = ro.NULL
-
-            if max_features == 'auto':
-                mtry = 'p'
-            elif max_features == 'sqrt':
-                mtry = 'int(np.sqrt(p))'
-            elif max_features == 'log':
-                mtry = 'int(np.log2(p))'
-            else:
-                mtry = max_features
-
-            self.pkg = importr('randomForest')
-            self._levels = levels
-            self.param = {'ntree' : int(n_estimators),
-                        'mtry' : mtry,
-                        'nodesize' : int(min_samples_leaf),
-                        'maxnodes' : max_leaf_nodes,
-                        'importance' : importance,
-                        'nPerm' : int(nPerm),
-                        'corr_bias' : corr_bias}
-
-            # make R code reproducible
-            if seed is not None:
-                r['set.seed'](seed)
-
-        def _check_X(self, X):
-            """
-            Convert all input types to R data.frame
-            """
-            if isinstance(X, list):
-                if isinstance(X[0], list):
-                    X = array(X, dtype=object)
-                else:
-                    X = array([X], dtype=object)
-            elif isinstance(X, np.ndarray):
-                if hasattr(self, 'columns'):
-                    if X.shape[1] != len(self.columns):
-                        X = X.T
-            elif isinstance(X, pd.Series) or isinstance(X, pd.DataFrame):
-                X = X.values
-
-            # be carefull: categorical columns should be converted as FactorVector
-            to_r = lambda index, column: ro.FloatVector(column) if index not in self._levels.keys() else \
-                ro.FactorVector(column, levels=ro.StrVector(self._levels[index]))
-            d = {'X' + str(i) : to_r(i, X[:, i]) for i in range(X.shape[1])}
-            X_r = ro.DataFrame(d)
-
-            return X_r
-
-        def fit(self, X, y):
-            self.X = self._check_X(X)
-            y = array(y).astype(float)
-
-            self.columns = numpy2ri.ri2py(self.X.colnames)
-            n_sample, self.n_feature = self.X.nrow, self.X.ncol
-
-            if isinstance(self.param['mtry'], str):
-                p = self.n_feature
-                self.param['mtry'] = eval(self.param['mtry'])
-
-            self.rf = self.pkg.randomForest(x=self.X, y=y, **self.param)
-            return self
-
-        def predict(self, X, eval_MSE=False):
-            """
-            X should be a dataframe
-            """
-            X = self._check_X(X)
-            _ = self.pkg.predict_randomForest(self.rf, X, predict_all=eval_MSE)
-
-            if eval_MSE:
-                y_hat = numpy2ri.ri2py(_[0])
-                mse = std(numpy2ri.ri2py(_[1]), axis=1, ddof=1) ** 2.
-                return y_hat, mse
-            else:
-                return numpy2ri.ri2py(_)
+        return (y_hat, _MSE_hat) if eval_MSE else y_hat
 
 if __name__ == '__main__':
     # TODO: this part goes into test 
