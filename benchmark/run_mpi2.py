@@ -1,7 +1,6 @@
 import os, sys
 import numpy as np
-import fgeneric
-import bbobbenchmarks as bn
+import cocoex, cocopp 
 from time import time
 
 def run_optimizer(
@@ -25,15 +24,20 @@ def run_optimizer(
     
     data_path = os.path.join(data_path, str(instance))
     max_FEs = eval(max_FEs)
+    
+    suite_filter_options = "dimensions: %d instance_indices: %d year:2019"%(dim, instance)
+    suite = cocoex.Suite('bbob', "", suite_filter_options)
 
-    f = fgeneric.LoggingFunction(data_path, **bbob_opt)
-    f.setfun(*bn.instantiate(fID, iinstance=instance))
+    observer = cocoex.Observer('bbob', "result_folder: " + data_path)
+    f = suite.get_problem(fID)
+    f.observe_with(observer)
+    assert dim == f.dimension
 
-    opt = optimizer(dim, f.evalfun, f.ftarget, max_FEs, lb, ub, logfile)
+    opt = optimizer(dim, f, -np.inf, max_FEs, f.lower_bounds, f.upper_bounds, logfile)
     opt.run()
 
     f.finalizerun()
-    with open(logfile, 'a') as fout:
+    with open('out', 'a') as fout:
         fout.write(
             "{} on f{} in {}D, instance {}: FEs={}, fbest-ftarget={:.4e}, " 
             "elapsed time [m]: {:.3f}\n".format(optimizer, fID, dim, 
@@ -42,12 +46,12 @@ def run_optimizer(
 
 def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
     sys.path.insert(0, '../')
-    from BayesOpt import AnnealingBO, BO, ContinuousSpace, OrdinalSpace, \
+    from BayesOpt import BO, ContinuousSpace, OrdinalSpace, \
         NominalSpace, RandomForest
     from GaussianProcess import GaussianProcess
     from GaussianProcess.trend import constant_trend
 
-    space = ContinuousSpace([lb, ub]) * dim
+    space = ContinuousSpace(list(zip(lb, ub)))
 
     mean = constant_trend(dim, beta=0)  # equivalent to Ordinary Kriging
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
@@ -83,9 +87,9 @@ if __name__ == '__main__':
     size = comm.Get_size()
     
     dims = (2, 5)
-    fIDs = bn.nfreeIDs    # for all fcts
+    fIDs = range(25)
     instance = range(1, size + 1)
-    
+
     algorithms = [
         test_BO
     ]
