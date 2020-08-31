@@ -1,81 +1,131 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-"""
-Runs an entire experiment for benchmarking Bayesian Optimization on a testbed.
-
-"""
-
-import pdb
-import time
+import os, sys
 import numpy as np
-from numpy import floor, log
-
 import fgeneric
 import bbobbenchmarks as bn
+from time import time
 
-from BayesOpt.BayesOptNew import BayesOpt
-#from BayesOpt import BayesOpt
-from BayesOpt.SearchSpace import ContinuousSpace
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import Matern
 
-from GaussianProcess import GaussianProcess
-from GaussianProcess.trend import constant_trend
+np.random.seed(42)
 
-datapath = './bbob_data/test'
-opts = dict(algid='Bayesopt', comments='Bayesian Optimization')
-maxfunevals = '50 * dim'  
-
-infill = 'MGFI'
-schedule = 'None'
-                        
-
-def run_bayesopt(obj_fun, dim, maxfunevals, ftarget=-np.Inf):
-    n_init_sample = 10 * dim
-    search_space = ContinuousSpace([-4, 4]) * dim
+class _GaussianProcessRegressor(GaussianProcessRegressor):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.is_fitted = False
     
-    thetaL = 1e-10 * 8 * np.ones(dim)
-    thetaU = 10 * 8 * np.ones(dim)
-    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-    
-    mean = constant_trend(dim, beta=None)
-    model = GaussianProcess(mean=mean, corr='matern',
-                            theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-                            nugget=1e-6, noise_estim=False, verbose=False,
-                            optimizer='BFGS', wait_iter=3, random_start=min(2 * dim, 10),
-                            likelihood='concentrated', eval_budget=int(8 + floor(40 * log(dim))))
-                            
-    opt = BayesOpt(search_space, obj_fun, model, random_seed=None, 
-                   infill=infill, t0=2, schedule=schedule,
-                   n_init_sample=n_init_sample, max_eval=maxfunevals, minimize=True, 
-                   max_infill_eval=50 * dim, n_restart=min(3 * dim, 20), verbose=True, 
-                   optimizer='BFGS')
+    def fit(self, X, y):
+        super().fit(X, y)
+        self.is_fitted = True 
+        return self
 
+    def predict(self, X, eval_MSE=False):
+        _ = super().predict(X=X, return_std=eval_MSE)
+
+        if eval_MSE:
+            y_, sd = _
+            sd2 = sd ** 2
+            return y_, sd2
+        else:
+            return _
+
+def run_optimizer(
+    optimizer, 
+    dim, 
+    fID, 
+    instance, 
+    logfile, 
+    lb, 
+    ub, 
+    max_FEs, 
+    data_path, 
+    bbob_opt
+    ):
+    """Parallel BBOB/COCO experiment wrapper
+    """
+    # Set different seed for different processes
+    start = time()
+    seed = np.mod(int(start) + os.getpid(), 1000)
+    np.random.seed(seed)
+    
+    data_path = os.path.join(data_path, str(instance))
+    max_FEs = eval(max_FEs)
+
+    f = fgeneric.LoggingFunction(data_path, **bbob_opt)
+    f.setfun(*bn.instantiate(fID, iinstance=instance))
+
+    opt = optimizer(dim, f.evalfun, f.ftarget, max_FEs, lb, ub, logfile)
     opt.run()
+
+    f.finalizerun()
+    with open(logfile, 'a') as fout:
+        fout.write(
+            "{} on f{} in {}D, instance {}: FEs={}, fbest-ftarget={:.4e}, " 
+            "elapsed time [m]: {:.3f}\n".format(optimizer, fID, dim, 
+            instance, f.evaluations, f.fbest - f.ftarget, (time() - start) / 60.)
+        )
+
+def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
+    sys.path.insert(0, '../')
+    sys.path.insert(0, '../../GaussianProcess')
+    from BayesOpt import BO, ContinuousSpace, OrdinalSpace, \
+        NominalSpace, RandomForest
+    from GaussianProcess import GaussianProcess
+    from GaussianProcess.trend import constant_trend
+
+    space = ContinuousSpace([lb, ub]) * dim
+
+    # kernel = 1.0 * Matern(length_scale=(1, 1), length_scale_bounds=(1e-10, 1e2))
+    # model = _GaussianProcessRegressor(kernel=kernel, alpha=0, n_restarts_optimizer=30, normalize_y=False)
+
+    mean = constant_trend(dim, beta=0)  # equivalent to Simple Kriging
+    thetaL = 1e-5 * (ub - lb) * np.ones(dim)
+    thetaU = 10 * (ub - lb) * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
+    model = GaussianProcess(
+        mean=mean, corr='matern',
+        theta0=theta0, thetaL=thetaL, thetaU=thetaU,
+        noise_estim=False, nugget=0,
+        optimizer='BFGS', wait_iter=5, random_start=10 * dim,
+        eval_budget=200 * dim
+    )
+
+    return BO(
+        search_space=space, 
+        obj_fun=obj_fun, 
+        model=model, 
+        DoE_size=dim * 10,
+        max_FEs=max_FEs, 
+        verbose=True, 
+        n_point=1,
+        minimize=True,
+        acquisition_fun='EI',
+        ftarget=ftarget,
+        logger=None
+    )
+
+if __name__ == '__main__': 
+    dims = (2, )
+    fIDs = bn.nfreeIDs[6:]    # for all fcts
+    instance = [1] * 10
     
+    algorithm = test_BO
 
-t0 = time.time()
-np.random.seed(666)
-
-f = fgeneric.LoggingFunction(datapath, **opts)
-
-n_instance = 15
-error = np.zeros(n_instance)
-
-for dim in (2,):  
-    for f_name in bn.nfreeIDs: # or bn.noisyIDs
-        for i, iinstance in enumerate(range(n_instance)):
-            f.setfun(*bn.instantiate(f_name, iinstance=iinstance))
-
-            run_bayesopt(f.evalfun, dim,  eval(maxfunevals), f.ftarget)
-                
-            f.finalizerun()
-            print('  f%d in %d-D, instance %d: FEs=%d, '
-                  'fbest-ftarget=%.4e, elapsed time [m]: %.3f'
-                  % (f_name, dim, iinstance, f.evaluations, 
-                     f.fbest - f.ftarget, (time.time() - t0) / 60.))
-            error[i] = f.fbest - f.ftarget
-            
-        print '      median fitness error runs: %f' % np.mean(error)
-        print '      date and time: %s' % (time.asctime())
-    print '---- dimension %d-D done ----' % dim
-
+    opts = {
+        'max_FEs': '50',
+        'lb': -5,
+        'ub': 5,
+        'data_path': './bbob_data/%s'%algorithm.__name__
+    }
+    opts['bbob_opt'] = {
+        'comments': 'max_FEs={0}'.format(opts['max_FEs']),
+        'algid': algorithm.__name__ 
+    }
+    
+    for dim in dims:
+        for fID in fIDs:
+            for i in instance:
+                run_optimizer(
+                    algorithm, dim, fID, i, logfile='./log', **opts
+                )

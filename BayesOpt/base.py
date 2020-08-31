@@ -294,7 +294,6 @@ class baseBO(ABC):
     def ask(self, n_point=None):
         if self.model.is_fitted:
             n_point = self.n_point if n_point is None else self.n_point
-
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
             X = Solution(
@@ -356,7 +355,7 @@ class baseBO(ABC):
             X.to_csv(self.data_file, header=False, append=True)
 
         self.fopt = self._get_best(self.data.fitness)
-        self.xopt = self.data[np.where(self.data.fitness == self.fopt)]  
+        self.xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]  
         self._logger.info('fopt: {}'.format(self.fopt))   
         self._logger.info('xopt: {}\n'.format(self._search_space.to_dict(self.xopt))) 
 
@@ -372,7 +371,7 @@ class baseBO(ABC):
     def create_DoE(self, n_point=None):
         DoE = []
         while len(DoE) < n_point:
-            DoE += self._search_space.sampling(n_point - len(DoE), method='LHS')
+            DoE += self._search_space.sampling(n_point - len(DoE), method='uniform')
             DoE = self.pre_eval_check(DoE).tolist()
         
         return Solution(DoE, var_name=self.var_names)

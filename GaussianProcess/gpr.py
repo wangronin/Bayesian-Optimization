@@ -1,7 +1,7 @@
 # Author: Hao Wang 
 # Email: wangronin@gmail.com
 
-import pdb
+from pdb import set_trace
 import warnings 
 
 import numpy as np
