@@ -2,9 +2,7 @@ import os, sys
 import numpy as np
 import fgeneric
 import bbobbenchmarks as bn
-
 from time import time
-from pyDOE import lhs
 
 def run_optimizer(
     optimizer, 
@@ -72,7 +70,9 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub):
         max_FEs=max_FEs, 
         verbose=False, 
         n_point=1,
-        ftarget=ftarget
+        minimize=True,
+        ftarget=ftarget,
+        logger=None
     )
 
 if __name__ == '__main__': 
