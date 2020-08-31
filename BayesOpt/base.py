@@ -306,7 +306,6 @@ class baseBO(ABC):
             # TODO: handle the constrains when performing random sampling
             # draw the remaining ones randomly
             if len(X) < n_point:
-                set_trace()
                 self._logger.warn(
                     "iteration {}: duplicated solution found " 
                     "by optimization! New points is taken from random "
