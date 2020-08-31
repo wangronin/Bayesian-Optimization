@@ -29,7 +29,7 @@ class BO(baseBO):
         if hasattr(getattr(InfillCriteria, self._acquisition_fun), 'plugin'):
             if 'plugin' not in par:
                 # par.update({'plugin': min(self.data.fitness)})
-                par.update({'plugin': 0})
+                par.update({'plugin': self.fmin})
         
         return super()._create_acquisition(fun, par, return_dx)
 

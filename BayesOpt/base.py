@@ -418,8 +418,8 @@ class baseBO(ABC):
         self.fmin, self.fmax = np.min(fitness), np.max(fitness)
 
         # flat_fitness = np.isclose(self.fmin, self.fmax)
-        fitness_scaled = (fitness - self.fmin) / (self.fmax - self.fmin)
-        # fitness_scaled = fitness
+        # fitness_scaled = (fitness - self.fmin) / (self.fmax - self.fmin)
+        fitness_scaled = fitness
         self.frange = self.fmax - self.fmin
 
         # fit the surrogate model
