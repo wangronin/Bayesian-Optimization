@@ -415,24 +415,24 @@ class baseBO(ABC):
 
         # normalization the response for the numerical stability
         # e.g., for MGF-based acquisition function
-        self.fmin, self.fmax = np.min(fitness), np.max(fitness)
+        # TODO: maybe to standardize `fitness` instead of rescaling it to [0, 1]
+        if self._acquisition_fun == 'MGFI':
+            fitness_ = (fitness - np.min(fitness)) / (np.max(fitness) - np.min(fitness))
+        else:
+            fitness_ = fitness
 
-        # flat_fitness = np.isclose(self.fmin, self.fmax)
-        # fitness_scaled = (fitness - self.fmin) / (self.fmax - self.fmin)
-        fitness_scaled = fitness
+        self.fmin, self.fmax = np.min(fitness_), np.max(fitness_)
         self.frange = self.fmax - self.fmin
 
         # fit the surrogate model
-        self.model.fit(data, fitness_scaled)
+        self.model.fit(data, fitness_)
         
         fitness_hat = self.model.predict(data)
-        r2 = r2_score(fitness_scaled, fitness_hat)
+        r2 = r2_score(fitness_, fitness_hat)
 
-        # TODO: adding cross validation for the model? 
-        # TODO: how to prevent overfitting in this case
-        # TODO: in case r2 is really poor, re-fit the model or transform the input? 
-        # TODO: perform diagnostic/validation on the surrogate model
-        # consider the performance metric transformation in SMAC
+        # TODO: implement a proper model selection here 
+        # TODO: in case r2 is really poor, re-fit the model or log-transform `fitness`?
+        # TODO: need to report more performance metric for regression
         self._logger.info('Surrogate model r2: {}'.format(r2))
         return r2
 

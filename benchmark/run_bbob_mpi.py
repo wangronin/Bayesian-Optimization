@@ -49,7 +49,7 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
 
     space = ContinuousSpace([lb, ub]) * dim
 
-    mean = constant_trend(dim, beta=None)
+    mean = constant_trend(dim, beta=None)  # equivalent to Ordinary Kriging
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
     thetaU = 10 * (ub - lb) * np.ones(dim)
     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
