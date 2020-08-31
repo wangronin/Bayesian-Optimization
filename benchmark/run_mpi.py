@@ -49,7 +49,7 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
 
     space = ContinuousSpace([lb, ub]) * dim
 
-    mean = constant_trend(dim, beta=None)  # equivalent to Ordinary Kriging
+    mean = constant_trend(dim, beta=0)  # equivalent to Ordinary Kriging
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
     thetaU = 10 * (ub - lb) * np.ones(dim)
     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
@@ -57,8 +57,8 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
     model = GaussianProcess(
         mean=mean, corr='matern',
         theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-        noise_estim=True,
-        optimizer='BFGS', wait_iter=3, random_start=dim,
+        noise_estim=False, nugget=1e-6,
+        optimizer='BFGS', wait_iter=5, random_start=5 * dim,
         likelihood='concentrated', eval_budget=100 * dim
     )
 
@@ -66,7 +66,7 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
         search_space=space, 
         obj_fun=obj_fun, 
         model=model, 
-        DoE_size=5,
+        DoE_size=dim * 5,
         max_FEs=max_FEs, 
         verbose=False, 
         n_point=1,

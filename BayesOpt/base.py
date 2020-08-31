@@ -371,7 +371,7 @@ class baseBO(ABC):
     def create_DoE(self, n_point=None):
         DoE = []
         while len(DoE) < n_point:
-            DoE += self._search_space.sampling(n_point - len(DoE), method='uniform')
+            DoE += self._search_space.sampling(n_point - len(DoE), method='LHS')
             DoE = self.pre_eval_check(DoE).tolist()
         
         return Solution(DoE, var_name=self.var_names)
