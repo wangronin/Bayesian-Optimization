@@ -10,7 +10,7 @@ from copy import copy
 sys.path.insert(0, '../')
 
 from BayesOpt import BO, SearchSpace, Solution
-from BayesOpt.optimizer import OnePlusOne_CMA
+from BayesOpt.optimizer import OnePlusOne_Cholesky_CMA
 
 class _BO(BO):
     def __init__(self, **kwargs):
@@ -40,7 +40,7 @@ class OptimizerPipeline(object):
     def __init__(
         self,
         obj_fun: Callable,
-        ftarget: float = None,
+        ftarget: float = -np.inf,
         max_FEs: int = None,
         minimize: bool = True,
         verbose: bool = False
@@ -108,14 +108,18 @@ class OptimizerPipeline(object):
         self.fopt = self._curr_opt.fopt
 
     def switch(self):
-        # To check if the current optimizer is stopped
-        # and switch to the next optimizer
+        """To check if the current optimizer is stopped
+        and switch to the next optimizer
+        """
         if self._curr_opt.check_stop():
             _max_FEs = self.max_FEs - self._curr_opt.eval_count
             _counter = self._counter + 1
-            if _counter + 1 < self.N or _max_FEs > 0:
+
+            if _counter < self.N and _max_FEs > 0:
                 _curr_opt, _transfer = self.queue[_counter]
                 _curr_opt.max_FEs = _max_FEs
+                _curr_opt.xopt = np.array(self._curr_opt.xopt)
+                _curr_opt.fopt = self._curr_opt.fopt
                 self._counter = _counter
 
                 if self._transfer:
@@ -152,12 +156,12 @@ if __name__ == '__main__':
     np.random.seed(42)
 
     dim = 2
-    max_FEs = 50
-    obj_fun = lambda x: benchmarks.ackley(x)[0]
-    lb, ub = -1, 6
+    max_FEs = 100
+    obj_fun = lambda x: benchmarks.griewank(x)[0]
+    lb, ub = -600, 600
 
     search_space = ContinuousSpace([lb, ub]) * dim
-    mean = constant_trend(dim, beta=0)    
+    mean = constant_trend(dim, beta=None)    
 
     # autocorrelation parameters of GPR
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
@@ -167,9 +171,9 @@ if __name__ == '__main__':
     model = GaussianProcess(
         mean=mean, corr='squared_exponential',
         theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-        nugget=0, noise_estim=False,
-        optimizer='BFGS', wait_iter=5, random_start=dim,
-        likelihood='concentrated', eval_budget=100 * dim
+        nugget=1e-6, noise_estim=False,
+        optimizer='BFGS', wait_iter=5, random_start=5 * dim,
+        eval_budget=100 * dim
     )
 
     bo = _BO(
@@ -177,13 +181,13 @@ if __name__ == '__main__':
         obj_fun=obj_fun,
         model=model,
         eval_type='list',
-        DoE_size=3,
+        DoE_size=10,
         n_point=1,
         acquisition_fun='EI',
         verbose=True,
         minimize=True
     )
-    cma = OnePlusOne_CMA(dim=dim, obj_fun=obj_fun, lb=lb, ub=ub)
+    cma = OnePlusOne_Cholesky_CMA(dim=dim, obj_fun=obj_fun, lb=lb, ub=ub)
 
     def post_BO(BO):
         xopt = BO.xopt.tolist()
@@ -194,13 +198,13 @@ if __name__ == '__main__':
 
         w, B = np.linalg.eigh(H)
         M = np.diag(1 / np.sqrt(w)).dot(B.T)
-        H_inv = B.dot(np.diag(1 / 2)).dot(B.T)
+        H_inv = B.dot(np.diag(1 / w)).dot(B.T)
         sigma0 = np.linalg.norm(M.dot(g)) / np.sqrt(dim - 0.5)
 
         kwargs = {
-            'x0' : xopt,
-            'sigma0' : sigma0,
-            'C0' : H_inv,
+            'x' : xopt,
+            'sigma' : sigma0,
+            'C' : H_inv,
         }
         return kwargs
 

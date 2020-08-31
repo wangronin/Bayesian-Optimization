@@ -205,7 +205,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     # TODO: separater the kernel function from here
     def __init__(self, mean, corr='squared_exponential',
                  theta0=1e-1, thetaL=None, thetaU=None, sigma2=None, 
-                 nugget=None, noise_estim=False, optimizer='BFGS', 
+                 nugget=1e-6, noise_estim=False, optimizer='BFGS', 
                  likelihood='concentrated', random_start=1, wait_iter=5,
                  eval_budget=None, random_state=None, verbose=False):
 
@@ -563,7 +563,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         r = self.corr(self.theta_, d).reshape(n_eval, n_samples)
         r_dx2 = self.corr_Hessian(x, X=self.X, r=r)
         
-        return f_dx2.dot(self.mean.beta) + r_dx2.dot(self.gamma)
+        return (f_dx2.dot(self.mean.beta) + r_dx2.dot(self.gamma))[..., 0]
 
     def corr_dx(self, x, X=None, theta=None, r=None, nu=1.5):
         # TODO: move corr_dx, corr_grad_theta the kernel module
@@ -574,7 +574,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         n_samples, n_features = self.X.shape
 
         if _ != n_features:
-            raise Exception('x does not have the right sizeh!')
+            raise Exception('x does not have the right size!')
 
         if n_eval != 1:
             raise Exception('x must be a vector!')
@@ -649,6 +649,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             X = self.X
 
         diff = (x - X).T
+
         if theta is None:
             theta = self.theta_
         theta = theta.reshape(-1, 1)
@@ -663,13 +664,15 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 if self.corr_type == 'squared_exponential':
                     diff_ = theta * diff
                     g = -2 * r * diff_
-                    H = np.atleast_3d(
-                        [
-                            np.tile(g, (1, n_features)) * diff_[:, i] \
-                                + r[i] * np.diag(theta.ravel()) for i in range(n_samples)
-                        ]
-                    )
-                    H *= -2
+
+                    H = []
+                    for k in range(n_features):
+                        _ = np.zeros((n_features, n_samples))
+                        _[k, :] = theta[k]
+                        H.append(
+                            -2 * (g[k, :] * (theta * diff) + r * _)
+                        )
+                    H = np.atleast_3d(H)
                 elif self.corr_type == 'matern':
                     c = np.sqrt(3)
                     D = np.sqrt(np.sum(theta * diff ** 2., axis=0))

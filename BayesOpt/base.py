@@ -355,7 +355,8 @@ class baseBO(ABC):
             X.to_csv(self.data_file, header=False, append=True)
 
         self.fopt = self._get_best(self.data.fitness)
-        self.xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]  
+        _xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]  
+        self.xopt = self._to_pheno(_xopt)
         self._logger.info('fopt: {}'.format(self.fopt))   
         self._logger.info('xopt: {}\n'.format(self._search_space.to_dict(self.xopt))) 
 

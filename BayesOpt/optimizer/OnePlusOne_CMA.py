@@ -47,13 +47,13 @@ class OnePlusOne_CMA(object):
 
         self.x = x0
         self.max_FEs = int(eval(max_FEs)) if isinstance(max_FEs, str) else max_FEs
-        self._init_covariance(C0)
         self._init_aux_var(opts)
+        self._init_covariance(C0)
 
         self.eval_count = 0
         self.iter_count = 0
         self.xopt = self._x
-        self.fopt, self._y = np.inf, np.inf
+        self.fopt = np.inf
         self.stop_dict = {}
         self._exception = False
         self.verbose = verbose
@@ -70,21 +70,28 @@ class OnePlusOne_CMA(object):
         self.pc = np.zeros(self.dim)
         self._coeff = self.cc * (2 - self.cc)
 
-    def _init_covariance(self, C=None):
-        if C:
+    def _init_covariance(self, C):
+        if C is None:
+            self._C = np.eye(self.dim)
+            self.__A = np.eye(self.dim)
+        else:
+            self.C = C
+
+    @property
+    def C(self):
+        return self._C
+    
+    @C.setter
+    def C(self, C):
+        if C is not None:
             try:
                 A = np.linalg.cholesky(C)
-                if np.any(~np.isreal(A)):
-                    reset = True
-                else:
-                    self.A = A
-                    self.C = C
+                if np.all(np.isreal(A)):
+                    # NOTE: `__A` is a private attribute
+                    self.__A = A
+                    self._C = C
             except np.linalg.LinAlgError:
-                reset = True
-                
-        if C is None or reset:
-            self.C = np.eye(self.dim)
-            self.A = np.eye(self.dim)
+                pass
 
     @property
     def x(self):
@@ -92,7 +99,7 @@ class OnePlusOne_CMA(object):
 
     @x.setter
     def x(self, x):
-        if x:
+        if x is not None:
             x = eval(x) if isinstance(x, str) else x
             x = np.asarray(x)
             assert np.all(x - self.lb >= 0)
@@ -122,22 +129,37 @@ class OnePlusOne_CMA(object):
             
     def step(self):
         x = self.ask()
-        y = self.obj_fun(x)
+        y = self.evaluate(x)
         self.tell(x, y)
-        
-    def ask(self) -> np.ndarray:
+    
+    def evaluate(self, x):
+        return self.obj_fun(x)
+
+    def ask(self, n_point=1) -> np.ndarray:
+        """The mutation function
+
+        Parameters
+        ----------
+        n_point : int, optional
+            the number of mutants, by default 1
+
+        Returns
+        -------
+        np.ndarray
+            [description]
+        """
         z = np.random.randn(self.dim)
-        x = self._x + self.sigma * z.dot(self.A.T)
+        x = self._x + self.sigma * z.dot(self.__A.T)
         x = handle_box_constraint(x, self.lb, self.ub) 
         return x
 
     def tell(self, x, y):
-        success = y < self._y
+        success = y < self.fopt
         z = (x - self._x) / self._sigma
         self._update_step_size(success)
 
         if success:
-            self._y = self.fopt = y
+            self.fopt = y
             self._x = self.xopt = x
             self._update_covariance(z)
 
@@ -163,14 +185,14 @@ class OnePlusOne_CMA(object):
     def _update_covariance(self, z):
         if self.success_rate < self.threshold:
             self.pc = (1 - self.cc) * self.pc + np.sqrt(self._coeff) * z
-            self.C = (1 - self.ccov) * self.C + self.ccov * np.outer(self.pc, self.pc)
+            self._C = (1 - self.ccov) * self._C + self.ccov * np.outer(self.pc, self.pc)
         else:
             self.pc = (1 - self.cc) * self.pc
-            self.C = (1 - self.ccov * (1 - self._coeff)) * self.C + \
+            self._C = (1 - self.ccov * (1 - self._coeff)) * self._C + \
                 self.ccov * np.outer(self.pc, self.pc)
 
-        self.C = np.triu(self.C) + np.triu(self.C, 1).T 
-        self._update_A(self.C)
+        self._C = np.triu(self._C) + np.triu(self._C, 1).T 
+        self._update_A(self._C)
 
     def _update_step_size(self, success):
         self.success_rate = (1 - self.cp) * self.success_rate + self.cp * success
@@ -187,7 +209,7 @@ class OnePlusOne_CMA(object):
                 if np.any(~np.isreal(A)):
                     self._exception = True
                 else:
-                    self.A = A
+                    self.__A = A
             except np.linalg.LinAlgError:
                 self._exception = True
 
@@ -196,28 +218,37 @@ class OnePlusOne_CMA(object):
             self._exception = 1
         
         if self._exception:
-            self.C = np.eye(self.dim)
+            self._C = np.eye(self.dim)
             self.pc = np.zeros((self.dim, 1))
-            self.A = np.eye(self.dim)
+            self.__A = np.eye(self.dim)
             self._sigma = self.sigma0
             self._exception = False
 
 class OnePlusOne_Cholesky_CMA(OnePlusOne_CMA):
-    def _init_covariance(self, C=None):
-        if C:
+    def _init_covariance(self, C):
+        reset = False
+        if C is not None:
             try:
                 A = np.linalg.cholesky(C)
                 if np.any(~np.isreal(A)):
                     reset = True
                 else:
-                    self.A_inv = solve_triangular(A, np.eye(self.dim), lower=True)
                     self.A = A
             except np.linalg.LinAlgError:
                 reset = True
 
         if C is None or reset:
             self.A = np.eye(self.dim)
-            self.A_inv = np.eye(self.dim)
+        
+    @property
+    def A(self):
+        return self._A
+    
+    @A.setter
+    def A(self, A):
+        assert np.all(np.triu(A, k=1).ravel() == 0)
+        self._A = A
+        self._A_inv = solve_triangular(A, np.eye(self.dim), lower=True)
 
     def _update_covariance(self, z):
         cb = self.ccov
@@ -228,15 +259,15 @@ class OnePlusOne_Cholesky_CMA(OnePlusOne_CMA):
             self.pc = (1 - self.cc) * self.pc
             ca = (1 - self.ccov) + self.ccov * self.cc * (2 - self.cc)
 
-        w = self.pc.dot(self.A_inv.T)
-        w_ = w.dot(self.A_inv)
+        w = self.pc.dot(self._A_inv.T)
+        w_ = w.dot(self._A_inv)
         L = np.sum(w ** 2)
         
-        self.A += (np.sqrt(1 + L * cb / ca) - 1) / L * np.outer(self.pc, w)
-        self.A *= np.sqrt(ca)
+        self._A += (np.sqrt(1 + L * cb / ca) - 1) / L * np.outer(self.pc, w)
+        self._A *= np.sqrt(ca)
 
-        self.A_inv -= (1 - 1 / np.sqrt(1 + L * cb / ca)) / L * np.outer(w, w_)
-        self.A_inv *= 1 / np.sqrt(ca)
+        self._A_inv -= (1 - 1 / np.sqrt(1 + L * cb / ca)) / L * np.outer(w, w_)
+        self._A_inv *= 1 / np.sqrt(ca)
 
     def _handle_exception(self):
         pass
