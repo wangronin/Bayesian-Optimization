@@ -204,7 +204,7 @@ class baseBO(ABC):
         self._logger.setLevel(logging.DEBUG)
         fmt = LoggerFormatter()
 
-        if self.verbose != 0:
+        if self.verbose:
             # create console handler and set level to warning
             ch = logging.StreamHandler(sys.stdout)
             ch.setLevel(logging.INFO)

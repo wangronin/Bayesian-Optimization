@@ -29,7 +29,7 @@ def run_optimizer(
     f = fgeneric.LoggingFunction(data_path, **bbob_opt)
     f.setfun(*bn.instantiate(fID, iinstance=instance))
 
-    opt = optimizer(dim, f.evalfun, f.ftarget, max_FEs, lb, ub)
+    opt = optimizer(dim, f.evalfun, f.ftarget, max_FEs, lb, ub, logfile)
     opt.run()
 
     f.finalizerun()
@@ -40,7 +40,7 @@ def run_optimizer(
             instance, f.evaluations, f.fbest - f.ftarget, (time() - start) / 60.)
         )
 
-def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub):
+def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
     sys.path.insert(0, '../')
     from BayesOpt import AnnealingBO, BO, ContinuousSpace, OrdinalSpace, \
         NominalSpace, RandomForest
@@ -72,7 +72,7 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub):
         n_point=1,
         minimize=True,
         ftarget=ftarget,
-        logger=None
+        logger=logfile
     )
 
 if __name__ == '__main__': 
@@ -101,8 +101,8 @@ if __name__ == '__main__':
     }
     
     for algorithm in algorithms:
-        opts['data_path'] = './bbob_data/{}'.format(algorithm) 
-        opts['bbob_opt']['algid'] = algorithm
+        opts['data_path'] = './bbob_data/{}'.format(algorithm.__name__) 
+        opts['bbob_opt']['algid'] = algorithm.__name__
         for dim in dims:
             for fID in fIDs:
                 run_optimizer(
