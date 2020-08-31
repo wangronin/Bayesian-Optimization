@@ -11,6 +11,7 @@ sys.path.insert(0, '../')
 
 from BayesOpt import BO, SearchSpace, Solution
 from BayesOpt.optimizer import OnePlusOne_Cholesky_CMA
+from BayesOpt.misc import LoggerFormatter
 
 class _BO(BO):
     def __init__(self, **kwargs):
@@ -43,7 +44,8 @@ class OptimizerPipeline(object):
         ftarget: float = -np.inf,
         max_FEs: int = None,
         minimize: bool = True,
-        verbose: bool = False
+        verbose: bool = False,
+        logger: str = None
         ):
         self.obj_fun = obj_fun
         self.max_FEs = max_FEs
@@ -53,10 +55,38 @@ class OptimizerPipeline(object):
         self.queue = []
         self.stop_dict = []
         self.N = 0
+        self.logger = logger
         self._counter = 0
         self._curr_opt = None
         self._transfer = None
         self._stop = False
+
+    @property
+    def logger(self):
+        return self._logger
+
+    @logger.setter
+    def logger(self, logger):
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger.setLevel(logging.DEBUG)
+        fmt = LoggerFormatter()
+
+        if self.verbose:
+            # create console handler and set level to warning
+            ch = logging.StreamHandler(sys.stdout)
+            ch.setLevel(logging.INFO)
+            ch.setFormatter(fmt)
+            self._logger.addHandler(ch)
+
+        # create file handler and set level to debug
+        if logger is not None:
+            fh = logging.FileHandler(logger)
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(fmt)
+            self._logger.addHandler(fh)
+
+        if hasattr(self, 'logger'):
+            self._logger.propagate = False
 
     def add(self, opt, transfer=None):
         opt.obj_fun = self.obj_fun
@@ -64,7 +94,8 @@ class OptimizerPipeline(object):
         opt.ftarget = self.ftarget
         opt.minimize = self.minimize
         opt.max_FEs = self.max_FEs
-        self.queue.append((opt, transfer))
+        opt.logger = self._logger
+        self.queue.append((opt, transfer)) # pairs of (optimizer, transfer function)
         self.N += 1
 
     def ask(self, n_point=1):
@@ -84,6 +115,7 @@ class OptimizerPipeline(object):
         """
         if not self._curr_opt:
             self._curr_opt, self._transfer = self.queue[self._counter]
+            self._logger.name = self._curr_opt.__class__.__name__
 
         return self._curr_opt.ask(n_point=n_point)
 
@@ -120,13 +152,14 @@ class OptimizerPipeline(object):
                 _curr_opt.max_FEs = _max_FEs
                 _curr_opt.xopt = np.array(self._curr_opt.xopt)
                 _curr_opt.fopt = self._curr_opt.fopt
-                self._counter = _counter
 
                 if self._transfer:
                     kwargs = self._transfer(self._curr_opt)
                     for k, v in kwargs.items():
                         setattr(_curr_opt, k, v)
 
+                self._logger.name = _curr_opt.__class__.__name__
+                self._counter = _counter
                 self._curr_opt = _curr_opt
                 self._transfer = _transfer
             else:
@@ -190,7 +223,7 @@ if __name__ == '__main__':
     cma = OnePlusOne_Cholesky_CMA(dim=dim, obj_fun=obj_fun, lb=lb, ub=ub)
 
     def post_BO(BO):
-        xopt = BO.xopt.tolist()
+        xopt = BO.xopt
         dim = BO.dim
 
         H = BO.model.Hessian(xopt)

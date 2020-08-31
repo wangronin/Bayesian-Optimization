@@ -190,11 +190,6 @@ class baseBO(ABC):
 
     @logger.setter
     def logger(self, logger):
-        """Create the logging object
-        Params:
-            logger : str, None or logging.Logger,
-                either a logger file name, None (no logging) or a logger object
-        """
         if isinstance(logger, logging.Logger):
             self._logger = logger
             self._logger.propagate = False
@@ -358,7 +353,7 @@ class baseBO(ABC):
         _xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]  
         self.xopt = self._to_pheno(_xopt)
         self._logger.info('fopt: {}'.format(self.fopt))   
-        self._logger.info('xopt: {}\n'.format(self._search_space.to_dict(self.xopt))) 
+        self._logger.info('xopt: {}\n'.format(self.xopt)) 
 
         if not self.model.is_fitted: # DoE phase
             self._fBest_DoE = copy(self.fopt)
@@ -367,7 +362,7 @@ class baseBO(ABC):
         self.update_model()   
 
         self.iter_count += 1
-        self.hist_f.append(self.xopt.fitness)
+        self.hist_f.append(self.fopt)
 
     def create_DoE(self, n_point=None):
         DoE = []
@@ -483,7 +478,7 @@ class baseBO(ABC):
             self.stop_dict['max_FEs'] = self.eval_count
         
         if self.ftarget is not None and hasattr(self, 'xopt'):
-            if self._compare(self.xopt.fitness, self.ftarget):
+            if self._compare(self.fopt, self.ftarget):
                 self.stop_dict['ftarget'] = self.fopt
 
         return bool(self.stop_dict)

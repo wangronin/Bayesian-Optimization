@@ -1,9 +1,10 @@
 from pdb import set_trace
+import logging, sys
 import numpy as np
 
 from scipy.linalg import solve_triangular
 from typing import Callable, Any, Tuple, List, Union
-from ..misc import handle_box_constraint
+from ..misc import handle_box_constraint, LoggerFormatter
 
 Vector = List[float]
 Matrix = List[Vector]
@@ -34,7 +35,8 @@ class OnePlusOne_CMA(object):
         max_FEs: Union[int, str] = np.inf, 
         minimize: bool = True,
         opts: dict = {},
-        verbose: bool = False
+        verbose: bool = False,
+        logger = None
         ):
 
         self.dim = dim
@@ -57,6 +59,7 @@ class OnePlusOne_CMA(object):
         self.stop_dict = {}
         self._exception = False
         self.verbose = verbose
+        self.logger = logger
         
     def _init_aux_var(self, opts):
         self.prob_target = opts['p_succ_target'] if 'p_succ_target' in opts else 2 / 11
@@ -76,6 +79,38 @@ class OnePlusOne_CMA(object):
             self.__A = np.eye(self.dim)
         else:
             self.C = C
+
+    @property
+    def logger(self):
+        return self._logger
+
+    @logger.setter
+    def logger(self, logger):
+        if isinstance(logger, logging.Logger):
+            self._logger = logger
+            self._logger.propagate = False
+            return
+
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger.setLevel(logging.DEBUG)
+        fmt = LoggerFormatter()
+
+        if self.verbose:
+            # create console handler and set level to warning
+            ch = logging.StreamHandler(sys.stdout)
+            ch.setLevel(logging.INFO)
+            ch.setFormatter(fmt)
+            self._logger.addHandler(ch)
+
+        # create file handler and set level to debug
+        if logger is not None:
+            fh = logging.FileHandler(logger)
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(fmt)
+            self._logger.addHandler(fh)
+
+        if hasattr(self, 'logger'):
+            self._logger.propagate = False
 
     @property
     def C(self):
@@ -169,9 +204,10 @@ class OnePlusOne_CMA(object):
         self.iter_count += 1
 
         if self.verbose:
-            print('FEs {}: fopt -- {}, sigma -- {}'.format(
-                self.eval_count, self.fopt, self._sigma)
-            )
+            self._logger.info('iteration {},'.format(self.eval_count))
+            self._logger.info('fopt: {}'.format(self.fopt)) 
+            self._logger.info('sigma: {}'.format(self._sigma)) 
+            self._logger.info('xopt: {}\n'.format(self.xopt.tolist()))
 
     def check_stop(self):
         if self.fopt <= self.ftarget:
