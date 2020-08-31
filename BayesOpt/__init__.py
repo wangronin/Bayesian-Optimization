@@ -5,11 +5,12 @@ from .BayesOpt import BO, ParallelBO, NoisyBO, AnnealingBO
 from .Solution import Solution
 from .Surrogate import RandomForest
 from .SearchSpace import OrdinalSpace, ContinuousSpace, NominalSpace, from_dict
+from .Extension import OptimizerPipeline
 
 __all__ = [
     'BO', 'ParallelBO', 'NoisyBO', 'AnnealingBO', 'Solution', 'from_dict',
     'InfillCriteria', 'Surrogate', 'OrdinalSpace', 'ContinuousSpace', 
-    'NominalSpace', 'RandomForest'
+    'NominalSpace', 'RandomForest', 'OptimizerPipeline'
 ]
 
 # To use `dill` for the pickling, which works for
