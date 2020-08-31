@@ -1,0 +1,48 @@
+#!/bin/env bash
+
+SRC=${1%/}
+DES=${1}/all
+
+mkdir -p $DES
+
+dims=(2 5 10 20)
+fIDs=`eval echo {1..24}`
+
+instances=(`ls $SRC | grep -v 'all' | sort -k1n,1`)
+head=${instances[0]}
+
+echo 'merging info files...'
+for dim in ${dims[@]};
+do
+    echo -n "${dim}D..."
+    for fID in $fIDs;
+    do
+        info=bbobexp_f$fID.info
+        echo -n "`grep -A 2 "DIM = $dim," ${SRC}/${head}/${info} | sed '$s/$/, /'`" >> $DES/$info
+        echo "`grep -A 2 -R -P --include="*f$fID.info" "DIM = $dim," $SRC | grep -v -P ", ${head}:\d+\|.*" | 
+        grep -o -P  "\d+:\d+\|.*" | sort -k1n,1 | awk 1 ORS=', ' | sed '$s/, $//'`" >> $DES/$info
+    done
+done
+echo "done"
+
+echo 'merging data files...'
+for fID in $fIDs;
+do
+    echo -n "f${fID}..."
+    mkdir -p $DES/data_f$fID
+
+    for dim in ${dims[@]};
+    do
+	for instance in ${instances[@]};
+        do
+            file="bbobexp_f${fID}_DIM$dim"
+            
+            cat $SRC/$instance/data_f$fID/$file.dat >> $DES/data_f$fID/$file.dat
+            cat $SRC/$instance/data_f$fID/$file.tdat >> $DES/data_f$fID/$file.tdat
+            cat $SRC/$instance/data_f$fID/$file.rdat >> $DES/data_f$fID/$file.rdat
+        done
+    done
+done
+echo "done"
+
+

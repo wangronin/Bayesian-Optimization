@@ -1,0 +1,17 @@
+#!/bin/bash
+
+HOST=$1
+PROG=$2
+
+nodes=$(cat $HOST | sed -e 's|\(node[0-9]*\)\(.*\)|\1|g' | tr '\n' ' ')
+total_count=0
+
+for node in $nodes;
+do
+
+	count_per_node=`ssh $node 'ps aux | grep -c [p]ython'`
+	echo $count_per_node "processes runnning on" $node
+	total_count=$(($total_count+$count_per_node))
+done
+
+echo 'In total ' $total_count ' processes running'

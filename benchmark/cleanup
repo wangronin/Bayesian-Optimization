@@ -1,0 +1,4 @@
+
+rm -rf bbob_data/EI
+rm log 
+rm tmp

@@ -7,7 +7,6 @@ import pandas as pd
 import numpy as np
 import json, copy, re 
 from copy import copy
-
 sys.path.insert(0, '../')
 
 from BayesOpt import BO, SearchSpace, Solution
@@ -85,7 +84,7 @@ class OptimizerPipeline(object):
         """
         if not self._curr_opt:
             self._curr_opt, self._transfer = self.queue[self._counter]
-            
+
         return self._curr_opt.ask(n_point=n_point)
 
     def tell(self, X, y):

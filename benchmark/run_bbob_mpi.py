@@ -1,0 +1,110 @@
+import os, sys
+import numpy as np
+import fgeneric
+import bbobbenchmarks as bn
+
+from time import time
+from pyDOE import lhs
+
+def run_optimizer(
+    optimizer, 
+    dim, 
+    fID, 
+    instance, 
+    logfile, 
+    lb, 
+    ub, 
+    max_FEs, 
+    data_path, 
+    bbob_opt
+    ):
+    """Parallel BBOB/COCO experiment wrapper
+    """
+    # Set different seed for different processes
+    start = time()
+    seed = np.mod(int(start) + os.getpid(), 1000)
+    np.random.seed(seed)
+    
+    data_path = os.path.join(data_path, str(instance))
+    max_FEs = eval(max_FEs)
+
+    f = fgeneric.LoggingFunction(data_path, **bbob_opt)
+    f.setfun(*bn.instantiate(fID, iinstance=instance))
+
+    opt = optimizer(dim, f.evalfun, f.ftarget, max_FEs, lb, ub)
+    opt.run()
+
+    f.finalizerun()
+    with open(logfile, 'a') as fout:
+        fout.write(
+            "{} on f{} in {}D, instance {}: FEs={}, fbest-ftarget={:.4e}, " 
+            "elapsed time [m]: {:.3f}\n".format(optimizer, fID, dim, 
+            instance, f.evaluations, f.fbest - f.ftarget, (time() - start) / 60.)
+        )
+
+def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub):
+    sys.path.insert(0, '../')
+    from BayesOpt import AnnealingBO, BO, ContinuousSpace, OrdinalSpace, \
+        NominalSpace, RandomForest
+    from GaussianProcess import GaussianProcess
+    from GaussianProcess.trend import constant_trend
+
+    space = ContinuousSpace([lb, ub]) * dim
+
+    mean = constant_trend(dim, beta=None)
+    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
+    thetaU = 10 * (ub - lb) * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
+    model = GaussianProcess(
+        mean=mean, corr='squared_exponential',
+        theta0=theta0, thetaL=thetaL, thetaU=thetaU,
+        nugget=1e-8, noise_estim=False,
+        optimizer='BFGS', wait_iter=3, random_start=dim,
+        likelihood='concentrated', eval_budget=100 * dim
+    )
+
+    return BO(
+        search_space=space, 
+        obj_fun=obj_fun, 
+        model=model, 
+        DoE_size=5,
+        max_FEs=max_FEs, 
+        verbose=False, 
+        n_point=1,
+        ftarget=ftarget
+    )
+
+if __name__ == '__main__': 
+    from mpi4py import MPI
+    
+    comm = MPI.COMM_WORLD
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+    
+    dims = (2, 10)
+    fIDs = bn.nfreeIDs    # for all fcts
+    instance = range(1, size + 1)
+    
+    algorithms = [
+        test_BO
+    ]
+
+    opts = {
+        'max_FEs': '200  * dim',
+        'lb': -5,
+        'ub': 5,
+        'data_path' : '',
+    }
+    opts['bbob_opt'] = {
+        'comments': 'max_FEs={0}'.format(opts['max_FEs']), 
+    }
+    
+    for algorithm in algorithms:
+        opts['data_path'] = './bbob_data/{}'.format(algorithm) 
+        opts['bbob_opt']['algid'] = algorithm
+        for dim in dims:
+            for fID in fIDs:
+                run_optimizer(
+                    algorithm, dim, fID, instance[rank], logfile='./log', **opts
+                )

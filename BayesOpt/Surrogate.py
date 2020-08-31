@@ -160,6 +160,7 @@ class RandomForest(RandomForestRegressor):
 
         y_hat = np.mean(y_hat_all, axis=1).flatten()
         if eval_MSE:
+            # TODO: implement the jackknife estimate of variance
             _MSE_hat = np.std(y_hat_all, axis=1, ddof=1) ** 2.
             _MSE_hat = _MSE_hat.flatten()
 
