@@ -55,9 +55,9 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
     model = GaussianProcess(
-        mean=mean, corr='squared_exponential',
+        mean=mean, corr='matern',
         theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-        nugget=1e-8, noise_estim=False,
+        noise_estim=True,
         optimizer='BFGS', wait_iter=3, random_start=dim,
         likelihood='concentrated', eval_budget=100 * dim
     )
@@ -91,7 +91,7 @@ if __name__ == '__main__':
     ]
 
     opts = {
-        'max_FEs': '200  * dim',
+        'max_FEs': '100  * dim',
         'lb': -5,
         'ub': 5,
         'data_path' : '',
