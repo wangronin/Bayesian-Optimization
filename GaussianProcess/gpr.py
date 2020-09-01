@@ -267,9 +267,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         # Calculate matrix of distances D between samples
         D, ij = l1_cross_distances(X)
-        if (np.min(np.sum(D, axis=1)) == 0. and self.corr != pure_nugget):
-            raise Exception("Multiple input features cannot have the same"
-                            " target value.")
+        # if (np.min(np.sum(D, axis=1)) == 0. and self.corr != pure_nugget):
+        #     raise Exception("Multiple input features cannot have the same"
+        #                     " target value.")
         self.D = D
         self.ij = ij
 
