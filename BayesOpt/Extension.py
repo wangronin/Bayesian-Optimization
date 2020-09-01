@@ -1,5 +1,5 @@
 import logging, sys
-from typing import Callable, Any, Tuple
+from typing import Callable
 
 import numpy as np
 from .misc import LoggerFormatter
@@ -8,6 +8,7 @@ class OptimizerPipeline(object):
     def __init__(
         self,
         obj_fun: Callable,
+        n_point: int = 1,
         ftarget: float = -np.inf,
         max_FEs: int = None,
         minimize: bool = True,
@@ -17,6 +18,7 @@ class OptimizerPipeline(object):
         self.obj_fun = obj_fun
         self.max_FEs = max_FEs
         self.ftarget = ftarget
+        self.n_point = n_point
         self.verbose = verbose
         self.minimize = minimize
         self.queue = []
@@ -62,10 +64,12 @@ class OptimizerPipeline(object):
         opt.minimize = self.minimize
         opt.max_FEs = self.max_FEs
         opt.logger = self._logger
-        self.queue.append((opt, transfer)) # pairs of (optimizer, transfer function)
+
+        # add pairs of (optimizer, transfer function)
+        self.queue.append((opt, transfer)) 
         self.N += 1
 
-    def ask(self, n_point=1):
+    def ask(self, n_point=None):
         """Get suggestions from the optimizer.
 
         Parameters
@@ -83,7 +87,8 @@ class OptimizerPipeline(object):
         if not self._curr_opt:
             self._curr_opt, self._transfer = self.queue[self._counter]
             self._logger.name = self._curr_opt.__class__.__name__
-
+        
+        n_point = n_point if n_point else self.n_point
         return self._curr_opt.ask(n_point=n_point)
 
     def tell(self, X, y):
@@ -133,7 +138,9 @@ class OptimizerPipeline(object):
                 self._stop = True
             
     def evaluate(self, X):
-        return self._curr_opt.evaluate(X)
+        if not hasattr(X[0], '__iter__'):
+            X = [X]
+        return [self.obj_fun(x) for x in X]
 
     def step(self):
         X = self.ask()    

@@ -412,7 +412,8 @@ class baseBO(ABC):
         # e.g., for MGF-based acquisition function
         # TODO: maybe to standardize `fitness` instead of rescaling it to [0, 1]
         if self._acquisition_fun == 'MGFI':
-            fitness_ = (fitness - np.min(fitness)) / (np.max(fitness) - np.min(fitness))
+            fitness_ = (fitness - np.mean(fitness)) / np.std(fitness)
+            # fitness_ = (fitness - np.min(fitness)) / (np.max(fitness) - np.min(fitness))
         else:
             fitness_ = fitness
 
