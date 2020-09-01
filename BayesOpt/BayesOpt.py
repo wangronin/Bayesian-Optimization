@@ -155,18 +155,19 @@ class SelfAdaptiveBO(ParallelBO):
 
 class NoisyBO(ParallelBO):
     def pre_eval_check(self, X):
-        # TODO: implement the strategy for re-evaluation
-        pass
+        if not isinstance(X, Solution):
+            X = Solution(X, var_name=self.var_names)
+        return X
 
-    def _create_acquisition(self, acquisition_par={}, return_dx=False):
+    def _create_acquisition(self, fun=None, par={}, return_dx=False):
         if hasattr(getattr(InfillCriteria, self._acquisition_fun), 'plugin'):
             # use the model prediction to determine the plugin under noisy scenarios
             # TODO: add more options for determining the plugin value
             y_ = self.model.predict(self.data)
             plugin = np.min(y_) if self.minimize else np.max(y_)
-            acquisition_par.update({'plugin' : plugin})
+            par.update({'plugin' : plugin})
         
-        return super()._create_acquisition(par=acquisition_par, return_dx=return_dx)
+        return super()._create_acquisition(par=par, return_dx=return_dx)
 
 class PCABO(ParallelBO):
     def __init__(self):
