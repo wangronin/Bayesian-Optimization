@@ -29,12 +29,12 @@ class _BO(ParallelBO):
         X = super().ask(n_point=n_point)
         if self.model.is_fitted:
             _criter = self._create_acquisition(fun='EI', par={}, return_dx=False)
-            self._hist_EI[self.iter_count % 3] = np.mean([_criter(x) for x in X])
+            self._hist_EI[(self.iter_count - 1) % 3] = np.mean([_criter(x) for x in X])
         return X
 
     def check_stop(self):
         _delta = self._fBest_DoE - self.fopt
-        if np.mean(self._hist_EI) < 0.01 * _delta:
+        if np.mean(self._hist_EI[0:min(3, self.iter_count - 1)]) < 0.01 * _delta:
             self.stop_dict['low-EI'] = np.mean(self._hist_EI)
 
         if self.eval_count >= (self.max_FEs / 2):
@@ -71,8 +71,15 @@ class _CMA(CMAEvolutionStrategy):
         self.max_FEs = max_FEs
         self.ftarget = ftarget
         self.verbose = verbose
-        self.eval_count = 0
         self.stop_dict = {}
+
+    @property
+    def eval_count(self):
+        return self.countevals
+    
+    @property
+    def iter_count(self):
+        return self.countiter
 
     @property
     def x(self):
@@ -113,30 +120,30 @@ class _CMA(CMAEvolutionStrategy):
         return super().ask(number=n_point)
     
     def tell(self, X, y):
-        for i in range(len(X)):
-            self._logger.info(
-                '#{} - fitness: {}, solution: {}'.format(i + 1, y[i], X[i])
-            )
-            self.eval_count += 1
-        return super().tell(X, y)
+        super().tell(X, y)
+        x, f, _ = self.best.get()
+        self._logger.info(
+            'iteration {}, fopt: {}, xopt: {}'.format(self.countiter, f, x)
+        )
 
     def check_stop(self):
-        if self.fopt <= self.ftarget:
-            self.stop_dict['ftarget'] = self.fopt
+        _, f, __ = self.best.get()
+        if f <= self.ftarget:
+            self.stop_dict['ftarget'] = f
             
-        if self.eval_count >= self.max_FEs:
-            self.stop_dict['FEs'] = self.eval_count
+        if self.countevals >= self.max_FEs:
+            self.stop_dict['FEs'] = self.countevals
 
         return bool(self.stop_dict)
 
 dim = 2
 n_point = 8
 max_FEs = 30 * n_point
-obj_fun = lambda x: benchmarks.ackley(x)[0]
-lb, ub = -600, 600
+obj_fun = lambda x: benchmarks.himmelblau(x)[0]
+lb, ub = -6, 6
 
 search_space = ContinuousSpace([lb, ub]) * dim
-mean = constant_trend(dim, beta=None)    # Ordinary Kriging 
+mean = constant_trend(dim, beta=0)    # Ordinary Kriging 
 
 # autocorrelation parameters of GPR
 thetaL = 1e-10 * (ub - lb) * np.ones(dim)
@@ -146,7 +153,7 @@ theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 model = GaussianProcess(
     mean=mean, corr='squared_exponential',
     theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-    nugget=1e-6, noise_estim=False,
+    nugget=1e-5, noise_estim=False,
     optimizer='BFGS', wait_iter=5, random_start=5 * dim,
     eval_budget=100 * dim
 )

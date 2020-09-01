@@ -28,7 +28,6 @@ class BO(baseBO):
         # parameters of other acquisition functions, e.g. UCB and GEI
         if hasattr(getattr(InfillCriteria, self._acquisition_fun), 'plugin'):
             if 'plugin' not in par:
-                # par.update({'plugin': min(self.data.fitness)})
                 par.update({'plugin': self.fmin})
         
         return super()._create_acquisition(fun, par, return_dx)
@@ -67,7 +66,7 @@ class ParallelBO(BO):
 
         if self._acquisition_fun == 'MGFI':
             self._par_name = 't'
-            self._sampler = lambda x: np.exp(x['t'] * np.random.randn())
+            self._sampler = lambda x: np.exp(np.log(x['t']) + 0.5 * np.random.randn())
         elif self._acquisition_fun == 'UCB':
             self._par_name = 'alpha'
             self._sampler = lambda x: 1 / (1 + np.exp((x['alpha'] * 4 - 2) \

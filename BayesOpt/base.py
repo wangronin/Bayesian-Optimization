@@ -339,8 +339,9 @@ class baseBO(ABC):
             X[i].n_eval += 1
             self.eval_count += 1
             self._logger.info(
-                '#{} - fitness: {}, solution: {}'.format(i + 1, func_vals[i], 
-                self._search_space.to_dict(X[i]))
+                '#{} - fitness: {}, solution: {}'.format(
+                    i + 1, func_vals[i], self._to_pheno(X[i])
+                )
             )
 
         X = self.post_eval_check(X)
@@ -353,13 +354,14 @@ class baseBO(ABC):
         _xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]  
         self.xopt = self._to_pheno(_xopt)
         self._logger.info('fopt: {}'.format(self.fopt))   
-        self._logger.info('xopt: {}\n'.format(self.xopt)) 
+        self._logger.info('xopt: {}'.format(self.xopt)) 
 
-        if not self.model.is_fitted: # DoE phase
-            self._fBest_DoE = copy(self.fopt)
+        if not self.model.is_fitted: 
+            self._fBest_DoE = copy(self.fopt) # the best point in the DoE 
+            self._xBest_DoE = copy(self.xopt)
 
-        # re-train the surrogate model 
-        self.update_model()   
+        r2 = self.update_model()   
+        self._logger.info('Surrogate model r2: {}\n'.format(r2))
 
         self.iter_count += 1
         self.hist_f.append(self.fopt)
@@ -402,34 +404,26 @@ class baseBO(ABC):
         return func_vals
 
     def update_model(self):
-        # TODO: implement the automatic surrogate model selection
-        # adding the warm-start data when fitting the surrogate model
-        # data = self.data + self.warm_data if hasattr(self, 'warm_data') else self.data
+        # TODO: implement a proper model selection here 
+        # TODO: in case r2 is really poor, re-fit the model or log-transform `fitness`?
         data = self.data
         fitness = data.fitness
 
-        # normalization the response for the numerical stability
-        # e.g., for MGF-based acquisition function
-        # TODO: maybe to standardize `fitness` instead of rescaling it to [0, 1]
-        if self._acquisition_fun == 'MGFI':
-            fitness_ = (fitness - np.mean(fitness)) / np.std(fitness)
-            # fitness_ = (fitness - np.min(fitness)) / (np.max(fitness) - np.min(fitness))
-        else:
-            fitness_ = fitness
+        # to standardize the response values to prevent numerical overflow that might 
+        # appear in the MGF-based acquisition function.
+        # Standardization should make it easier to specify the GP prior, compared to 
+        # rescaling values to the unit interval.
+        fitness_ = (fitness - np.mean(fitness)) / np.std(fitness) \
+            if self._acquisition_fun == 'MGFI' else fitness
 
         self.fmin, self.fmax = np.min(fitness_), np.max(fitness_)
         self.frange = self.fmax - self.fmin
 
-        # fit the surrogate model
         self.model.fit(data, fitness_)
-        
         fitness_hat = self.model.predict(data)
-        r2 = r2_score(fitness_, fitness_hat)
 
-        # TODO: implement a proper model selection here 
-        # TODO: in case r2 is really poor, re-fit the model or log-transform `fitness`?
-        # TODO: need to report more performance metric for regression
-        self._logger.info('Surrogate model r2: {}'.format(r2))
+        # TODO: need to report more performance metric for regression   
+        r2 = r2_score(fitness_, fitness_hat)
         return r2
 
     def arg_max_acquisition(self, n_point=None, return_value=False):

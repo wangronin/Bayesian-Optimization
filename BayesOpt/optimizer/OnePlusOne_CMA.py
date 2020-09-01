@@ -31,7 +31,7 @@ class OnePlusOne_CMA(object):
         C0: Union[Matrix, np.ndarray] = None, 
         lb: Union[float, str, Vector, np.ndarray] = -np.inf,
         ub: Union[float, str, Vector, np.ndarray] = np.inf,
-        ftarget: Union[int, float] = -np.inf,
+        ftarget: Union[int, float] = np.inf,
         max_FEs: Union[int, str] = np.inf, 
         minimize: bool = True,
         opts: dict = {},

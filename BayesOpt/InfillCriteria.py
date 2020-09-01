@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
 """
-Created on Mon Sep  4 21:44:21 2017
-
 @author: Hao Wang
 @email: wangronin@gmail.com
 """
+from pdb import set_trace
+
 import warnings
 import numpy as np
 from numpy import sqrt, exp, pi
@@ -192,6 +191,7 @@ class MGFI(InfillCriteria):
     @t.setter
     def t(self, t):
         assert t > 0
+        t = min(t, 22.36)  # bigger `t` value would cause numerical overflow
         self._t = t
 
     def __call__(self, X, return_dx=False):
@@ -231,6 +231,7 @@ class MGFI(InfillCriteria):
                 f_dx = term * (norm.pdf(beta_p) * beta_p_dx + \
                     norm.cdf(beta_p) * ((self._t ** 2) * sd * sd_dx - self._t * y_dx))
             except Exception:
+                set_trace()
                 f_dx = np.zeros((len(X[0]), 1))
             return f_, f_dx
         return f_
