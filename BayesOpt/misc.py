@@ -169,10 +169,10 @@ class LoggerFormatter(logging.Formatter):
     default_msec_format = '%s,%02d'
 
     FORMATS = {
-        logging.DEBUG : '%(asctime)s - [%(name)s/%(levelname)s] {%(pathname)s:%(lineno)d} -- %(message)s',
-        logging.INFO : '%(asctime)s - [%(name)s/%(levelname)s] -- %(message)s',
-        logging.WARNING : '%(asctime)s - [%(name)s/%(levelname)s] {%(name)s} -- %(message)s',
-        logging.ERROR : '%(asctime)s - [%(name)s/%(levelname)s] {%(name)s} -- %(message)s',
+        logging.DEBUG : '%(asctime)s - [%(name)s.%(levelname)s] {%(pathname)s:%(lineno)d} -- %(message)s',
+        logging.INFO : '%(asctime)s - [%(name)s.%(levelname)s] -- %(message)s',
+        logging.WARNING : '%(asctime)s - [%(name)s.%(levelname)s] {%(name)s} -- %(message)s',
+        logging.ERROR : '%(asctime)s - [%(name)s.%(levelname)s] {%(name)s} -- %(message)s',
         'DEFAULT' : '%(asctime)s - %(levelname)s -- %(message)s'
     }
     

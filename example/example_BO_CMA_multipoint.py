@@ -34,7 +34,8 @@ class _BO(ParallelBO):
 
     def check_stop(self):
         _delta = self._fBest_DoE - self.fopt
-        if np.mean(self._hist_EI[0:min(3, self.iter_count - 1)]) < 0.01 * _delta:
+        if self.iter_count > 1 and \
+            np.mean(self._hist_EI[0:min(3, self.iter_count - 1)]) < 0.01 * _delta:
             self.stop_dict['low-EI'] = np.mean(self._hist_EI)
 
         if self.eval_count >= (self.max_FEs / 2):

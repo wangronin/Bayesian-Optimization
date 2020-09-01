@@ -150,5 +150,4 @@ class OptimizerPipeline(object):
     def run(self):
         while not self._stop:
             self.step()
-
         return self.xopt, self.fopt, self.stop_dict

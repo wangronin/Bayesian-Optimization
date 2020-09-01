@@ -12,7 +12,7 @@ from BayesOpt.SearchSpace import ContinuousSpace
 from GaussianProcess import GaussianProcess
 from GaussianProcess.trend import constant_trend
 
-class _BO(BO):
+class _BO(ParallelBO):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._hist_EI = np.zeros(3)
@@ -21,19 +21,20 @@ class _BO(BO):
         X = super().ask(n_point=n_point)
         if self.model.is_fitted:
             _criter = self._create_acquisition(fun='EI', par={}, return_dx=False)
-            self._hist_EI[self.iter_count % 3] = np.mean([_criter(x) for x in X])
-
+            self._hist_EI[(self.iter_count - 1) % 3] = np.mean([_criter(x) for x in X])
         return X
 
     def check_stop(self):
         _delta = self._fBest_DoE - self.fopt
-        if np.mean(self._hist_EI) < 0.01 * _delta:
+        if self.iter_count > 1 and \
+            np.mean(self._hist_EI[0:min(3, self.iter_count - 1)]) < 0.01 * _delta:
             self.stop_dict['low-EI'] = np.mean(self._hist_EI)
 
         if self.eval_count >= (self.max_FEs / 2):
             self.stop_dict['max_FEs'] = self.eval_count
 
         return super().check_stop()
+
 
 np.random.seed(42)
 
