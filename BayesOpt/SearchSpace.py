@@ -5,15 +5,31 @@ from copy import copy, deepcopy
 
 import numpy as np
 from numpy.random import randint, rand
+
 from abc import abstractmethod
 from pyDOE import lhs
+from scipy.special import logit
+
+TRANS = {
+    'log': np.log,
+    'log10': np.log10,
+    'logit': logit,
+    'bilog': lambda x: np.sign(x) * np.log(1 + np.abs(x))
+}
+
+INV_TRANS = {
+    'log': np.exp,
+    'log10': lambda x: np.power(10, x),
+    'logit': lambda x: 1 / (1 + np.exp(-x)),
+    'bilog': lambda x: np.sign(x) * (np.exp(np.abs(x)) - 1) 
+}
 
 class SearchSpace(object):
     def __init__(self, bounds, var_name, name, random_seed=None):
         """Search Space Base Class
 
         Parameters
-        ---------
+        ----------
         bounds : (list of) list,
             lower and upper bound for continuous/ordinal parameter type
             categorical values for nominal parameter type.
@@ -68,7 +84,8 @@ class SearchSpace(object):
         self.random_seed = random_seed
         self.var_type = None 
         self.levels = None
-        self.precision = None
+        self.precision = {}
+        self.scale = {}
 
         if var_name is not None:
             if isinstance(var_name, str):
@@ -113,7 +130,6 @@ class SearchSpace(object):
         else:
             self.levels, self._n_levels = None, None 
 
-    # TODO: this functionality should be more generic. See `pandas.to_dict`
     def to_dict(self, solution):
         """Convert a `Solution` object to a dictionary
 
@@ -127,19 +143,36 @@ class SearchSpace(object):
         dict
             A dictionary containing the data of solution
         """
+        # TODO: this functionality should be more generic. See `pandas.to_dict`
         if self.name is None:
             return solution.to_dict() 
         else: # TODO: check this `self.name` which appears to be a list
             return {self.name : solution.tolist()}
 
+    def to_linear_scale(self, X):
+        X = deepcopy(X)
+        if not hasattr(X[0], '__iter__'):
+            for k, v in self.scale.items():
+                X[k] = INV_TRANS[v](X[k])
+        else:
+            for k, v in self.scale.items():
+                for i in range(len(X)):
+                    X[i][k] = INV_TRANS[v](X[i][k])
+        return X
+
     def round(self, X):
+        """Round the real-valued components of `X` to the corresponding numerical precision,
+        if given
+        """
         if self.precision is not None:
             X = deepcopy(X)
-            if not isinstance(X[0], list):
-                X = [X]
-            for k, v in self.precision.items():
-                for i in range(len(X)):
-                    X[i][k] = np.round(X[i][k], v)
+            if not hasattr(X[0], '__iter__'):
+                for k, v in self.precision.items():
+                    X[k] = np.round(X[k], v)
+            else:
+                for k, v in self.precision.items():
+                    for i in range(len(X)):
+                        X[i][k] = np.round(X[i][k], v)
         return X
 
     def __len__(self):
@@ -149,7 +182,7 @@ class SearchSpace(object):
         pass
 
     def __add__(self, space):
-        """Direct Sum of two Spaces
+        """Direct Sum of two `SearchSpace`s
         """
         assert isinstance(space, SearchSpace)
         return ProductSpace(self, space)
@@ -158,7 +191,7 @@ class SearchSpace(object):
         return self.__add__(space)
 
     def __mul__(self, N):
-        """Replicate a Space N times
+        """Replicate a `SearchSpace` N times
         """
         N = int(N)
         s = deepcopy(self)
@@ -171,98 +204,81 @@ class SearchSpace(object):
     def __rmul__(self, N):
         return self.__mul__(N)
     
+    def __repr__(self):
+        return self.__str__()
 
-# TODO: maybe implement the scalar multiplication for ProductSpace
-class ProductSpace(SearchSpace):
-    """Cartesian product of the search spaces
-    """
-    def __init__(self, spaceL, spaceR):
-        # setup the space names
-        nameL = spaceL.name if isinstance(spaceL, ProductSpace) else [spaceL.name] 
-        nameR = spaceR.name if isinstance(spaceR, ProductSpace) else [spaceR.name]
-        self.name = nameL + nameR
-        self.dim = spaceL.dim + spaceR.dim
-        # TODO: check coincides of variable names
-        self.var_name = spaceL.var_name + spaceR.var_name             
-        self.bounds = spaceL.bounds + spaceR.bounds
-        self.var_type = spaceL.var_type + spaceR.var_type
-
-        self._subspaceL = deepcopy(spaceL)
-        self._subspaceR = deepcopy(spaceR)
-        self._set_index()
-        self._set_levels()
-
-        precision = copy(spaceL.precision) if spaceL.precision is not None else {}
-        _ = {(k + spaceL.dim) : v for k, v in spaceR.precision.items()} \
-            if spaceR.precision is not None else {}
-        precision.update(_)
-        self.precision = precision if precision else None 
-    
-    def sampling(self, N=1, method='uniform'):
-        a = self._subspaceL.sampling(N, method)
-        b = self._subspaceR.sampling(N, method)
-        return [a[i] + b[i] for i in range(N)]
-    
-    def to_dict(self, solution):
-        """Save a Solution instance to a dictionary 
+    def __str__(self):
+        _ = 'Search Space of %d variables: \n'%self.dim
+        for i in range(self.dim):
+            _ += '   `%s`'%self.var_name[i]
+            _ += ' - categories: ' if self.var_type[i] == 'N' else ' bounds: ' 
+            _ += str(self.bounds[i])
+            if i in self.precision:
+                _ += ' - precision: %d'%self.precision[i]
+            if i in self.scale:
+                _ += ' - scale: %s'%self.scale[i]
+            _ += '\n'
+        return _
         
-        The result is grouped by sub-spaces, which is meant for vector-valued 
-        parameters for the configuration 
-
-        Parameters
-        ----------
-        solution : .base.Solution
-            A solution object
-
-        Returns
-        -------
-        dict
-        """
-        id1 = list(range(self._subspaceL.dim))
-        id2 = list(range(self._subspaceL.dim, self.dim))
-        L = solution[id1] if len(solution.shape) == 1 else solution[:, id1]
-        R = solution[id2] if len(solution.shape) == 1 else solution[:, id2]
-        return {**self._subspaceL.to_dict(L), **self._subspaceR.to_dict(R)}
-
-    def __mul__(self, space):
-        raise ValueError('Unsupported operation')
-
-    def __rmul__(self, space):
-        raise ValueError('Unsupported operation')
-
 
 class ContinuousSpace(SearchSpace):
     """Continuous (real-valued) Search Space
     """
-    def __init__(self, bounds, var_name='r', name=None, precision=None):
+    def __init__(
+        self, 
+        bounds, 
+        var_name='r', 
+        name=None, 
+        precision=None,
+        scale=None
+        ):
         super(ContinuousSpace, self).__init__(bounds, var_name, name)
         self.var_type = ['C'] * self.dim
-        self._bounds = np.atleast_2d(self.bounds).T
         self._set_index()
         
-        # set up precisions for each dimension
+        # set up the precision for each dimension
         if hasattr(precision, '__iter__'):
             assert len(precision) == self.dim
-            self.precision = {i : precision[i] \
-                for i in range(self.dim) if precision[i] is not None}
-        else:
-            if precision is not None:
-                self.precision = {i : precision for i in range(self.dim)}
-        
+            self.precision = {
+                i : precision[i] for i in range(self.dim) if precision[i] is not None
+            }
+        elif precision is not None:
+            self.precision = {i : precision for i in range(self.dim)}
+
+        # set up the scale for each dimension
+        if scale is not None:
+            if isinstance(scale, str):
+                scale = [scale] * self.dim
+            elif hasattr(scale, '__iter__'):
+                assert len(scale) == self.dim
+
+            self.scale = {
+                i : scale[i] for i in range(self.dim) if scale[i] is not None
+            }
+
+        for i, s in self.scale.items():
+            lower, upper = self.bounds[i]
+            self.bounds[i] = (TRANS[s](lower), TRANS[s](upper))
+
+        self._bounds = np.atleast_2d(self.bounds).T
         assert all(self._bounds[0, :] < self._bounds[1, :])
 
     def __mul__(self, N):
         s = super(ContinuousSpace, self).__mul__(N)
         s._bounds = np.tile(s._bounds, (1, N))
         s._set_index()
-        if self.precision is None:
-            s.precision = None
-        else:
-            s.precision = {}
-            for i in range(N):
-                s.precision.update(
-                    {(k + self.dim * i) : v for k, v in self.precision.items()}
-                )
+
+        s.precision = {}
+        for i in range(N):
+            s.precision.update(
+                {(k + self.dim * i) : v for k, v in self.precision.items()}
+            )
+
+        s.scale = {}
+        for i in range(N):
+            s.scale.update(
+                {(k + self.dim * i) : v for k, v in self.scale.items()}
+            )
         return s
     
     def sampling(self, N=1, method='uniform'):
@@ -338,6 +354,65 @@ class OrdinalSpace(SearchSpace):
         return res.tolist()
 
 
+class ProductSpace(SearchSpace):
+    """Cartesian product of the search spaces
+    """
+    def __init__(self, spaceL, spaceR):
+        # setup the space names
+        nameL = spaceL.name if isinstance(spaceL, ProductSpace) else [spaceL.name] 
+        nameR = spaceR.name if isinstance(spaceR, ProductSpace) else [spaceR.name]
+        self.name = nameL + nameR
+        self.dim = spaceL.dim + spaceR.dim
+
+        # TODO: check coincides of variable names
+        self.var_name = spaceL.var_name + spaceR.var_name             
+        self.bounds = spaceL.bounds + spaceR.bounds
+        self.var_type = spaceL.var_type + spaceR.var_type
+
+        self._subspaceL = deepcopy(spaceL)
+        self._subspaceR = deepcopy(spaceR)
+        self._set_index()
+        self._set_levels()
+
+        self.precision = copy(spaceL.precision)
+        self.precision.update({(k + spaceL.dim) : v for k, v in spaceR.precision.items()})
+
+        self.scale = copy(spaceL.scale) 
+        self.scale.update({(k + spaceL.dim) : v for k, v in spaceR.scale.items()})
+    
+    def sampling(self, N=1, method='uniform'):
+        a = self._subspaceL.sampling(N, method)
+        b = self._subspaceR.sampling(N, method)
+        return [a[i] + b[i] for i in range(N)]
+    
+    def to_dict(self, solution):
+        """Save a Solution instance to a dictionary 
+        
+        The result is grouped by sub-spaces, which is meant for vector-valued 
+        parameters for the configuration 
+
+        Parameters
+        ----------
+        solution : .base.Solution
+            A solution object
+
+        Returns
+        -------
+        dict
+        """
+        id1 = list(range(self._subspaceL.dim))
+        id2 = list(range(self._subspaceL.dim, self.dim))
+        L = solution[id1] if len(solution.shape) == 1 else solution[:, id1]
+        R = solution[id2] if len(solution.shape) == 1 else solution[:, id2]
+        return {**self._subspaceL.to_dict(L), **self._subspaceR.to_dict(R)}
+
+    def __mul__(self, space):
+        raise ValueError('Unsupported operation')
+
+    def __rmul__(self, space):
+        raise ValueError('Unsupported operation')
+
+
 def from_dict(param, space_name=True):
     """Create a search space object from input dictionary
 
@@ -369,10 +444,11 @@ def from_dict(param, space_name=True):
         # IMPORTANT: name argument is necessary for the variable grouping
         if v['type'] == 'r':        # real-valued parameter
             precision = v['precision'] if 'precision' in v else None 
+            scale = v['scale'] if 'scale' in v else None 
             space_ = ContinuousSpace(
                 bounds, var_name=k, name=name, 
-                precision=precision
-            ) 
+                precision=precision, scale=scale
+            )
         elif v['type'] == 'i':      # integer-valued parameter
             space_ = OrdinalSpace(bounds, var_name=k, name=name)
         elif v['type'] == 'c':      # category-valued parameter

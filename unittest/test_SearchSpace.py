@@ -1,4 +1,4 @@
-import pytest, sys
+import pytest, sys, re
 
 from pdb import set_trace
 from copy import deepcopy
@@ -23,27 +23,46 @@ def test_NominalSpace():
     S = NominalSpace(['x', 'y', 'z'])
     assert set(S.levels[0]) == set(['x', 'y', 'z'])
 
+def test_precision():
+    C = ContinuousSpace([-5, 5], precision=2) * 3 
+    X = [re.sub(r'^-?\d+\.(\d+)$', r'\1', str(_)) for _ in C.sampling(1, method='LHS')[0]]
+    assert all([len(x) <= 2 for x in X])
+
+    X = [re.sub(r'^-?\d+\.(\d+)$', r'\1', str(_)) for _ in C.sampling(1, method='uniform')[0]]
+    assert all([len(x) <= 2 for x in X])
+
+    X = np.random.rand(2, 3) * 10 - 5
+    assert isinstance(C.round(X), np.ndarray)
+
+    X_ = C.round(X.tolist())
+    assert isinstance(X_, list)
+    assert isinstance(X_[0], list)
+    assert np.all(np.array(X_) == C.round(X))
+
+def test_scale():
+    C = ContinuousSpace([1, 5], scale='log') 
+    assert C.bounds[0][0] == 0
+
+    C = ContinuousSpace([0.5, 0.8], scale='logit') 
+    assert C.bounds[0][0] == 0
+
+    C = ContinuousSpace([-1, 1], scale='bilog') 
+    assert C.bounds[0][0] == -np.log(2)
+    assert C.bounds[0][1] == np.log(2)
+
+    C = ContinuousSpace([-1, 1], scale='bilog') * 2
+    X = np.array([-np.log(2), np.log(2)])
+    a = C.to_linear_scale(X)
+    assert all(a == np.array([-1, 1]))
+
 def test_sampling():
-    C = ContinuousSpace([-5, 5], precision=1) * 3 
+    C = ContinuousSpace([-5, 5]) * 3 
     I = OrdinalSpace([[-100, 100], [-5, 5]], 'heihei')
     N = NominalSpace([['OK', 'A', 'B', 'C', 'D', 'E', 'A']] * 2, ['x', 'y'])
 
-    C2 = ContinuousSpace([[-5, 5]] * 3, precision=[2, None, 3])
-    C2.sampling(3)
-
-    S = N + I + C2
-    S2 = N + I + ContinuousSpace([[-5, 5]] * 3)
-    X = S2.sampling(5)
-
-    print(X)
-    X2 = S.round(X)
-    print(X2)
-
-    I3 = 3 * I 
-    print(I3.sampling())
-    print(I3.var_name)
-    print(I3.var_type)
-    print(C.sampling(1, 'uniform'))
+    S = N + I + C
+    S.sampling(5, method='LHS')
+    S.sampling(5, method='uniform')
 
 def test_ProductSpace():
     C = ContinuousSpace([-5, 5], precision=1) * 3  # product of the same space

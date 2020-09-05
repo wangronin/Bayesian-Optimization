@@ -24,8 +24,6 @@ from .Surrogate import SurrogateAggregation
 
 class BO(baseBO):
     def _create_acquisition(self, fun=None, par={}, return_dx=False):
-        # TODO: `plugin` is typically `f_min` in EI/PI/MFGI. We need to add support for 
-        # parameters of other acquisition functions, e.g. UCB and GEI
         if hasattr(getattr(InfillCriteria, self._acquisition_fun), 'plugin'):
             if 'plugin' not in par:
                 par.update({'plugin': self.fmin})
@@ -66,13 +64,17 @@ class ParallelBO(BO):
 
         if self._acquisition_fun == 'MGFI':
             self._par_name = 't'
+            # Log-normal distribution for `t` supported on [0, \infty)
             self._sampler = lambda x: np.exp(np.log(x['t']) + 0.5 * np.random.randn())
         elif self._acquisition_fun == 'UCB':
             self._par_name = 'alpha'
+            # Logit-normal distribution for `alpha` supported on [0, 1]
             self._sampler = lambda x: 1 / (1 + np.exp((x['alpha'] * 4 - 2) \
-                + 0.6 * np.random.randn())) # Logit-normal distribution for `alpha`
+                + 0.6 * np.random.randn())) 
+        elif self._acquisition_fun == 'EpsilonPI':
+            self._par_name = 'epsilon'
+            self._sampler = None # TODO: implement this!
         else:
-            # TODO: add supports for epislon-PI..
             raise NotImplementedError
 
         _criterion = getattr(InfillCriteria, self._acquisition_fun)()
@@ -85,7 +87,9 @@ class ParallelBO(BO):
             _par = self._sampler(self._acquisition_par)
             _acquisition_par = copy(self._acquisition_par)
             _acquisition_par.update({self._par_name : _par})
-            criteria.append(self._create_acquisition(par=_acquisition_par, return_dx=return_dx))
+            criteria.append(
+                self._create_acquisition(par=_acquisition_par, return_dx=return_dx)
+            )
         
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(

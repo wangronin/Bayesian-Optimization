@@ -69,7 +69,6 @@ class InfillCriteria(ABC):
         return np.atleast_2d(X)
         # return [X] if not hasattr(X[0], '__iter__') else X
 
-
 class UCB(InfillCriteria):
     def __init__(self, model, plugin=None, minimize=True, alpha=0.5):
         """Upper Confidence Bound 
@@ -147,13 +146,22 @@ class EpsilonPI(InfillCriteria):
         # TODO: verify the implementation
         """
         super(EpsilonPI, self).__init__(model, plugin, minimize)
-        self.epsilon = epsilon
+        self._epsilon = epsilon
+    
+    @property
+    def epsilon(self):
+        return self._epsilon
+
+    @epsilon.setter
+    def epsilon(self, eps):
+        assert eps > 0
+        self._epsilon = eps
 
     def __call__(self, X, return_dx=False):
         X = self.check_X(X)
         y_hat, sd = self._predict(X)
 
-        coef = 1 - self.epsilon if y_hat > 0 else (1 + self.epsilon)
+        coef = 1 - self._epsilon if y_hat > 0 else (1 + self._epsilon)
         try:
             xcr_ = self._plugin - coef * y_hat 
             xcr = xcr_ / sd
@@ -231,7 +239,6 @@ class MGFI(InfillCriteria):
                 f_dx = term * (norm.pdf(beta_p) * beta_p_dx + \
                     norm.cdf(beta_p) * ((self._t ** 2) * sd * sd_dx - self._t * y_dx))
             except Exception:
-                set_trace()
                 f_dx = np.zeros((len(X[0]), 1))
             return f_, f_dx
         return f_

@@ -1,7 +1,7 @@
 import logging, sys
-from typing import Callable
-
 import numpy as np
+
+from typing import Callable
 from .misc import LoggerFormatter
 
 class OptimizerPipeline(object):

@@ -25,6 +25,9 @@ from .utils import arg_to_int
 from .misc import LoggerFormatter
 from .optimizer import argmax_restart
 
+# TODO: create an abstract optimizer to take care of the common functionalities, e.g.,
+# logging, registration of objective functions, and the basica ask-and-tell interface
+
 class baseBO(ABC):
     def __init__(
         self, 
