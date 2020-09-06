@@ -164,6 +164,9 @@ class SearchSpace(object):
         """Round the real-valued components of `X` to the corresponding numerical precision,
         if given
         """
+        # NOTE: make sure the rounding is applied in the original linear scale
+        X = self.to_linear_scale(X)
+
         if self.precision is not None:
             X = deepcopy(X)
             if not hasattr(X[0], '__iter__'):
