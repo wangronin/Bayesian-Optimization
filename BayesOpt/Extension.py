@@ -2,6 +2,11 @@ import logging, sys
 import numpy as np
 
 from typing import Callable
+from copy import copy
+from joblib import Parallel, delayed
+
+from . import InfillCriteria
+from .BayesOpt import BO
 from .misc import LoggerFormatter
 
 class OptimizerPipeline(object):
@@ -151,3 +156,46 @@ class OptimizerPipeline(object):
         while not self._stop:
             self.step()
         return self.xopt, self.fopt, self.stop_dict
+
+class MultiAcquisitionBO(BO):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        assert self.n_point > 1
+
+        self._acquisition_fun_list = ['MGFI', 'UCB']
+        self._sampler_list = [
+            lambda x: np.exp(np.log(x['t']) + 0.5 * np.random.randn()),
+            lambda x: 1 / (1 + np.exp((x['alpha'] * 4 - 2) + 0.6 * np.random.randn())) 
+        ]
+        self._par_name_list = ['t', 'alpha']
+        self._acquisition_par_list = [{'t' : 2}, {'alpha' : 0.5}]
+        self._N_acquisition = len(self._acquisition_fun_list)
+
+        for i, _n in enumerate(self._par_name_list):
+            _criterion = getattr(InfillCriteria, self._acquisition_fun_list[i])()
+            if _n not in self._acquisition_par_list[i]:
+                self._acquisition_par_list[i][_n] = getattr(_criterion, _n)
+        
+    def _batch_arg_max_acquisition(self, n_point, return_dx):
+        criteria = []
+        
+        for i in range(n_point):
+            _acquisition_fun = self._acquisition_fun_list[i]
+            _acquisition_par = self._acquisition_par_list[i]
+            _par = self._sampler_list[i](_acquisition_par)
+            _acquisition_par = copy(_acquisition_par)
+            _acquisition_par.update({self._par_name_list[i] : _par})
+            criteria.append(
+                self._create_acquisition(
+                    fun=_acquisition_fun, par=_acquisition_par, return_dx=return_dx
+                )
+            )
+        
+        if self.n_job > 1:
+            __ = Parallel(n_jobs=self.n_job)(
+                delayed(self._argmax_restart)(c) for c in criteria
+            )
+        else:
+            __ = [list(self._argmax_restart(_)) for _ in criteria]
+        
+        return tuple(zip(*__))
