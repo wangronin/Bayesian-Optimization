@@ -227,8 +227,10 @@ class baseBO(ABC):
 
         if self._eval_type == 'list':
             self._to_pheno = lambda x: x.tolist()
+            self._to_geno = lambda x: Solution(x, var_name=self.var_names)
         elif self._eval_type == 'dict':
-            self._to_pheno = lambda x: self._search_space.to_dict(x)
+            self._to_pheno = lambda x: x.to_dict(x, space=self._search_space)
+            self._to_geno = lambda x: x.from_dict(x, space=self._search_space)
 
     def _set_internal_optimization(self, **kwargs):
         if 'optimizer' in kwargs:
@@ -278,7 +280,7 @@ class baseBO(ABC):
     def run(self):
         while not self.check_stop():
             self.step()
-        return self._to_pheno(self.xopt), self.xopt.fitness, self.stop_dict
+        return self.xopt, self.fopt, self.stop_dict
 
     def step(self):
         X = self.ask()    
@@ -294,6 +296,7 @@ class baseBO(ABC):
             n_point = self.n_point if n_point is None else self.n_point
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
+
             X = Solution(
                 X, index=len(self.data) + np.arange(len(X)), 
                 var_name=self.var_names
@@ -318,7 +321,7 @@ class baseBO(ABC):
                 )
         else: # initial DoE
             X = self.create_DoE(self._DoE_size)
-        return X
+        return self._to_pheno(X)
     
     def tell(self, X, func_vals):
         """Tell the BO about the function values of proposed candidate solutions
@@ -330,8 +333,7 @@ class baseBO(ABC):
         func_vals : List/np.ndarray of reals
             The corresponding function values
         """
-        if not isinstance(X, Solution):
-            X = Solution(X, var_name=self.var_names)
+        X = self._to_geno(X)
 
         msg = 'initial DoE of size {}:'.format(len(X)) if self.iter_count == 0 else \
             'iteration {}, {} infill points:'.format(self.iter_count, len(X))
@@ -390,11 +392,9 @@ class baseBO(ABC):
 
         return X
         
-    def evaluate(self, data):
+    def evaluate(self, X):
         """Evaluate the candidate points and update evaluation info in the dataframe
         """
-        X = [self._to_pheno(_) for _ in data]
-
         # Parallelization is handled by the objective function itself
         if self.parallel_obj_fun is not None:  
             func_vals = self.parallel_obj_fun(X)

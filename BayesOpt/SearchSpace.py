@@ -130,24 +130,26 @@ class SearchSpace(object):
         else:
             self.levels, self._n_levels = None, None 
 
-    def to_dict(self, solution):
-        """Convert a `Solution` object to a dictionary
+    # def to_dict(self, solution):
+    #     """Convert a `Solution` object to a dictionary
 
-        Parameters
-        ----------
-        solution : Solution
-            an instance of .base.Solution class
+    #     Parameters
+    #     ----------
+    #     solution : Solution
 
-        Returns
-        -------
-        dict
-            A dictionary containing the data of solution
-        """
-        # TODO: this functionality should be more generic. See `pandas.to_dict`
-        if self.name is None:
-            return solution.to_dict() 
-        else: # TODO: check this `self.name` which appears to be a list
-            return {self.name : solution.tolist()}
+    #     Returns
+    #     -------
+    #     dict
+    #         A dictionary containing the data of solution
+    #     """
+    #     # TODO: this functionality should be more generic. See `pandas.to_dict`
+    #     if self.name is None:
+    #         if not hasattr(solution[0], '__iter__'):
+    #             return solution.to_dict()
+    #         else:
+    #             return [x.to_dict() for x in solution]
+    #     else: # TODO: check this `self.name` which appears to be a list
+    #         return {self.name : solution.tolist()}
 
     def to_linear_scale(self, X):
         X = deepcopy(X)

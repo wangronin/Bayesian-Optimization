@@ -97,6 +97,9 @@ class Solution(np.ndarray):
                 fitness_name = ['f']
             else:
                 fitness_name = ['f' + str(i) for i in range(obj.n_obj)]
+        elif isinstance(fitness_name, str):
+            assert obj.n_obj == 1
+            fitness_name = [fitness_name]
         assert len(fitness_name) == obj.n_obj
 
         # a np.ndarray is used for those attributes because slicing it returns references
@@ -166,7 +169,7 @@ class Solution(np.ndarray):
         if isinstance(index, tuple):
             _ = index[0]
             if len(index) == 2:
-                if isinstance(index[1], int):
+                if isinstance(index[1], int) and not isinstance(index[0], int):
                     __ = slice(index[1], index[1] + 1)
                     index = (_, __)
                 else:
@@ -221,25 +224,45 @@ class Solution(np.ndarray):
         self.N = getattr(obj, 'N', None)
         self.n_obj = getattr(obj, 'n_obj', None)
     
-    def to_dict(self, orient='var'):
-        # NOTE: avoid calling self.__getitem__
-        if orient == 'index':
-            index = lambda i: i if len(self.shape) == 1 else (i, slice(None, None))
-            res = {k : super(Solution, self).__getitem__(index(i)).to_dict('var') \
-                for i, k in enumerate(self.index)} 
-        elif orient == 'var':
-            index = lambda i: i if len(self.shape) == 1 else (slice(None, None), i)
-            if len(self.shape) == 1:
-                res = {k : super(Solution, self).__getitem__(index(i)) \
-                    for i, k in enumerate(self.var_name)}
-            else:
-                res = {k : super(Solution, self).__getitem__(index(i)).tolist() \
-                    for i, k in enumerate(self.var_name)}
+    @classmethod
+    def from_dict(cls, x, space=None):
+        if isinstance(x, dict):
+            var_name = list(x.keys())
+            res = cls.__new__(cls, x=list(x.values()), var_name=var_name)
+        elif isinstance(x, list):
+            var_name = list(x[0].keys())
+            _x = [list(_.values()) for _ in x]
+            res = cls.__new__(cls, x=_x, var_name=var_name)
+        return res
 
-        # if show_attr:
-        #     res['index'] = self.index.tolist()
-        #     res['fitness'] = self.fitness.tolist()
-        #     res['n_eval'] = self.n_eval.tolist()
+    def to_dict(self, orient='index', with_index=False, space=None):
+        # NOTE: avoid calling self.__getitem__
+        # TODO: the following code only work 2D array
+        obj = self.view(np.ndarray)
+        if orient == 'index':
+            if with_index:
+                res = {
+                    _index : {
+                        self.var_name[k] : obj[i, k] for k in range(self.dim)
+                    } for i, _index in enumerate(self.index)
+                } 
+            else:
+                res = [
+                    {
+                        self.var_name[k] : obj[i, k] for k in range(self.dim)
+                    } for i, _index in enumerate(self.index)
+                ]
+        elif orient == 'var':
+            if with_index:
+                res = {
+                    _name : {
+                        i : obj[i, k] for i in self.index
+                    } for k, _name in enumerate(self.var_name)
+                }
+            else:
+                res = {
+                    _name : list(obj[:, k]) for k, _name in enumerate(self.var_name)
+                } 
         return res
 
     def __str__(self):

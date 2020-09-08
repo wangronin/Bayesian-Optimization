@@ -85,20 +85,6 @@ def test_ProductSpace():
     C = ContinuousSpace([[0, 1]] * 2, var_name='weight')
     print(C.var_name)
 
-def test_to_dict():
-    # test for space names and save to dictionary
-    C1 = ContinuousSpace([0, 1], name='C1') 
-    C2 = OrdinalSpace([-5, 5], var_name='O1') * 4
-    space = C1 + C2
-
-    d = Solution(np.random.rand(5).tolist())
-    print(d)
-    print(space.to_dict(d))
-
-    C3 = ContinuousSpace([0, 1]) * 10
-    x = Solution(C3.sampling(20))
-    C3.to_dict(x)
-
 def test_from_dict():
     a = from_dict(
         {
