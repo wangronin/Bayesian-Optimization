@@ -443,7 +443,8 @@ def from_dict(param, space_name=True):
         if not hasattr(bounds[0], '__iter__') or isinstance(bounds[0], str):
             bounds = [bounds]
 
-        bounds *= v['N']
+        N = v['N'] if 'N' in v else int(1)
+        bounds *= N
         name = k if space_name else None
 
         # IMPORTANT: name argument is necessary for the variable grouping
