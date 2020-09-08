@@ -448,16 +448,16 @@ def from_dict(param, space_name=True):
         name = k if space_name else None
 
         # IMPORTANT: name argument is necessary for the variable grouping
-        if v['type'] == 'r':        # real-valued parameter
+        if v['type'] in ['r', 'real']:                  # real-valued parameter
             precision = v['precision'] if 'precision' in v else None 
             scale = v['scale'] if 'scale' in v else None 
             space_ = ContinuousSpace(
                 bounds, var_name=k, name=name, 
                 precision=precision, scale=scale
             )
-        elif v['type'] == 'i':      # integer-valued parameter
+        elif v['type'] in ['i', 'int', 'integer']:      # integer-valued parameter
             space_ = OrdinalSpace(bounds, var_name=k, name=name)
-        elif v['type'] == 'c':      # category-valued parameter
+        elif v['type'] in ['c', 'cat', 'bool']:         # category-valued parameter
             space_ = NominalSpace(bounds, var_name=k, name=name) 
         
         if i == 0:
