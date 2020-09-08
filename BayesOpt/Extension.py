@@ -74,7 +74,7 @@ class OptimizerPipeline(object):
 
         Parameters
         ----------
-        n_suggestions : int
+        n_point : int
             Desired number of parallel suggestions in the output
 
         Returns

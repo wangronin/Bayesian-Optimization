@@ -1,5 +1,4 @@
-
-g
+*.txt
 *.pyc
 *.bk
 *.pdf

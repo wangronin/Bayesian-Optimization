@@ -10,6 +10,9 @@ from abc import abstractmethod
 from pyDOE import lhs
 from scipy.special import logit
 
+# TODO: rename `sampling` --> `sample`
+# TODO: add conditional parameters
+
 TRANS = {
     'log': np.log,
     'log10': np.log10,
@@ -129,27 +132,6 @@ class SearchSpace(object):
             self._n_levels = {i : len(self.bounds[i]) for i in self.id_N}
         else:
             self.levels, self._n_levels = None, None 
-
-    # def to_dict(self, solution):
-    #     """Convert a `Solution` object to a dictionary
-
-    #     Parameters
-    #     ----------
-    #     solution : Solution
-
-    #     Returns
-    #     -------
-    #     dict
-    #         A dictionary containing the data of solution
-    #     """
-    #     # TODO: this functionality should be more generic. See `pandas.to_dict`
-    #     if self.name is None:
-    #         if not hasattr(solution[0], '__iter__'):
-    #             return solution.to_dict()
-    #         else:
-    #             return [x.to_dict() for x in solution]
-    #     else: # TODO: check this `self.name` which appears to be a list
-    #         return {self.name : solution.tolist()}
 
     def to_linear_scale(self, X):
         X = deepcopy(X)
@@ -289,12 +271,12 @@ class ContinuousSpace(SearchSpace):
     def sampling(self, N=1, method='uniform'):
         lb, ub = self._bounds
         if method == 'uniform':   # uniform random samples
-            X = ((ub - lb) * rand(N, self.dim) + lb).tolist()
+            X = ((ub - lb) * rand(N, self.dim) + lb)
         elif method == 'LHS':     # Latin hypercube sampling
             if N == 1:
-                X = ((ub - lb) * rand(N, self.dim) + lb).tolist()
+                X = ((ub - lb) * rand(N, self.dim) + lb)
             else:
-                X = ((ub - lb) * lhs(self.dim, samples=N, criterion='cm') + lb).tolist()
+                X = ((ub - lb) * lhs(self.dim, samples=N, criterion='cm') + lb)
         return X.tolist()
 
 
@@ -418,6 +400,7 @@ class ProductSpace(SearchSpace):
         raise ValueError('Unsupported operation')
 
 
+# TODO: add this to `SearchSpace` as a classmethod
 def from_dict(param, space_name=True):
     """Create a search space object from input dictionary
 
