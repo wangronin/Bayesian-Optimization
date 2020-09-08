@@ -236,11 +236,10 @@ class baseBO(ABC):
         if 'optimizer' in kwargs:
             self._optimizer = kwargs['optimizer']
         else:
-            set_trace()
-            if self.N_d + self.N_i > 0:
-                self._optimizer = 'MIES'
-            elif hasattr(self.model, 'gradient'):
+            if self.N_d + self.N_i == 0 and hasattr(self.model, 'gradient'):
                 self._optimizer = 'BFGS'
+            else:
+                self._optimizer = 'MIES'
 
         # NOTE: `AQ`: acquisition
         if 'max_FEs' in kwargs:
