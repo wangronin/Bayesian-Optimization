@@ -319,8 +319,11 @@ class baseBO(ABC):
                     X, index=len(self.data) + np.arange(len(X)), 
                     var_name=self.var_names
                 )
+                X = self._search_space.round(X)
         else: # initial DoE
-            X = self.create_DoE(self._DoE_size)
+            X = self._search_space.round(
+                self.create_DoE(self._DoE_size)
+            )
         return self._to_pheno(X)
     
     def tell(self, X, func_vals):

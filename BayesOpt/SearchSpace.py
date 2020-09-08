@@ -295,7 +295,7 @@ class ContinuousSpace(SearchSpace):
                 X = ((ub - lb) * rand(N, self.dim) + lb).tolist()
             else:
                 X = ((ub - lb) * lhs(self.dim, samples=N, criterion='cm') + lb).tolist()
-        return self.round(X)
+        return X.tolist()
 
 
 class NominalSpace(SearchSpace):
