@@ -4,15 +4,22 @@ import sys
 import numpy as np
 sys.path.insert(0, '../')
 
-from BayesOpt import ParallelBO, ContinuousSpace, OrdinalSpace, \
+from BayesOpt import BO, ParallelBO, ContinuousSpace, OrdinalSpace, \
     NominalSpace, RandomForest
 
 seed = 666
 np.random.seed(seed)
 dim_r = 2  # dimension of the real values
 
-def obj_fun(x):
+def obj_fun0(x):
     x_r, x_i, x_d = np.array(x[:dim_r]), x[2], x[3]
+    _ = 0 if x_d == 'OK' else 1
+    return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + _ * 2
+
+def obj_fun(x):
+    x_r = np.array([x['continuous_%d'%i] for i in range(dim_r)])
+    x_i = x['ordinal']
+    x_d = x['nominal']
     _ = 0 if x_d == 'OK' else 1
     return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + _ * 2
 
@@ -42,16 +49,17 @@ search_space = C + I + N
 # For mixed variable type, the random forest is typically used
 model = RandomForest(levels=search_space.levels)
 
-opt = ParallelBO(
+opt = BO(
     search_space=search_space, 
     obj_fun=obj_fun, 
     model=model, 
     max_FEs=50, 
     DoE_size=3,    # the initial DoE size
+    eval_type='dict',
     acquisition_fun='MGFI',
     acquisition_par={'t' : 2},
     n_job=3,       # number of processes
-    n_point=3,     # number of the candidate solution proposed in each iteration
+    n_point=1,     # number of the candidate solution proposed in each iteration
     verbose=True   # turn this off, if you prefer no output
 )
 xopt, fopt, stop_dict = opt.run()

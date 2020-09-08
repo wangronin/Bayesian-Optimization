@@ -229,8 +229,8 @@ class baseBO(ABC):
             self._to_pheno = lambda x: x.tolist()
             self._to_geno = lambda x: Solution(x, var_name=self.var_names)
         elif self._eval_type == 'dict':
-            self._to_pheno = lambda x: x.to_dict(x, space=self._search_space)
-            self._to_geno = lambda x: x.from_dict(x, space=self._search_space)
+            self._to_pheno = lambda x: x.to_dict(space=self._search_space)
+            self._to_geno = lambda x: Solution.from_dict(x, space=self._search_space)
 
     def _set_internal_optimization(self, **kwargs):
         if 'optimizer' in kwargs:
@@ -283,7 +283,7 @@ class baseBO(ABC):
         return self.xopt, self.fopt, self.stop_dict
 
     def step(self):
-        X = self.ask()    
+        X = self.ask()
 
         t0 = time.time()
         func_vals = self.evaluate(X)
@@ -339,13 +339,14 @@ class baseBO(ABC):
             'iteration {}, {} infill points:'.format(self.iter_count, len(X))
         self._logger.info(msg)
 
+        _X = self._to_pheno(X)
         for i in range(len(X)):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
             self.eval_count += 1
             self._logger.info(
                 '#{} - fitness: {}, solution: {}'.format(
-                    i + 1, func_vals[i], self._to_pheno(X[i])
+                    i + 1, func_vals[i], _X[i]
                 )
             )
 
@@ -356,8 +357,11 @@ class baseBO(ABC):
             X.to_csv(self.data_file, header=False, append=True)
 
         self.fopt = self._get_best(self.data.fitness)
-        _xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]  
+        _xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]] 
         self.xopt = self._to_pheno(_xopt)
+        if self._eval_type == 'dict':
+            self.xopt = self.xopt[0]
+
         self._logger.info('fopt: {}'.format(self.fopt))   
         self._logger.info('xopt: {}'.format(self.xopt)) 
 

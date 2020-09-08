@@ -238,7 +238,7 @@ class Solution(np.ndarray):
     def to_dict(self, orient='index', with_index=False, space=None):
         # NOTE: avoid calling self.__getitem__
         # TODO: the following code only work 2D array
-        obj = self.view(np.ndarray)
+        obj = np.atleast_2d(self.view(np.ndarray))
         if orient == 'index':
             if with_index:
                 res = {
@@ -252,6 +252,8 @@ class Solution(np.ndarray):
                         self.var_name[k] : obj[i, k] for k in range(self.dim)
                     } for i, _index in enumerate(self.index)
                 ]
+                # if len(res) == 1:
+                #     res = res[0]
         elif orient == 'var':
             if with_index:
                 res = {
