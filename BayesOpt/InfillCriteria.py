@@ -73,10 +73,10 @@ class ImprovementBased(InfillCriteria):
             self._plugin = plugin if self.minimize else -1.0 * plugin
 
 class UCB(InfillCriteria):
-    def __init__(self, model, minimize=True, alpha=0.5):
+    def __init__(self, alpha=0.5, **kwargs):
         """Upper Confidence Bound 
         """
-        super().__init__(model=model, minimize=minimize)
+        super().__init__(**kwargs)
         self.alpha = alpha
 
     @property
@@ -90,10 +90,13 @@ class UCB(InfillCriteria):
 
     def __call__(self, X, return_dx=False):
         X = self.check_X(X)
+        n_sample = X.shape[0]
         y_hat, sd = self._predict(X)
 
         try:
             f_value = y_hat + self.alpha * sd
+            if n_sample == 1:
+                f_value = sum(f_value)
         except Exception: # in case of numerical errors
             f_value = 0
 

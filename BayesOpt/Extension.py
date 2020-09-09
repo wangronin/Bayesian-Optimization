@@ -126,13 +126,14 @@ class MultiAcquisitionBO(BO):
         super().__init__(**kwargs)
         assert self.n_point > 1
 
+        self._acquisition_fun = 'MGFI'
         self._acquisition_fun_list = ['MGFI', 'UCB']
         self._sampler_list = [
             lambda x: np.exp(np.log(x['t']) + 0.5 * np.random.randn()),
             lambda x: 1 / (1 + np.exp((x['alpha'] * 4 - 2) + 0.6 * np.random.randn())) 
         ]
         self._par_name_list = ['t', 'alpha']
-        self._acquisition_par_list = [{'t' : 2}, {'alpha' : 0.5}]
+        self._acquisition_par_list = [{'t' : 1}, {'alpha' : 0.1}]
         self._N_acquisition = len(self._acquisition_fun_list)
 
         for i, _n in enumerate(self._par_name_list):
@@ -144,11 +145,12 @@ class MultiAcquisitionBO(BO):
         criteria = []
         
         for i in range(n_point):
-            _acquisition_fun = self._acquisition_fun_list[i]
-            _acquisition_par = self._acquisition_par_list[i]
-            _par = self._sampler_list[i](_acquisition_par)
+            k = i % self._N_acquisition
+            _acquisition_fun = self._acquisition_fun_list[k]
+            _acquisition_par = self._acquisition_par_list[k]
+            _par = self._sampler_list[k](_acquisition_par)
             _acquisition_par = copy(_acquisition_par)
-            _acquisition_par.update({self._par_name_list[i] : _par})
+            _acquisition_par.update({self._par_name_list[k] : _par})
             criteria.append(
                 self._create_acquisition(
                     fun=_acquisition_fun, par=_acquisition_par, return_dx=return_dx

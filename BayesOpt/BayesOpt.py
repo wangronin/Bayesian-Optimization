@@ -24,7 +24,8 @@ from .Surrogate import SurrogateAggregation
 
 class BO(baseBO):
     def _create_acquisition(self, fun=None, par={}, return_dx=False):
-        if hasattr(getattr(InfillCriteria, self._acquisition_fun), 'plugin'):
+        fun = fun if fun is not None else self._acquisition_fun
+        if hasattr(getattr(InfillCriteria, fun), 'plugin'):
             if 'plugin' not in par:
                 par.update({'plugin': self.fmin})
         
