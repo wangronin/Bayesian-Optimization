@@ -145,8 +145,8 @@ class SearchSpace(object):
         return X
 
     def round(self, X):
-        """Round the real-valued components of `X` to the corresponding numerical precision,
-        if given
+        """Round the real-valued components of `X` to the 
+        corresponding numerical precision, if given
         """
         # NOTE: make sure the rounding is applied in the original linear scale
         X = self.to_linear_scale(X)
@@ -161,6 +161,73 @@ class SearchSpace(object):
                     for i in range(len(X)):
                         X[i][k] = np.round(X[i][k], v)
         return X
+
+    @classmethod
+    def from_dict(cls, param, space_name=True):
+        """Create a search space object from input dictionary
+
+        Parameters
+        ----------
+        param : dict
+            A dictionary that describes the search space
+        space_name : bool, optional
+            Whether a (multi-dimensional) subspace should be named. If this named space 
+            is a subspace a whole search space, for a solution sampled from the whole space, its 
+            components pertaining to this subspace will be grouped together under the key 
+            `space_name`, when this solution is converted to a dictionary/json
+            (see `SearchSpace.to_dict`).
+
+        Returns
+        -------
+        SearchSpace
+        """
+        assert isinstance(param, dict)
+
+        # construct the search space
+        for i, (k, v) in enumerate(param.items()):
+            bounds = v['range']
+            if not hasattr(bounds[0], '__iter__') or isinstance(bounds[0], str):
+                bounds = [bounds]
+
+            N = v['N'] if 'N' in v else int(1)
+            bounds *= N
+            name = k if space_name else None
+
+            # IMPORTANT: name argument is necessary for the variable grouping
+            if v['type'] in ['r', 'real']:                  # real-valued parameter
+                precision = v['precision'] if 'precision' in v else None 
+                scale = v['scale'] if 'scale' in v else None 
+                space_ = ContinuousSpace(
+                    bounds, var_name=k, name=name, 
+                    precision=precision, scale=scale
+                )
+            elif v['type'] in ['i', 'int', 'integer']:      # integer-valued parameter
+                space_ = OrdinalSpace(bounds, var_name=k, name=name)
+            elif v['type'] in ['c', 'cat', 'bool']:         # category-valued parameter
+                space_ = NominalSpace(bounds, var_name=k, name=name) 
+            
+            if i == 0:
+                space = space_
+            else:
+                space += space_
+        return space
+
+    @classmethod
+    def from_json(cls, file):
+        """Create a seach space from a json file
+
+        Parameters
+        ----------
+        file : str
+            Path to the input json file
+
+        Returns
+        -------
+        SearchSpace
+            an `SearchSpace` object converted from the json file
+        """
+        with open(file, 'r') as f:
+            return cls.from_dict(json.load(f))
 
     def __len__(self):
         return self.dim
@@ -398,71 +465,3 @@ class ProductSpace(SearchSpace):
 
     def __rmul__(self, space):
         raise ValueError('Unsupported operation')
-
-
-# TODO: add this to `SearchSpace` as a classmethod
-def from_dict(param, space_name=True):
-    """Create a search space object from input dictionary
-
-    Parameters
-    ----------
-    param : dict
-        A dictionary that describes the search space
-    space_name : bool, optional
-        Whether a (multi-dimensional) subspace should be named. If this named space 
-        is a subspace a whole search space, for a solution sampled from the whole space, its 
-        components pertaining to this subspace will be grouped together under the key 
-        `space_name`, when this solution is converted to a dictionary/json
-        (see `SearchSpace.to_dict`).
-
-    Returns
-    -------
-    SearchSpace
-    """
-    assert isinstance(param, dict)
-    # construct the search space
-    for i, (k, v) in enumerate(param.items()):
-        bounds = v['range']
-        if not hasattr(bounds[0], '__iter__') or isinstance(bounds[0], str):
-            bounds = [bounds]
-
-        N = v['N'] if 'N' in v else int(1)
-        bounds *= N
-        name = k if space_name else None
-
-        # IMPORTANT: name argument is necessary for the variable grouping
-        if v['type'] in ['r', 'real']:                  # real-valued parameter
-            precision = v['precision'] if 'precision' in v else None 
-            scale = v['scale'] if 'scale' in v else None 
-            space_ = ContinuousSpace(
-                bounds, var_name=k, name=name, 
-                precision=precision, scale=scale
-            )
-        elif v['type'] in ['i', 'int', 'integer']:      # integer-valued parameter
-            space_ = OrdinalSpace(bounds, var_name=k, name=name)
-        elif v['type'] in ['c', 'cat', 'bool']:         # category-valued parameter
-            space_ = NominalSpace(bounds, var_name=k, name=name) 
-        
-        if i == 0:
-            space = space_
-        else:
-            space += space_
-    
-    return space
-
-def from_json(file):
-    """Create a seach space from a json file
-
-    Parameters
-    ----------
-    file : str
-        Path to the input json file
-
-    Returns
-    -------
-    SearchSpace
-        an `SearchSpace` object converted from the json file
-    """
-    with open(file, 'r') as f:
-        space = from_dict(json.load(f))
-    return space

@@ -13,10 +13,9 @@ from abc import ABC, abstractmethod
 # TODO: implement noisy handling infill criteria, e.g., EQI (expected quantile improvement)
 # TODO: perphaps also enable acquisition function engineering here?
 class InfillCriteria(ABC):
-    def __init__(self, model=None, plugin=None, minimize=True):
+    def __init__(self, model=None, minimize=True):
         self.model = model
         self.minimize = minimize
-        self.plugin = plugin
     
     @property
     def model(self):
@@ -29,21 +28,6 @@ class InfillCriteria(ABC):
             assert hasattr(self._model, 'predict')
         else: 
             self._model = None
-
-    @property
-    def plugin(self):
-        return self._plugin
-    
-    @plugin.setter
-    def plugin(self, plugin):
-        if plugin is None:
-            if self._model is not None:
-                self._plugin = np.min(self._model.y) if self.minimize \
-                    else -1.0 * np.max(self._model.y)
-            else:
-                self._plugin = None
-        else:
-            self._plugin = plugin if self.minimize else -1.0 * plugin
 
     @abstractmethod
     def __call__(self, X):
@@ -60,7 +44,6 @@ class InfillCriteria(ABC):
         y_dx, sd2_dx = self._model.gradient(X)
         if not self.minimize:
             y_dx = -y_dx
-            
         return y_dx, sd2_dx
 
     def check_X(self, X):
@@ -69,11 +52,31 @@ class InfillCriteria(ABC):
         return np.atleast_2d(X)
         # return [X] if not hasattr(X[0], '__iter__') else X
 
+class ImprovementBased(InfillCriteria):
+    def  __init__(self, plugin=None, **kwargs):
+        super().__init__(**kwargs)
+        self.plugin = plugin
+
+    @property
+    def plugin(self):
+        return self._plugin
+    
+    @plugin.setter
+    def plugin(self, plugin):
+        if plugin is None:
+            if self._model is not None:
+                self._plugin = np.min(self._model.y) if self.minimize \
+                    else -1.0 * np.max(self._model.y)
+            else:
+                self._plugin = None
+        else:
+            self._plugin = plugin if self.minimize else -1.0 * plugin
+
 class UCB(InfillCriteria):
-    def __init__(self, model, plugin=None, minimize=True, alpha=0.5):
+    def __init__(self, model, minimize=True, alpha=0.5):
         """Upper Confidence Bound 
         """
-        super(UCB, self).__init__(model, plugin, minimize)
+        super().__init__(model=model, minimize=minimize)
         self.alpha = alpha
 
     @property
@@ -104,11 +107,12 @@ class UCB(InfillCriteria):
             return f_value, f_dx 
         return f_value
 
-class EI(InfillCriteria):
+class EI(ImprovementBased):
     def __call__(self, X, return_dx=False):
         X = self.check_X(X)
         n_sample = X.shape[0]
         y_hat, sd = self._predict(X)
+
         # if the Kriging variance is to small
         # TODO: check the rationale of 1e-6 and why the ratio if intended
         if hasattr(self._model, 'sigma2'):
@@ -140,13 +144,13 @@ class EI(InfillCriteria):
             return f_value, f_dx 
         return f_value
 
-class EpsilonPI(InfillCriteria):
-    def __init__(self, model, plugin=None, minimize=True, epsilon=1e-10):
+class EpsilonPI(ImprovementBased):
+    def __init__(self, epsilon=1e-10, **kwargs):
         """epsilon-Probability of Improvement
         # TODO: verify the implementation
         """
-        super(EpsilonPI, self).__init__(model, plugin, minimize)
-        self._epsilon = epsilon
+        super(EpsilonPI, self).__init__(**kwargs)
+        self.epsilon = epsilon
     
     @property
     def epsilon(self):
@@ -180,16 +184,17 @@ class EpsilonPI(InfillCriteria):
         return f_value
 
 class PI(EpsilonPI):
-    def __init__(self, model, plugin=None, minimize=True):
+    def __init__(self, **kwargs):
         """Probability of Improvement
         """
-        super(PI, self).__init__(model, plugin, minimize, epsilon=0)
+        kwargs.update({'epsilon' : 0})
+        super().__init__(**kwargs)
 
-class MGFI(InfillCriteria):
-    def __init__(self, t=1, *argv, **kwargs):
+class MGFI(ImprovementBased):
+    def __init__(self, t=1, **kwargs):
         """Moment-Generating Function of Improvement proposed in SMC'17 paper
         """
-        super(MGFI, self).__init__(*argv, **kwargs)
+        super().__init__(**kwargs)
         self.t = t
 
     @property
@@ -243,12 +248,23 @@ class MGFI(InfillCriteria):
             return f_, f_dx
         return f_
         
-class GEI(InfillCriteria):
-    def __init__(self, model, plugin=None, minimize=True, g=1):
+class GEI(ImprovementBased):
+    def __init__(self, g=1, **kwargs):
         """Generalized Expected Improvement 
         """
-        super(GEI, self).__init__(model, plugin, minimize)
+        super().__init__(**kwargs)
         self.g = g
 
+    @property
+    def g(self):
+        return self._g 
+    
+    @g.setter
+    def g(self, g):
+        g = int(g)
+        assert g >= 0
+        self._g = g
+
     def __call__(self, X, return_dx=False):
+        # TODO: implement this!!!
         raise NotImplementedError
