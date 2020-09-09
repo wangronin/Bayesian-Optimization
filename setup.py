@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 setup(
-    name = 'bayesopt',
+    name = 'BayesOpt',
     version = '0.1',
     #packages = find_packages(),
     packages = ["BayesOpt", "BayesOpt.optimizer"],

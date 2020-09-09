@@ -76,7 +76,7 @@ class ParallelBO(BO):
             self._sampler = None # TODO: implement this!
         else:
             raise NotImplementedError
-
+        
         _criterion = getattr(InfillCriteria, self._acquisition_fun)()
         if self._par_name not in self._acquisition_par:
             self._acquisition_par[self._par_name] = getattr(_criterion, self._par_name)

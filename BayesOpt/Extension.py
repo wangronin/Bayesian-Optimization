@@ -6,10 +6,11 @@ from copy import copy
 from joblib import Parallel, delayed
 
 from . import InfillCriteria
+from .base import baseOptimizer
 from .BayesOpt import BO
 from .misc import LoggerFormatter
 
-class OptimizerPipeline(object):
+class OptimizerPipeline(baseOptimizer):
     def __init__(
         self,
         obj_fun: Callable,
@@ -34,33 +35,6 @@ class OptimizerPipeline(object):
         self._curr_opt = None
         self._transfer = None
         self._stop = False
-
-    @property
-    def logger(self):
-        return self._logger
-
-    @logger.setter
-    def logger(self, logger):
-        self._logger = logging.getLogger(self.__class__.__name__)
-        self._logger.setLevel(logging.DEBUG)
-        fmt = LoggerFormatter()
-
-        if self.verbose:
-            # create console handler and set level to warning
-            ch = logging.StreamHandler(sys.stdout)
-            ch.setLevel(logging.INFO)
-            ch.setFormatter(fmt)
-            self._logger.addHandler(ch)
-
-        # create file handler and set level to debug
-        if logger is not None:
-            fh = logging.FileHandler(logger)
-            fh.setLevel(logging.DEBUG)
-            fh.setFormatter(fmt)
-            self._logger.addHandler(fh)
-
-        if hasattr(self, 'logger'):
-            self._logger.propagate = False
 
     def add(self, opt, transfer=None):
         opt.obj_fun = self.obj_fun
@@ -146,16 +120,6 @@ class OptimizerPipeline(object):
         if not hasattr(X[0], '__iter__'):
             X = [X]
         return [self.obj_fun(x) for x in X]
-
-    def step(self):
-        X = self.ask()    
-        func_vals = self.evaluate(X)
-        self.tell(X, func_vals)
-
-    def run(self):
-        while not self._stop:
-            self.step()
-        return self.xopt, self.fopt, self.stop_dict
 
 class MultiAcquisitionBO(BO):
     def __init__(self, **kwargs):

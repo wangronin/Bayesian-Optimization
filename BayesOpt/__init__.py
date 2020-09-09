@@ -4,11 +4,11 @@ from . import InfillCriteria, Surrogate
 from .BayesOpt import BO, ParallelBO, NoisyBO, AnnealingBO
 from .Solution import Solution
 from .Surrogate import RandomForest
-from .SearchSpace import OrdinalSpace, ContinuousSpace, NominalSpace, from_dict
+from .SearchSpace import OrdinalSpace, ContinuousSpace, NominalSpace
 from .Extension import OptimizerPipeline
 
 __all__ = [
-    'BO', 'ParallelBO', 'NoisyBO', 'AnnealingBO', 'Solution', 'from_dict',
+    'BO', 'ParallelBO', 'NoisyBO', 'AnnealingBO', 'Solution',
     'InfillCriteria', 'Surrogate', 'OrdinalSpace', 'ContinuousSpace', 
     'NominalSpace', 'RandomForest', 'OptimizerPipeline'
 ]

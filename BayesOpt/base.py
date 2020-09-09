@@ -25,8 +25,81 @@ from .utils import arg_to_int
 from .misc import LoggerFormatter
 from .optimizer import argmax_restart
 
-# TODO: create an abstract optimizer to take care of the common functionalities, e.g.,
-# logging, registration of objective functions, and the basica ask-and-tell interface
+class baseOptimizer(ABC):
+    @abstractmethod
+    def ask(self, n_point=None):
+        """Get suggestions from the optimizer.
+
+        Parameters
+        ----------
+        n_point : int
+            Desired number of parallel suggestions in the output
+
+        Returns
+        -------
+        next_guess : list of dict
+            List of `n_suggestions` suggestions to evaluate the objective
+            function. Each suggestion is a dictionary where each key
+            corresponds to a parameter being optimized.
+        """
+        return
+
+    @abstractmethod
+    def tell(self, X, y):
+        """Feed an observation back.
+
+        Parameters
+        ----------
+        X : list of dict-like
+            Places where the objective function has already been evaluated.
+            Each suggestion is a dictionary where each key corresponds to a
+            parameter being optimized.
+        y : array-like, shape (n,)
+            Corresponding values where objective has been evaluated
+        """
+        return
+
+    @abstractmethod
+    def evaluate(self, X):
+        return 
+
+    def step(self):
+        X = self.ask()    
+        func_vals = self.evaluate(X)
+        self.tell(X, func_vals)
+    
+    def run(self):
+        while not self._stop:
+            self.step()
+        return self.xopt, self.fopt, self.stop_dict
+
+    @property
+    def logger(self):
+        return self._logger
+
+    @logger.setter
+    def logger(self, logger):
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger.setLevel(logging.DEBUG)
+        fmt = LoggerFormatter()
+
+        if self.verbose:
+            # create console handler and set level to warning
+            ch = logging.StreamHandler(sys.stdout)
+            ch.setLevel(logging.INFO)
+            ch.setFormatter(fmt)
+            self._logger.addHandler(ch)
+
+        # create file handler and set level to debug
+        if logger is not None:
+            fh = logging.FileHandler(logger)
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(fmt)
+            self._logger.addHandler(fh)
+
+        if hasattr(self, 'logger'):
+            self._logger.propagate = False
+
 
 class baseBO(ABC):
     def __init__(

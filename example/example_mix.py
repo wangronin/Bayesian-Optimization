@@ -49,7 +49,7 @@ search_space = C + I + N
 # For mixed variable type, the random forest is typically used
 model = RandomForest(levels=search_space.levels)
 
-opt = BO(
+opt = ParallelBO(
     search_space=search_space, 
     obj_fun=obj_fun, 
     model=model, 
@@ -59,7 +59,7 @@ opt = BO(
     acquisition_fun='MGFI',
     acquisition_par={'t' : 2},
     n_job=3,       # number of processes
-    n_point=1,     # number of the candidate solution proposed in each iteration
+    n_point=3,     # number of the candidate solution proposed in each iteration
     verbose=True   # turn this off, if you prefer no output
 )
 xopt, fopt, stop_dict = opt.run()
