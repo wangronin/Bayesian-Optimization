@@ -84,7 +84,6 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 self.logger.info('ask request from job %s'%job_id)
                 opt = ParallelBO.load(dump_file)
                 X = opt.ask(n_point)
-                X = [x.to_dict('var') for x in X]
 
                 rsp_data['job_id'] = job_id
                 rsp_data['X'] = X
@@ -204,12 +203,11 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             try:
                 self.logger.info('tell request from job %s'%job_id)
                 opt = ParallelBO.load(dump_file)
-
-                X = [list(x.values()) for x in data['X']]
-                opt.tell(X, data['y'])
+                
+                opt.tell(data['X'], data['y'])
                 opt.save(dump_file)
 
-                rsp_data['xopt'] = opt.xopt.to_dict()
+                rsp_data['xopt'] = opt.xopt
                 rsp_data['fopt'] = opt.fopt
 
                 self.send_response(200)

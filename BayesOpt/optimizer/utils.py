@@ -2,7 +2,7 @@ from pdb import set_trace
 import numpy as np
 
 from scipy.optimize import fmin_l_bfgs_b
-from .MIES import MIES
+from .mies import MIES
 from .OnePlusOne_CMA import OnePlusOne_Cholesky_CMA
 
 def argmax_restart(
