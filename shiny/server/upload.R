@@ -12,7 +12,7 @@ job_table <- reactive({
   .json <- list(
     check_job = as.vector(job_list$list)
   )
-  r <- POST("http://127.0.0.1:7200", body = .json, encode = 'json')
+  r <- POST("http://207.246.97.250:7200", body = .json, encode = 'json')
   as.data.frame(do.call(rbind, content(r)))
 })
 
@@ -20,7 +20,7 @@ observeEvent(input$upload.create_job, {
   .cs <- search_space()
   
   if (length(.cs) != 0) {
-    r <- POST("http://127.0.0.1:7200", body = .cs, encode = 'json')
+    r <- POST("http://207.246.97.250:7200", body = .cs, encode = 'json')
     if (status_code(r) == 200) {
       job_id <- content(r)$job_id
       job_list$list <- c(job_list$list, job_id)
@@ -42,7 +42,7 @@ observeEvent(input$upload.delete_job, {
   req(input$job_list_delete)
   job_id <- input$job_list_delete
   r <- GET(
-    "http://127.0.0.1:7200", 
+    "http://207.246.97.250:7200", 
     query = list(finalize = 'null', job_id = job_id)
   )
   
@@ -63,7 +63,7 @@ observeEvent(input$upload.delete_job, {
 ask_table <- eventReactive(input$ask_box.ask, {
   job_id <- input$ask_box.job_id
   r <- GET(
-    "http://127.0.0.1:7200", 
+    "http://207.246.97.250:7200", 
     query = list(ask = 'null', job_id = job_id)
   )
   
@@ -91,7 +91,7 @@ observeEvent(input$tell_box.tell, {
   json_data[['job_id']] <- job_id
   
   r <- POST(
-    "http://127.0.0.1:7200",
+    "http://207.246.97.250:7200",
     body = json_data, encode = 'json'
   )
 

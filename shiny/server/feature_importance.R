@@ -24,6 +24,6 @@ imp_data <- reactive({
   .json <- list(
     get_feature_importance = as.list(job_id)
   )
-  r <- POST("http://127.0.0.1:7200", body = .json, encode = 'json')
+  r <- POST("http://207.246.97.250:7200", body = .json, encode = 'json')
   content(r)
 })

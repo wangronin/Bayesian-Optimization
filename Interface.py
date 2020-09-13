@@ -335,7 +335,7 @@ if __name__ == '__main__':
                           help='port number', default=7200, type='int')
     
     opt_parser.add_option('-H', '--host', action='store', dest='host', 
-                          help='host address', default='127.0.0.1', type='string')
+                          help='host address', default='0.0.0.0', type='string')
     
     opt_parser.add_option('-l', '--log', action='store', dest='log_file', 
                           help='log file name', default='log', type='string')

@@ -33,7 +33,7 @@ data = {
 }
 
 # address = 'http://207.246.97.250:7200'
-address = 'http://127.0.0.1:7200'
+address = 'http://207.246.97.250:7200'
 
 def obj_func_dict_eval(par):
     """范例目标函数，其输入`par`为一个包含了一组候选参数的字典
