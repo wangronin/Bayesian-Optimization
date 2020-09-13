@@ -4,13 +4,7 @@ suppressMessages(library(magrittr))
 suppressMessages(library(data.table))
 suppressMessages(library(plotly))
 suppressMessages(library(shinydashboard))
-suppressMessages(library(xtable))
-suppressMessages(library(colourpicker))
-suppressMessages(library(bsplus))
 suppressMessages(library(DT))
-suppressMessages(library(knitr))
-suppressMessages(library(kableExtra))
-
 
 line_types <- c("solid", "dot", "dash", "longdash", "dashdot", "longdashdot")
 
