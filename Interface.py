@@ -96,8 +96,8 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             try:
                 job_id = self._get_job_id(info)
                 self.logger.info('finalize request from job %s'%job_id)
-                # dump_file = self._get_dump_file(job_id)
-                data_file = os.path.join(self.work_dir, job_id + '.csv')
+                dump_file = self._get_dump_file(job_id)
+                # data_file = os.path.join(self.work_dir, job_id + '.csv')
             except Exception as ex:
                 self.logger.error(str(ex))
                 self.send_error(500, str(ex))
@@ -105,7 +105,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 return
             
             os.remove(dump_file)
-            os.remove(data_file)
+            # os.remove(data_file)
             self.send_response(200)
 
         self._send_response(rsp_data)
@@ -191,6 +191,74 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             except Exception as ex:
                 self.logger.error(str(ex))
                 self.send_error(500, str(ex))
+
+        elif 'check_job' in data:
+            job_ids = data['check_job']
+            for job_id in job_ids:
+                try:
+                    dump_file = self._get_dump_file(job_id)
+                    opt = ParallelBO.load(dump_file)
+                except Exception as ex:
+                    pass
+                
+                rsp_data[job_id] = {
+                    'dim' : opt.search_space.dim,
+                    'max_FEs' : opt.max_FEs,
+                    'step' : opt.iter_count,
+                    'fopt' : opt.fopt if hasattr(opt, 'fopt') else None
+                }
+            self.send_response(200)
+        
+        elif 'get_history' in data:
+            job_ids = data['get_history']
+            for job_id in job_ids:
+                try:
+                    dump_file = self._get_dump_file(job_id)
+                    opt = ParallelBO.load(dump_file)
+                except Exception as ex:
+                    pass
+                
+                rsp_data[job_id] = {
+                    'hist_f' : opt.hist_f if hasattr(opt, 'hist_f') else None
+                }
+            self.send_response(200)
+        
+        elif 'get_feature_importance' in data:
+            job_ids = data['get_feature_importance']
+            for job_id in job_ids:
+                try:
+                    dump_file = self._get_dump_file(job_id)
+                    opt = ParallelBO.load(dump_file)
+                    model = opt.model
+                except Exception as ex:
+                    rsp_data[job_id] = {}
+                    continue
+                
+                
+                feature_name = opt.search_space.var_name
+                levels = opt.search_space.levels
+                imp = model.feature_importances_ if hasattr(model, 'feature_importances_')\
+                    else None
+                
+                if levels is not None:
+                    imp_ = np.zeros(len(feature_name))
+                    cat_idx = model._cat_idx
+                    _idx = list(set(range(len(imp_))) - set(cat_idx))
+                    _n = len(feature_name) - len(levels)
+                    idx = np.cumsum([0] + [len(_) for _ in levels.values()]) + _n
+                    _imp = [np.sum(imp[idx[i]:idx[i + 1]]) for i in range(len(idx) - 1)]
+
+                    imp_[cat_idx] = _imp
+                    imp_[_idx] = imp[0:_n]
+                else:
+                    imp_ = imp
+                    
+                rsp_data[job_id] = {
+                    'feature' : feature_name,
+                    'imp' : imp_.tolist()
+                }
+                
+            self.send_response(200)
 
         elif 'X' in data and 'y' in data:
             try:
