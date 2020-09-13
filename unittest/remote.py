@@ -26,7 +26,7 @@ data = {
         "n_job" : 3,         # 服务器上并行进程数
         "n_point" : 3,       # 每次迭代返回参数值个数
         "max_iter" : 20,     # 最大迭代次数
-        "n_init_sample" : 3, # 初始（第一代）采样点个数，其一般与`n_point`相等
+        "DoE_size" : 3, # 初始（第一代）采样点个数，其一般与`n_point`相等
         "minimize" : True,
         "n_obj": 1
     }
@@ -53,7 +53,7 @@ r = requests.post(address, json=data)
 job_id = r.json()['job_id']
 print('Job id is %s'%(job_id))
 
-for i in range(10):  
+for i in range(2):  
     print('iteration %d'%(i))
 
     # 请求一组候选参数值用于测试。请求时必须附加之前初始化时返回的任务id

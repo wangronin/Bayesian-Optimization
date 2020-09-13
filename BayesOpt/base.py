@@ -578,6 +578,5 @@ class baseBO(ABC):
             obj = dill.load(f)
             if hasattr(obj, 'data'):
                 obj.data = dill.loads(obj.data)
-                
         return obj
     

@@ -96,7 +96,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             try:
                 job_id = self._get_job_id(info)
                 self.logger.info('finalize request from job %s'%job_id)
-                dump_file = self._get_dump_file(job_id)
+                # dump_file = self._get_dump_file(job_id)
                 data_file = os.path.join(self.work_dir, job_id + '.csv')
             except Exception as ex:
                 self.logger.error(str(ex))
@@ -110,9 +110,11 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
         self._send_response(rsp_data)
     
-    def _create_optimizer(self, search_param, bo_param, data_file):
+    def _create_optimizer(self, search_param, bo_param, data_file, log_file):
         search_space = SearchSpace.from_dict(search_param, space_name=False)
         n_obj = bo_param['n_obj']
+        max_FEs = bo_param['max_iter'] * bo_param['n_point'] + bo_param['DoE_size']
+        del bo_param['max_iter']
         del bo_param['n_obj']
 
         # TODO: turn this off until the feature importance of GPR is implemented
@@ -142,15 +144,14 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 search_space=search_space, 
                 obj_fun=None,
                 model=model, 
-                max_FEs=50, 
-                DoE_size=3,    # the initial DoE size
                 eval_type='dict',
                 acquisition_fun='MGFI',
+                max_FEs=max_FEs,
                 acquisition_par={'t' : 2},
                 acquisition_optimization={'optimizer' : optimizer},
-                n_job=3,       # number of processes
-                n_point=3,     # number of the candidate solution proposed in each iteration
-                verbose=True   # turn this off, if you prefer no output
+                logger=log_file,
+                data_file=data_file,
+                **bo_param
             )
         else: 
             raise NotImplementedError
@@ -175,9 +176,10 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 rsp_data = {'job_id' : job_id}
                 dump_file = self._get_dump_file(job_id, check=False) 
                 data_file = os.path.join(self.work_dir, job_id + '.csv')
+                log_file = os.path.join(self.work_dir, job_id + '.log')
 
                 opt = self._create_optimizer(
-                    data['search_param'], data['bo_param'], data_file
+                    data['search_param'], data['bo_param'], data_file, log_file
                 )
 
                 if os.path.exists(dump_file):
@@ -203,7 +205,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             try:
                 self.logger.info('tell request from job %s'%job_id)
                 opt = ParallelBO.load(dump_file)
-                
+
                 opt.tell(data['X'], data['y'])
                 opt.save(dump_file)
 
