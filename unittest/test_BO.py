@@ -136,15 +136,15 @@ def test_multi_acquisition():
         search_space=search_space, 
         obj_fun=obj_fun, 
         model=model, 
-        max_FEs=9, 
-        DoE_size=3,    # the initial DoE size
+        max_FEs=8, 
+        DoE_size=4,    # the initial DoE size
         eval_type='dict',
-        n_job=3,       # number of processes
-        n_point=3,     # number of the candidate solution proposed in each iteration
+        n_job=4,       # number of processes
+        n_point=4,     # number of the candidate solution proposed in each iteration
         verbose=True   # turn this off, if you prefer no output
     )
-    xopt, fopt, stop_dict = opt.run()
 
+    xopt, fopt, stop_dict = opt.run()
     print('xopt: {}'.format(xopt))
     print('fopt: {}'.format(fopt))
     print('stop criteria: {}'.format(stop_dict))
