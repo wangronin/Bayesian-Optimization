@@ -170,8 +170,8 @@ body <- dashboardBody(
   # TODO: download MathJax and its license and include it in our package
   HTML("<head><script src='https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-MML-AM_CHTML'
        async></script></head>"),
-  use_bs_tooltip(),
-  use_bs_popover(),
+  # use_bs_tooltip(),
+  # use_bs_popover(),
   
   tabItems(
     tabItem(
