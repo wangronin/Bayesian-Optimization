@@ -3,8 +3,7 @@ tell_done <- reactiveValues(value = 0)
 
 search_space <- reactive({
   req(input$upload.add_zip$datapath)
-  json_file <- input$upload.add_zip$datapath
-  json_data <- fromJSON(file = json_file)
+  json_data <- jsonlite::read_json(input$upload.add_zip$datapath)
 })
 
 job_table <- reactive({
