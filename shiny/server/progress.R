@@ -26,6 +26,6 @@ progress_data <- reactive({
     )
   })
   
-  r <- POST("http://207.246.97.250:7200", body = .json, encode = 'json')
+  r <- POST(address, body = .json, encode = 'json')
   content(r)
 })

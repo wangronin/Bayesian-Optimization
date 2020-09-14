@@ -67,69 +67,83 @@ job_list_box <- function(width = 12, collapsible = T, collapsed = T) {
   )
 }
 
-ask_box <- function(width = 12, collapsible = T, collapsed = T) {
+ask_tell_box <- function(width = 12, collapsible = T, collapsed = T) {
   box(
-    title = HTML('<p style="font-size:120%;">获取一组解</p>'),
+    title = HTML('<p style="font-size:120%;">Ask-Tell接口</p>'),
     width = width, solidHeader = T, status = "primary",
     collapsible = collapsible, collapsed = collapsed,
     
     selectInput(
-      'ask_box.job_id', label = "请在如下列表中选择任务ID",
-      choices = NULL, selected = NULL, width = '50%'
+      'ask_tell_box.job_id', label = "请在如下列表中选择任务ID",
+      choices = NULL, selected = NULL, width = '30%'
     ),
+    br(),
     actionButton(
-      'ask_box.ask', 
+      'ask_tell_box.ask', 
       label = HTML(
-        '<p align="center" style="margin-bottom:0;"><b>获取一组解</b></p>'
+        '<p align="center" style="margin-bottom:0;"><b>获取一组解/Ask</b></p>'
+      )
+    ),
+    br(),
+    br(),
+    br(),
+    HTML_P('您可以直接编辑如下的表格来添加目标值，
+           并在结束添加之后点击“发送目标任务值”按钮来向服务器告知所添加的目标值'),
+    
+    br(),
+    column(
+      width = 12, align = "center",
+      DT::dataTableOutput('ask_tell_box.data_table')
+    ),
+    
+    br(),
+    actionButton(
+      'ask_tell_box.tell', 
+      label = HTML(
+        '<p align="center" style="margin-bottom:0;"><b>发送目标任务值/Tell</b></p>'
       )
     ),
     
-    dataTableOutput('ask_data'),
-    downloadButton("ask_download", "下载这组解")
-  )
-}
-
-tell_box <- function(width = 12, collapsible = T, collapsed = T) {
-  box(
-    title = HTML('<p style="font-size:120%;">向服务器返回目标值</p>'),
-    width = width, solidHeader = T, status = "primary",
-    collapsible = collapsible, collapsed = collapsed,
-
-    selectInput(
-      'tell_box.job_id', label = "请在如下列表中选择任务ID",
-      choices = NULL, selected = NULL, width = '50%'
-    ),
+    hr(),
+    HTML_P('您也可以下载这组解(JSON格式)，并向其中加入一个名为`y`的字段来包含目标值。
+           在您完成编辑后，可以直接上传这个JSON文件，之后上面的数据表格会自动更新。'),
+    downloadButton("ask_tell_box.download", "您也可以下载这组解"),
+    br(),
+    br(),
+    
+    br(),
     fileInput(
-      "tell_box.add_json", 
-      label = HTML('<p align="left">Please choose a <i>CSV file</i> containing the target values</p>'),
+      "ask_tell_box.add_json", 
+      label = HTML('<p align="left">上传编辑后的<i>JSON</i>文件</p>'),
       multiple = FALSE, accept = c("Application/json", ".json")
-    ),
-    
-    actionButton(
-      'tell_box.tell', 
-      label = HTML(
-        '<p align="center" style="margin-bottom:0;"><b>发送目标任务值</b></p>'
-      )
-    ),
-    
-    verbatimTextOutput('tell_data_promt'),
-    tags$head(
-      tags$style(
-        "#tell_data_promt{
-             color:black; font-size:12px; font-style:italic;
-             max-height: 500px;
-             overflow-y:visible; overflow-x: auto;
-             white-space: pre-wrap;
-             white-space: -moz-pre-wrap;
-             white-space: -pre-wrap;
-             white-space: -o-pre-wrap;
-             word-wrap: normal;
-             background: ghostwhite;
-          }"
-      )
     )
   )
 }
+
+# tell_box <- function(width = 12, collapsible = T, collapsed = T) {
+#   box(
+#     title = HTML('<p style="font-size:120%;">向服务器返回目标值</p>'),
+#     width = width, solidHeader = T, status = "primary",
+#     collapsible = collapsible, collapsed = collapsed,
+# 
+#     verbatimTextOutput('tell_data_promt'),
+#     tags$head(
+#       tags$style(
+#         "#tell_data_promt{
+#              color:black; font-size:12px; font-style:italic;
+#              max-height: 500px;
+#              overflow-y:visible; overflow-x: auto;
+#              white-space: pre-wrap;
+#              white-space: -moz-pre-wrap;
+#              white-space: -pre-wrap;
+#              white-space: -o-pre-wrap;
+#              word-wrap: normal;
+#              background: ghostwhite;
+#           }"
+#       )
+#     )
+#   )
+# }
 
 progress_box <- function(width = 12, collapsible = T, collapsed = T) {
   box(title = HTML('<p style="font-size:120%;">任务进度</p>'),

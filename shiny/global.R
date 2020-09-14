@@ -7,8 +7,12 @@ suppressMessages(library(shinydashboard))
 suppressMessages(library(DT))
 suppressMessages(library(httr))
 
-line_types <- c("solid", "dot", "dash", "longdash", "dashdot", "longdashdot")
+ip <- "207.246.97.250"
+# ip <- "127.0.0.1"
+port <- 7200
+address <- paste0('http://', ip, ':', port)
 
+line_types <- c("solid", "dot", "dash", "longdash", "dashdot", "longdashdot")
 
 Set1 <- function(n) colorspace::sequential_hcl(n, h = c(360, 40), c. = c(100, NA, 90), l = c(28, 90),
                                    power = c(1, 1.1), gamma = NULL, fixup = TRUE,

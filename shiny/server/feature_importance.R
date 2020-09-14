@@ -20,10 +20,10 @@ output$feature_importance_box.bar_chart <- renderPlotly({
 
 imp_data <- reactive({
   if (tell_done$value == 0) return(NULL)
-  job_id <- isolate(input$feature_importance_box.job_id)
+  job_id <- input$feature_importance_box.job_id
   .json <- list(
     get_feature_importance = as.list(job_id)
   )
-  r <- POST("http://207.246.97.250:7200", body = .json, encode = 'json')
+  r <- POST(address, body = .json, encode = 'json')
   content(r)
 })

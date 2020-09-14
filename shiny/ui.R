@@ -200,12 +200,8 @@ body <- dashboardBody(
       tabName = 'execute_job_panel',
       fluidRow(
         column(
-          width = 6,
-          ask_box(collapsible = F)
-        ),
-        column(
-          width = 6,
-          tell_box(collapsible = F)
+          width = 12,
+          ask_tell_box(collapsible = F)
         )
       ),
 
