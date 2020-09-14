@@ -5,6 +5,7 @@ suppressMessages(library(data.table))
 suppressMessages(library(plotly))
 suppressMessages(library(shinydashboard))
 suppressMessages(library(DT))
+suppressMessages(library(httr))
 
 line_types <- c("solid", "dot", "dash", "longdash", "dashdot", "longdashdot")
 
