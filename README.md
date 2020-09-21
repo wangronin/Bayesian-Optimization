@@ -2,7 +2,7 @@
 
 A `Python` implementation of the Bayesian Optimization algorithm working on decision spaces composed of either real, integer, catergorical variables, or a mixture thereof.
 
-<center><img src="assets/BO-example.jpg" alt="" style="margin-left: auto; margin-right: auto; width: 60%;"/></center>
+<center><img src="assets/BO-example.jpg" alt="" style="width: 300px"/></center>
 
 The project is structured as follows:
 
@@ -35,7 +35,7 @@ This implementation differs from alternative packages/libraries in the following
 The following infill-criteria are implemented in the library:
 
 * _Expected Improvement_ (EI)
-* Probability of Improvement (PI) / $Probability of Improvement
+* Probability of Improvement (PI) / Probability of Improvement
 * _Upper Confidence Bound_ (UCB)
 * _Moment-Generating Function of Improvement_ (MGFI)
 * _Generalized Expected Improvement_ (GEI) **[Under Construction]**
