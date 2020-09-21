@@ -70,7 +70,6 @@ class ParallelBO(BO):
         elif self._acquisition_fun == 'UCB':
             self._par_name = 'alpha'
             # Logit-normal distribution for `alpha` supported on [0, 1]
-            # TODO: verify this law again..
             self._sampler = lambda x: 1 / (1 + np.exp((x['alpha'] * 4 - 2) \
                 + 0.6 * np.random.randn())) 
         elif self._acquisition_fun == 'EpsilonPI':

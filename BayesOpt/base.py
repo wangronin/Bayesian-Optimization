@@ -366,7 +366,7 @@ class baseBO(ABC):
 
     def ask(self, n_point=None):
         if self.model.is_fitted:
-            n_point = self.n_point if n_point is None else n_point
+            n_point = self.n_point if n_point is None else self.n_point
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
 
@@ -394,9 +394,8 @@ class baseBO(ABC):
                 )
                 X = self._search_space.round(X)
         else: # initial DoE
-            n_point = self._DoE_size if n_point is None else n_point
             X = self._search_space.round(
-                self.create_DoE(n_point)
+                self.create_DoE(self._DoE_size)
             )
         return self._to_pheno(X)
     
@@ -568,8 +567,7 @@ class baseBO(ABC):
                 data = dill.dumps(self.data)
 
             obj = deepcopy(self)
-            if hasattr(self, 'data'):
-                obj.data = data
+            obj.data = data
             dill.dump(obj, f)
         
     @classmethod
@@ -578,5 +576,6 @@ class baseBO(ABC):
             obj = dill.load(f)
             if hasattr(obj, 'data'):
                 obj.data = dill.loads(obj.data)
+                
         return obj
     

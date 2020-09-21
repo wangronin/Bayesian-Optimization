@@ -85,46 +85,29 @@ class UCB(InfillCriteria):
 
     @alpha.setter
     def alpha(self, alpha):
-        assert alpha >= 0.5 and alpha <= 1
+        assert alpha > 0
         self._alpha = alpha
-
-    def _predict(self, X):
-        y_hat, sd2 = self._model.predict(X, eval_MSE=True)
-        sd = sqrt(sd2)
-
-        # NOTE: convert the problem to maximizatio for UCB
-        if self.minimize:
-            y_hat = -y_hat
-
-        return y_hat, sd
-
-    def _gradient(self, X):
-        y_dx, sd2_dx = self._model.gradient(X)
-        if self.minimize:
-            y_dx = -y_dx
-        return y_dx, sd2_dx
 
     def __call__(self, X, return_dx=False):
         X = self.check_X(X)
-        y_, sd_ = self._predict(X)
+        n_sample = X.shape[0]
+        y_hat, sd = self._predict(X)
 
         try:
-            f_value = y_ + sd_ * norm.ppf(self.alpha)
-            if len(f_value) == 1:
-                f_value = f_value[0]
+            f_value = y_hat + self.alpha * sd
+            if n_sample == 1:
+                f_value = sum(f_value)
         except Exception: # in case of numerical errors
             f_value = 0
 
         if return_dx:
-            # TODO: to verify the gradient by rendering it on 2D
             y_dx, sd2_dx = self._gradient(X)
-            sd_dx = sd2_dx / (2. * sd_)
+            sd_dx = sd2_dx / (2. * sd)
             try:
-                f_dx = y_dx + sd_dx * norm.ppf(self.alpha)
+                f_dx = y_dx + self.alpha * sd_dx
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
-            return f_value, f_dx
-
+            return f_value, f_dx 
         return f_value
 
 class EI(ImprovementBased):
