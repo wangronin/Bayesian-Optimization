@@ -125,16 +125,15 @@ class MultiAcquisitionBO(BO):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         assert self.n_point > 1
-        self._acquisition_fun = 'MGFI'  # TODO: this is for `self.update_model`
 
-        # TODO: this is hard-wired. To make it generic
+        self._acquisition_fun = 'MGFI'
         self._acquisition_fun_list = ['MGFI', 'UCB']
         self._sampler_list = [
             lambda x: np.exp(np.log(x['t']) + 0.5 * np.random.randn()),
             lambda x: 1 / (1 + np.exp((x['alpha'] * 4 - 2) + 0.6 * np.random.randn())) 
         ]
         self._par_name_list = ['t', 'alpha']
-        self._acquisition_par_list = [{'t' : 1}, {'alpha' : 0.2}]
+        self._acquisition_par_list = [{'t' : 1}, {'alpha' : 0.1}]
         self._N_acquisition = len(self._acquisition_fun_list)
 
         for i, _n in enumerate(self._par_name_list):

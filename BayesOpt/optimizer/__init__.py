@@ -1,6 +1,6 @@
 
 from .OnePlusOne_CMA import OnePlusOne_CMA, OnePlusOne_Cholesky_CMA
-from .MIES import MIES
+from .mies import MIES
 from .utils import argmax_restart
 
 __all__ = [
