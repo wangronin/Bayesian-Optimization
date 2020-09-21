@@ -5,7 +5,7 @@ from copy import deepcopy
 import numpy as np 
 
 sys.path.insert(0, '../')
-from BayesOpt import ContinuousSpace, OrdinalSpace, NominalSpace, from_dict, Solution
+from BayesOpt import ContinuousSpace, OrdinalSpace, NominalSpace, Solution, SearchSpace
 
 np.random.seed(1)
 
@@ -25,10 +25,12 @@ def test_NominalSpace():
 
 def test_precision():
     C = ContinuousSpace([-5, 5], precision=2) * 3 
-    X = [re.sub(r'^-?\d+\.(\d+)$', r'\1', str(_)) for _ in C.sampling(1, method='LHS')[0]]
+    X = C.round(C.sampling(1, method='LHS'))
+    X = [re.sub(r'^-?\d+\.(\d+)$', r'\1', str(_)) for _ in X[0]]
     assert all([len(x) <= 2 for x in X])
 
-    X = [re.sub(r'^-?\d+\.(\d+)$', r'\1', str(_)) for _ in C.sampling(1, method='uniform')[0]]
+    X = C.round(C.sampling(1, method='uniform'))
+    X = [re.sub(r'^-?\d+\.(\d+)$', r'\1', str(_)) for _ in X[0]]
     assert all([len(x) <= 2 for x in X])
 
     X = np.random.rand(2, 3) * 10 - 5
@@ -86,7 +88,7 @@ def test_ProductSpace():
     print(C.var_name)
 
 def test_from_dict():
-    a = from_dict(
+    a = SearchSpace.from_dict(
         {
             "activation" : 
             {
