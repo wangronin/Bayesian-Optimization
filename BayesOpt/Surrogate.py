@@ -6,9 +6,7 @@ Created on Mon Sep 11 10:48:14 2017
 """
 from pdb import set_trace
 
-import pandas as pd
 import numpy as np
-
 from numpy import std, array, atleast_2d
 
 from sklearn.ensemble import RandomForestRegressor

@@ -1,6 +1,6 @@
 from pdb import set_trace
 
-import six, json
+import json
 from copy import copy, deepcopy
 
 import numpy as np
