@@ -1,74 +1,56 @@
 # Bayesian Optimization Library
 
-Experimental Bayesian Optimization library.
+A `Python` implementation of the Bayesian Optimization algorithm working on decision spaces composed of either real, integer, catergorical variables, or a mixture thereof. 
 
-## Structure of the Implementation
+![](assets/BO-example.jpg)
 
-* `BayesOpt.py`: the Bayesian Optimization algorithm
-* `InfillCriteria.py`: the decision-making acquisition functions.
-* `Surrogate.py`: the implementation/wrapper of random forests model.
-* `SearchSpace.py`: implementation of the configuration space specification. It is used to specify the search / configure space conveniently.
-* `optimizer/`: the optimization algorithm to maximize the infill-criteria, two algorithms are implemented:
+The project is structured as follows:
+
+* `BayesOpt/base.py`: the base class of Bayesian Optimization.
+* `BayesOpt/BayesOpt.py` contains several BO variants:
+  * `BO`: noiseless + seqential
+  * `ParallelBO`: noiseless + parallel (a.k.a. batch-sequential)
+  * `AnnealingBO`: noiseless + parallel + annealling [WEB18]
+  * `SelfAdaptiveBO`: noiseless + parallel + self-adaptive
+  * `NoisyBO`: noisy + parallel
+  * `PCABO`: noiseless + parallel + PCA-assisted dimensionality reduction
+* `BayesOpt/InfillCriteria.py`: the implemetation of acquisition functions (see below for the list of implemented ones).
+* `BayesOpt/Surrogate.py`: the implementation/wrapper of sklearn's random forests model.
+* `BayesOpt/SearchSpace.py`: implementation of the search/decision space.
+  
+<!-- * `optimizer/`: the optimization algorithm to maximize the infill-criteria, two algorithms are implemented:
       1. **CMA-ES**: Covariance Martix Adaptation Evolution Strategy for _continuous_ optimization problems.
-      2. **MIES**: Mixed-Integer Evolution Strategy for mixed-integer/categorical optimization problems.
+      2. **MIES**: Mixed-Integer Evolution Strategy for mixed-integer/categorical optimization problems. -->
 
-## The Main File: BayesOpt.py
+## Features
 
-The parameters of the class constructor are listed below:
-**the following should be updated**
+This implementation differs from alternative packages/libraries in the following features:
 
-* search_space : instance of SearchSpace type
-* obj_func : callable,
-        the objective function to optimize
-* surrogate: surrogate model, currently support either GPR or random forest
-* minimize : bool,
-        minimize or maximize
-* noisy : bool,
-        is the objective stochastic or not?
-* eval_budget : int,
-        maximal number of evaluations on the objective function
-* max_iter : int,
-        maximal iteration
-* n_init_sample : int,
-        the size of inital Design of Experiment (DoE),
-        default: 20 * dim
-* n_point : int,
-        the number of candidate solutions proposed using infill-criteria,
-        default : 1
-* n_jobs : int,
-        the number of jobs scheduled for parallelizing the evaluation.
-        Only Effective when n_point > 1
-* backend : str,
-        the parallelization backend, supporting: 'multiprocessing', 'MPI', 'SPARC'
-* optimizer: str,
-        the optimization algorithm for infill-criteria,
-        supported options: 'MIES' (Mixed-Integer Evolution Strategy for random forest), 'BFGS' (quasi-Newtion for GPR)
+* **Parallelization**, also known as _batch-sequential optimization_, for which several different approaches are implemented here. 
+* **Moment-Generating Function of the improvment** (MGFI) [WvSEB17a] is a recently proposed acquistion function, which implictly controls the exploration-exploitation trade-off.
+* **Mixed-Integer Evolution Strategy** for optimizing the acqusition function, which is enabled when the search space is a mixture of real, integer, and categorical variables.
 
-Note that the dimensionality is retrieved from the search_space argument.
-
-## Infill Criteria
+## Acqusition Functions
 
 The following infill-criteria are implemented in the library:
 
-* Expected Improvement (EI)
+* _Expected Improvement_ (EI)
 * Probability of Improvement (PI) / $\epsilon$-Probability of Improvement
-* Upper Confidence Bound (UCB)
-* Moment-Generating Function of Improvement (MGFI): proposed in Hao's SMC'17 paper
-* Generalized Expected Improvement (GEI)
+* _Upper Confidence Bound_ (UCB)
+* _Moment-Generating Function of Improvement_ (MGFI)
+* _Generalized Expected Improvement_ (GEI) **[Under Construction]**
 
-For sequential working mode, Expected Improvement is used by default. For parallelization mode ($q$-point strategy), MGFI is enabled by default.
+For sequential working mode, Expected Improvement is used by default. For parallelization mode, MGFI is enabled by default.
 
 ## Surrogate Model
 
 The meta (surrogate)-model used in Bayesian optimization. The basic requirement for such a model is to provide the uncertainty quantification (either empirical or theorerical) for the prediction. To easily handle the categorical data, __random forest__ model is used by default. The implementation here is based the one in _scikit-learn_, with modifications on uncertainty quantification.
 
-## Search Space
-
-To ease the work on specifiying mixed-integer search space, a SearchSpace class is implemented.
-
 ## A brief Introduction to Bayesian Optimization
 
-Bayesian optimization is __sequential design strategy__ that does not require the derivatives of the objective function and is designed to solve expensive global optimization problems. Compared to alternative optimization algorithms (or other design of experiment methods), the very distinctive feature of this method is the usage of a __posterior distribution__ over the (partially) unknown objective function, which is obtained via __Bayesian inference__. This optimization framework is proposed by Jonas Mockus and Antanas Zilinskas, et al.
+Bayesian Optimization [Moc74, JSW98] (BO) is a sequential optimization strategy originally proposed to solve the single-objective black-box optimiza-tion problem that is costly to evaluate. Here, we shall restrict our discussion to the single-objective case, i.e., BO typically starts with samplingan initial design of experiment (DoE) of size, X={x1,x2,...,xn} ⊆ X,which is usually generated by simple random sampling, Latin Hypercube Sampling [SWN03], or the more sophisticated low-discrepancy sequence [Nie88] (e.g., Sobol sequences). Taken the initial DoE X and its corresponding objective value,Y={f(x1), f(x2),..., f(xn)} ⊆ R, we proceed to construct a statistical model M describing the probability distribution of the objective functionfconditioned onthe initial evidence, namely Pr(f|X,Y). In most application scenarios of BO, thereis a lack of a priori knowledge aboutfand therefore nonparametric models (e.g., Gaussian process regression or random forest) are commonly chosen for M, which gives rise to a prediction f(x)for all x ∈ X and an uncertainty quantification s(x)that estimates, for instance, the mean squared error of the predic-tion E(f(x)−f(x))2. Based on f and s2, promising points can be identified via theso-calledacquisition function which balances exploitation with exploration of the optimization process.
+
+<!-- Bayesian optimization is __sequential design strategy__ that does not require the derivatives of the objective function and is designed to solve expensive global optimization problems. Compared to alternative optimization algorithms (or other design of experiment methods), the very distinctive feature of this method is the usage of a __posterior distribution__ over the (partially) unknown objective function, which is obtained via __Bayesian inference__. This optimization framework is proposed by Jonas Mockus and Antanas Zilinskas, et al.
 
 Formally, the goal is to approach the global optimum, using a sequence of variables:
 $$\mathbf{x}_1,\mathbf{x}_2, \ldots, \mathbf{x}_n \in S \subseteq \mathbb{R}^d,$$
@@ -99,7 +81,13 @@ In practice, the loss function $\epsilon$ is not used because there is not knowl
 
 As for the prior distribution, the mostly used one is Gaussian and such a distribution on functions is __Gaussian process__ (random field). It is also possible to consider the Gaussian process as a _surrogate_ or simple a model on the unknown function $f$. In this sense, some other models are also often exploited, e.g. Student's t process and random forest (in SMAC and SPOT). However, the usage of random forest models brings me some additional thinkings (see the following sections).
 
-The same algorithmic idea was re-advertised in the name of "Efficient Global Optimization"" (EGO) by Donald R. Jones. As pointed out in Jone's paper on taxonomy of global optimization methods, the bayesian optimization can be viewed as a special case of a broader family of similar algorithms, that is call "global optimization based on response surfaces", Model-based Optimization (MBO) (some references here from Bernd Bischl) or Sequential MBO.
+The same algorithmic idea was re-advertised in the name of "Efficient Global Optimization"" (EGO) by Donald R. Jones. As pointed out in Jone's paper on taxonomy of global optimization methods, the bayesian optimization can be viewed as a special case of a broader family of similar algorithms, that is call "global optimization based on response surfaces", Model-based Optimization (MBO) (some references here from Bernd Bischl) or Sequential MBO. -->
 
 ## Reference
-To be added...
+
+[Moc74] Jonas Mockus. On bayesian methods for seeking the extremum. In Guri I. Marchuk, editor, _Optimization Techniques, IFIP Technical Conference, Novosibirsk_, USSR, July 1-7, 1974, volume 27 of _Lecture Notes in Computer Science_, pages 400–404. Springer, 1974.
+[JSW98] Donald R. Jones, Matthias Schonlau, and William J. Welch. _Efficient global optimization of expensive black-box functions_. J. Glob. Optim., 13(4):455–492, 1998.
+[SWN03] Thomas J. Santner, Brian J. Williams, and William I. Notz. _The Design and Analysis of Computer Experiments. Springer series in statistics._ Springer, 2003.
+[Nie88] Harald Niederreiter. _Low-discrepancy and low-dispersion sequences_. Journal of number theory, 30(1):51–70, 1988.
+[WvSEB17a] Hao Wang, Bas van Stein, Michael Emmerich, and Thomas Bäck. _A New Acquisition Function for Bayesian Optimization Based on the Moment-Generating Function._ In Systems, Man, and Cybernetics (SMC), 2017 IEEE International Conference on, pages 507–512. IEEE, 2017.
+[WEB18] Hao Wang, Michael Emmerich, and Thomas Bäck. _Cooling Strategies for the Moment-Generating Function in Bayesian Global Optimization._ In 2018 IEEE Congress on Evolutionary Computation, CEC 2018, Rio de Janeiro, Brazil, July 8-13, 2018, pages 1–8. IEEE, 2018.
