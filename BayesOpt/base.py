@@ -155,7 +155,7 @@ class baseBO(ABC):
         acquisition_par : dict, optional
             Extra parameters to the acquisition function, by default {}
         acquisition_optimization : dict, optional
-            [description], by default {}
+            Additional parameters controlling the acquisition optimization, by default {}
         ftarget : float, optional
             The target value to hit, by default None
         max_FEs : int, optional
@@ -173,7 +173,8 @@ class baseBO(ABC):
         random_seed : int, optional
             The seed for pseudo-random number generators, by default None
         logger : str | logging.Logger, optional
-            [description], by default None
+            name of the logger file or a `logging.Logger` object, by default None, which turns
+            off the logging behaviour
         """        
         self.obj_fun = obj_fun
         self.parallel_obj_fun = parallel_obj_fun
