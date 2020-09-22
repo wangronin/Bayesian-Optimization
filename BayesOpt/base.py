@@ -567,8 +567,12 @@ class baseBO(ABC):
             if hasattr(self, 'data'):
                 data = dill.dumps(self.data)
 
+            if hasattr(self, '_logger'):
+                _logger = dill.dumps(self._logger)
+
             obj = deepcopy(self)
             obj.data = data
+            obj._logger = _logger
             dill.dump(obj, f)
         
     @classmethod
@@ -577,6 +581,9 @@ class baseBO(ABC):
             obj = dill.load(f)
             if hasattr(obj, 'data'):
                 obj.data = dill.loads(obj.data)
+
+            if hasattr(obj, '_logger'):
+                obj._logger = dill.loads(obj._logger)
                 
         return obj
     
