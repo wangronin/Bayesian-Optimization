@@ -3,9 +3,6 @@
 A `Python` implementation of the Bayesian Optimization algorithm working on decision spaces composed of either real, integer, catergorical variables, or a mixture thereof.
 
 ![](assets/BO-example.gif)
-<!-- <div style="text-align: center;"> 
-<img src="assets/BO-example.gif" alt="" width="70%">
-</div> -->
 
 The project is structured as follows:
 
@@ -14,9 +11,9 @@ The project is structured as follows:
   * `BO`: noiseless + seqential
   * `ParallelBO`: noiseless + parallel (a.k.a. batch-sequential)
   * `AnnealingBO`: noiseless + parallel + annealling [WEB18]
-  * `SelfAdaptiveBO`: noiseless + parallel + self-adaptive
+  * `SelfAdaptiveBO`: noiseless + parallel + self-adaptive [WEB19]
   * `NoisyBO`: noisy + parallel
-  * `PCABO`: noiseless + parallel + PCA-assisted dimensionality reduction
+  * `PCABO`: noiseless + parallel + PCA-assisted dimensionality reduction [RaponiWBBD20] **[Under Construction]** 
 * `BayesOpt/InfillCriteria.py`: the implemetation of acquisition functions (see below for the list of implemented ones).
 * `BayesOpt/Surrogate.py`: the implementation/wrapper of sklearn's random forests model.
 * `BayesOpt/SearchSpace.py`: implementation of the search/decision space.
@@ -94,3 +91,5 @@ The same algorithmic idea was re-advertised in the name of "Efficient Global Opt
 * [Nie88] Harald Niederreiter. _Low-discrepancy and low-dispersion sequences_. Journal of number theory, 30(1):51–70, 1988.
 * [WvSEB17a] Hao Wang, Bas van Stein, Michael Emmerich, and Thomas Bäck. _A New Acquisition Function for Bayesian Optimization Based on the Moment-Generating Function._ In Systems, Man, and Cybernetics (SMC), 2017 IEEE International Conference on, pages 507–512. IEEE, 2017.
 * [WEB18] Hao Wang, Michael Emmerich, and Thomas Bäck. _Cooling Strategies for the Moment-Generating Function in Bayesian Global Optimization._ In 2018 IEEE Congress on Evolutionary Computation, CEC 2018, Rio de Janeiro, Brazil, July 8-13, 2018, pages 1–8. IEEE, 2018.
+* [WEB19] Hao, Wang, Michael Emmerich, and Thomas Bäck. _Towards self-adaptive efficient global optimization._ In AIP Conference Proceedings, vol. 2070, no. 1, p. 020056. AIP Publishing LLC, 2019.
+* [RaponiWBBD20] Elena Raponi, Hao Wang, Mariusz Bujny, Simonetta Boria, Carola Doerr: _High Dimensional Bayesian Optimization Assisted by Principal Component Analysis._ PPSN (1) 2020: 169-183.
