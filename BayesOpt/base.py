@@ -6,7 +6,7 @@ Created on Mon Apr 23 17:16:39 2018
 
 """
 from pdb import set_trace
-
+import pdb
 import numpy as np
 import os, sys, dill, functools, logging, time
 
@@ -395,8 +395,10 @@ class baseBO(ABC):
                 )
                 X = self._search_space.round(X)
         else: # initial DoE
+            if not n_point:
+                n_point = self._DoE_size
             X = self._search_space.round(
-                self.create_DoE(self._DoE_size)
+                self.create_DoE(n_point)
             )
         return self._to_pheno(X)
     
@@ -573,7 +575,7 @@ class baseBO(ABC):
                 _logger = self._logger.handlers[1].baseFilename
             else: 
                 _logger = None
-            
+                        
             logger = self._logger
             self._logger = _logger
 
