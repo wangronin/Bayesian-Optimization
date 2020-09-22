@@ -4,8 +4,6 @@ Created on Mon Sep 11 10:48:14 2017
 @author: Hao Wang
 @email: wangronin@gmail.com
 """
-from pdb import set_trace
-
 import numpy as np
 from numpy import std, array, atleast_2d
 
