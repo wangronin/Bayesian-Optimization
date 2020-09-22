@@ -564,8 +564,10 @@ class baseBO(ABC):
     
     def save(self, filename):
         with open(filename, 'wb') as f:
+            # NOTE: we need to dump `self.data` first. Otherwise, some 
+            # attributes of it will be lost
             if hasattr(self, 'data'):
-                data = dill.dumps(self.data)
+                self.data = dill.dumps(self.data)
             
             if len(self._logger.handlers) > 1:
                 _logger = self._logger.handlers[1].baseFilename
@@ -573,13 +575,13 @@ class baseBO(ABC):
                 _logger = None
             
             logger = self._logger
-            del self._logger
+            self._logger = _logger
 
-            obj = deepcopy(self)
-            obj.data = data
-            obj._logger = _logger
-            dill.dump(obj, f)
+            dill.dump(self, f)
+
             self._logger = logger
+            if hasattr(self, 'data'):
+                self.data = dill.loads(self.data)
         
     @classmethod
     def load(cls, filename):
