@@ -2,9 +2,7 @@
 
 A `Python` implementation of the Bayesian Optimization algorithm working on decision spaces composed of either real, integer, catergorical variables, or a mixture thereof.
 
-<center>
-![](assets/BO-example.gif | width=100)
-</center>
+<center><img src="assets/BO-example.gif" alt="" width="40%"></center>
 
 The project is structured as follows:
 
