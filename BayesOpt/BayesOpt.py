@@ -93,10 +93,10 @@ class ParallelBO(BO):
         
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(
-                delayed(self._argmax_restart)(c) for c in criteria
+                delayed(self._argmax_restart)(c, logger=self._logger) for c in criteria
             )
         else:
-            __ = [list(self._argmax_restart(_)) for _ in criteria]
+            __ = [list(self._argmax_restart(_, logger=self._logger)) for _ in criteria]
         
         return tuple(zip(*__))
 
@@ -147,10 +147,10 @@ class SelfAdaptiveBO(ParallelBO):
         
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(
-                delayed(self._argmax_restart)(c) for c in criteria
+                delayed(self._argmax_restart)(c, logger=self._logger) for c in criteria
             )
         else:
-            __ = [list(self._argmax_restart(_)) for _ in criteria]
+            __ = [list(self._argmax_restart(_, logger=self._logger)) for _ in criteria]
         
         # NOTE: this adaptation is different from what I did in the LeGO paper..
         idx = np.argsort(__[1])[::-1][:N]

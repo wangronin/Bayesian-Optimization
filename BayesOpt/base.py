@@ -5,8 +5,6 @@ Created on Mon Apr 23 17:16:39 2018
 @email: wangronin@gmail.com
 
 """
-from pdb import set_trace
-
 import numpy as np
 import os, sys, dill, functools, logging, time
 
@@ -26,6 +24,12 @@ from .misc import LoggerFormatter
 from .optimizer import argmax_restart
 
 class baseOptimizer(ABC):
+    def __init__(self, verbose):
+        self.verbose = verbose
+        self.xopt = None 
+        self.fopt = None 
+        self.stop_dict = {}
+
     @abstractmethod
     def ask(self, n_point=None):
         """Get suggestions from the optimizer.
@@ -63,13 +67,17 @@ class baseOptimizer(ABC):
     def evaluate(self, X):
         return 
 
+    @abstractmethod
+    def check_stop(self):
+        return
+
     def step(self):
         X = self.ask()    
         func_vals = self.evaluate(X)
         self.tell(X, func_vals)
     
     def run(self):
-        while not self._stop:
+        while not self.check_stop():
             self.step()
         return self.xopt, self.fopt, self.stop_dict
 
@@ -335,8 +343,7 @@ class baseBO(ABC):
             eval_budget=self.AQ_max_FEs,
             n_restart=self.AQ_n_restart,
             wait_iter=self.AQ_wait_iter,
-            optimizer=self._optimizer,
-            logger=self._logger
+            optimizer=self._optimizer
         ) 
 
     def _check_params(self):
@@ -531,7 +538,7 @@ class baseBO(ABC):
             )
         else:            # single-point strategy
             criteria = self._create_acquisition(par={}, return_dx=return_dx)
-            candidates, values = self._argmax_restart(criteria)
+            candidates, values = self._argmax_restart(criteria, logger=self._logger)
             candidates, values = [candidates], [values]
 
         self._logger.debug(
@@ -570,7 +577,8 @@ class baseBO(ABC):
                 self.data = dill.dumps(self.data)
             
             if len(self._logger.handlers) > 1:
-                _logger = self._logger.handlers[1].baseFilename
+                _ = [h for h in self._logger.handlers if isinstance(h, logging.FileHandler)]
+                _logger = _[0].baseFilename
             else: 
                 _logger = None
             
@@ -591,6 +599,5 @@ class baseBO(ABC):
                 obj.data = dill.loads(obj.data)
 
             obj.logger = obj._logger
-
         return obj
     

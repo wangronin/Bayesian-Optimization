@@ -49,6 +49,46 @@ def test_pickling():
     print(opt.run())
     os.remove('test')
 
+def test_pickling2():
+    dim = 5
+    lb, ub = -1, 5
+
+    def fitness(x):
+        x = np.asarray(x)
+        return np.sum(x ** 2)
+
+    space = ContinuousSpace([lb, ub]) * dim
+
+    mean = constant_trend(dim, beta=None)
+    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
+    thetaU = 10 * (ub - lb) * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
+    model = GaussianProcess(
+        mean=mean, corr='squared_exponential',
+        theta0=theta0, thetaL=thetaL, thetaU=thetaU,
+        nugget=0, noise_estim=False,
+        optimizer='BFGS', wait_iter=3, random_start=dim,
+        likelihood='concentrated', eval_budget=100 * dim
+    )
+    opt = BO(
+        search_space=space, 
+        obj_fun=fitness, 
+        model=model, 
+        DoE_size=5,
+        max_FEs=10, 
+        verbose=True, 
+        n_point=1,
+        logger='log'
+    )
+    opt.save('test')
+    opt = BO.load('test')
+
+    print(opt.run())
+
+    os.remove('test')
+    os.remove('log')
+
 def test_continuous():
     dim = 5
     lb, ub = -1, 5
