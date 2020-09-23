@@ -402,8 +402,11 @@ class baseBO(ABC):
                 )
                 X = self._search_space.round(X)
         else: # initial DoE
+            if not n_point:
+                n_point = self._DoE_size
+                
             X = self._search_space.round(
-                self.create_DoE(self._DoE_size)
+                self.create_DoE(n_point)
             )
         return self._to_pheno(X)
     
@@ -581,7 +584,7 @@ class baseBO(ABC):
                 _logger = _[0].baseFilename
             else: 
                 _logger = None
-            
+                        
             logger = self._logger
             self._logger = _logger
 
