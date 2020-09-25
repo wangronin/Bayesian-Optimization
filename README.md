@@ -1,4 +1,4 @@
-[![BayesOpt-master Actions Status](https://github.com/wangronin/Bayesian-Optimization/workflows/ci/badge.svg)](https://github.com/wangronin/Bayesian-Optimization/actions)
+[![BayesOpt-master Actions Status](https://github.com/wangronin/Bayesian-Optimization/workflows/CI/badge.svg)](https://github.com/wangronin/Bayesian-Optimization/actions)
 
 # Bayesian Optimization Library
 
