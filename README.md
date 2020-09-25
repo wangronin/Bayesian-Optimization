@@ -1,3 +1,5 @@
+[![BayesOpt-master Actions Status](https://github.com/wangronin/Bayesian-Optimization/workflows/ci/badge.svg)](https://github.com/wangronin/Bayesian-Optimization/actions)
+
 # Bayesian Optimization Library
 
 A `Python` implementation of the Bayesian Optimization algorithm working on decision spaces composed of either real, integer, catergorical variables, or a mixture thereof.
