@@ -81,7 +81,7 @@ class PCABO(ParallelBO):
 
     def ask(self, n_point=None):
         X = super().ask(n_point)
-        if hasattr(self, '_encoder'):
+        if hasattr(self, '_pca'):
             X = self._pca.inverse_transform(X) + self._X_mean
         return X
     
