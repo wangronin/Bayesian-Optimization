@@ -1,4 +1,5 @@
 [![Actions Status](https://github.com/wangronin/Bayesian-Optimization/workflows/Build%20and%20Test/badge.svg)](https://github.com/wangronin/Bayesian-Optimization/actions)
+![Build and Publish](https://github.com/wangronin/Bayesian-Optimization/workflows/Build%20and%20Publish/badge.svg)
 
 # Bayesian Optimization Library
 
