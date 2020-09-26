@@ -1,4 +1,4 @@
-import logging, sys
+import logging, sys, functools
 import numpy as np
 
 from typing import Callable, Union
@@ -13,6 +13,25 @@ from .SearchSpace import ContinuousSpace
 from .BayesOpt import BO, ParallelBO
 from .misc import LoggerFormatter
 
+def penalized_acquisition(x, acquisition_func, X_mean, pca, bounds, return_dx):
+    x_ = pca.inverse_transform(x) + X_mean
+    bounds = np.asarray(bounds)
+    idx_lower = x_ < bounds[:, 0]
+    idx_upper = x_ > bounds[:, 1]
+    penalty = np.sum([bounds[i, 0] - x_[i] for i in idx_lower]) + \
+        np.sum([x_[i] - bounds[i, 1] for i in idx_upper])
+    penalty *= -1
+
+    if penalty == 0:
+        return acquisition_func(x)
+    else:
+        if return_dx:
+            g = np.zeros((len(x), 1))
+            g[idx_lower, :] = 1
+            g[idx_upper, :] = -1
+            return penalty, g
+        else:
+            return penalty
 
 class PCABO(ParallelBO):
     def __init__(
@@ -47,6 +66,18 @@ class PCABO(ParallelBO):
         C = C - pca.mean_ - self._X_mean
         C_ = C.dot(pca.components_.T)
         return [(_ - radius, _ + radius) for _ in C_]
+
+    def _create_acquisition(self, fun=None, par={}, return_dx=False):
+        acquisition_func = super()._create_acquisition(fun, par, return_dx)
+        fun = functools.partial(
+            penalized_acquisition, 
+            acquisition_func=acquisition_func, 
+            X_mean=self._X_mean, 
+            pca=self._pca, 
+            bounds=self._search_space.bounds, 
+            return_dx=return_dx
+        )
+        return fun
 
     def ask(self, n_point=None):
         X = super().ask(n_point)
