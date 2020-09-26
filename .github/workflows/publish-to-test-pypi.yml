@@ -8,9 +8,9 @@ jobs:
   build-n-publish:
     name: Publish Python 🐍 distributions 📦 to PyPI and TestPyPI
     runs-on: ubuntu-latest
-      strategy:
-        matrix:
-        python-version: [3.6, 3.7, 3.8]
+    strategy:
+      matrix:
+      python-version: [3.6, 3.7, 3.8]
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python ${{ matrix.python-version }}
