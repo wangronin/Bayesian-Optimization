@@ -50,10 +50,6 @@ class BO(baseBO):
         return X[_]
 
 class ParallelBO(BO):
-    # TODO: add other Parallelization options: 
-    # 1) niching-based approach (my EVOLVE paper),
-    # 2) bi-objective Pareto-front (PI vs. EI) (my WCCI '16 paper), and
-    # 3) maybe QEI?
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         assert self.n_point > 1
@@ -168,7 +164,3 @@ class NoisyBO(ParallelBO):
             par.update({'plugin' : plugin})
         
         return super()._create_acquisition(par=par, return_dx=return_dx)
-
-class PCABO(ParallelBO):
-    def __init__(self):
-        pass

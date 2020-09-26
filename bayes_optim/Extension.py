@@ -1,14 +1,75 @@
 import logging, sys
 import numpy as np
 
-from typing import Callable
+from typing import Callable, Union
 from copy import copy
 from joblib import Parallel, delayed
+from scipy.stats import rankdata, norm
+from sklearn.decomposition import PCA, KernelPCA
 
 from . import AcquisitionFunction
 from .base import baseOptimizer
-from .BayesOpt import BO
+from .SearchSpace import ContinuousSpace
+from .BayesOpt import BO, ParallelBO
 from .misc import LoggerFormatter
+
+
+class PCABO(ParallelBO):
+    def __init__(
+        self, 
+        kernel_pca: bool = False,
+        n_components: Union[float, int] = None,
+        **kwargs
+        ):
+        super().__init__(**kwargs)
+        assert isinstance(self._search_space, ContinuousSpace)
+
+        self.__search_space = self._search_space # the original search space
+        self.kernel_pca = kernel_pca
+        self._n_components = n_components
+
+    def _scale_X(self, X, func_vals):
+        self._X_mean = X.mean(axis=0)
+        X_ = X - self._X_mean
+
+        if not self.minimize:
+            func_vals = -1 * func_vals 
+
+        r = rankdata(func_vals)
+        N = len(func_vals)
+        w = np.log(N) - np.log(r)
+        w /= np.sum(w)
+        return X_ * w.reshape(-1, 1)
+
+    def _compute_bounds(self, pca, search_space):
+        C = np.array([(l + u) / 2 for l, u in search_space.bounds])
+        radius = norm(np.np.array([l for l, _ in search_space.bounds]) - C)
+        C = C - pca.mean_ - self._X_mean
+        C_ = C.dot(pca.components_.T)
+        return [(_ - radius, _ + radius) for _ in C_]
+
+    def ask(self, n_point=None):
+        X = super().ask(n_point)
+        if hasattr(self, '_encoder'):
+            X = self._pca.inverse_transform(X) + self._X_mean
+        return X
+    
+    def tell(self, X, func_vals):
+        X_ = self._scale_X(X, func_vals)
+
+        if self.kernel_pca:
+            # TODO: finish the kernel PCA part..
+            self._pca = KernelPCA(kernel='rbf', fit_inverse_transform=True, gamma=10)
+        else:
+            self._pca = PCA(n_components=self._n_components, svd_solver='full')
+
+        X_ = self._pca.fit_transform(X_, func_vals)
+        bounds = self._compute_bounds(self._pca, self.__search_space)
+
+        # set the search space in the reduced (feature) space
+        self._search_space = ContinuousSpace(bounds)
+        super().tell(X_, func_vals)
+
 
 class OptimizerPipeline(baseOptimizer):
     def __init__(
@@ -122,6 +183,7 @@ class OptimizerPipeline(baseOptimizer):
     def check_stop(self):
         return self._stop
 
+
 class MultiAcquisitionBO(BO):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -166,3 +228,15 @@ class MultiAcquisitionBO(BO):
             __ = [list(self._argmax_restart(_, logger=self._logger)) for _ in criteria]
         
         return tuple(zip(*__))
+
+
+class ParallelBO2(ParallelBO):
+    # TODO: add other Parallelization options: 
+    # 1) niching-based approach (my EVOLVE paper),
+    # 2) bi-objective Pareto-front (PI vs. EI) (my WCCI '16 paper), and
+    # 3) maybe QEI?
+    pass
+
+
+class RacingBO(ParallelBO):
+    pass
