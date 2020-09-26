@@ -18,7 +18,7 @@ setup(
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"
     ],
-    download_url='https://github.com/wangronin/Bayesian-Optimization/archive/v0.0.1.tar.gz',
+    download_url='https://github.com/wangronin/Bayesian-Optimization/archive/v0.0.3.tar.gz',
     python_requires='>=3.6',
     install_requires=[ 
         'dill==0.3.2',
