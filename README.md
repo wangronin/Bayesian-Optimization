@@ -24,6 +24,12 @@ The project is structured as follows:
       1. **CMA-ES**: Covariance Martix Adaptation Evolution Strategy for _continuous_ optimization problems.
       2. **MIES**: Mixed-Integer Evolution Strategy for mixed-integer/categorical optimization problems. -->
 
+## Installation
+
+```shell
+pip install bayes-optim
+```
+
 ## Features
 
 This implementation differs from alternative packages/libraries in the following features:
