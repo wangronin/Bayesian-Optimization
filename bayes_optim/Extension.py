@@ -74,7 +74,7 @@ class PCABO(ParallelBO):
             acquisition_func=acquisition_func, 
             X_mean=self._X_mean, 
             pca=self._pca, 
-            bounds=self._search_space.bounds, 
+            bounds=self.__search_space.bounds, 
             return_dx=return_dx
         )
         return fun
