@@ -2,11 +2,9 @@ import numpy as np
 import sys, os
 sys.path.insert(0, '../')
 
-from BayesOpt import ParallelBO, BO, ContinuousSpace, OrdinalSpace, \
-    NominalSpace, RandomForest
-from BayesOpt.Extension import MultiAcquisitionBO
-from GaussianProcess import GaussianProcess
-from GaussianProcess.trend import constant_trend
+from bayes_optim import ParallelBO, BO, ContinuousSpace, OrdinalSpace, NominalSpace
+from bayes_optim.Extension import MultiAcquisitionBO
+from bayes_optim.Surrogate import trend, GaussianProcess, RandomForest
 
 np.random.seed(123)
 
@@ -20,7 +18,7 @@ def test_pickling():
 
     space = ContinuousSpace([lb, ub]) * dim
 
-    mean = constant_trend(dim, beta=None)
+    mean = trend.constant_trend(dim, beta=None)
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
     thetaU = 10 * (ub - lb) * np.ones(dim)
     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
@@ -59,7 +57,7 @@ def test_pickling2():
 
     space = ContinuousSpace([lb, ub]) * dim
 
-    mean = constant_trend(dim, beta=None)
+    mean = trend.constant_trend(dim, beta=None)
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
     thetaU = 10 * (ub - lb) * np.ones(dim)
     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
@@ -99,7 +97,7 @@ def test_continuous():
 
     space = ContinuousSpace([lb, ub]) * dim
 
-    mean = constant_trend(dim, beta=None)
+    mean = trend.constant_trend(dim, beta=None)
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
     thetaU = 10 * (ub - lb) * np.ones(dim)
     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL

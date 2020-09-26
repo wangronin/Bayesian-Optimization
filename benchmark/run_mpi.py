@@ -42,14 +42,12 @@ def run_optimizer(
 
 def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
     sys.path.insert(0, '../')
-    from BayesOpt import AnnealingBO, BO, ContinuousSpace, OrdinalSpace, \
-        NominalSpace, RandomForest
-    from GaussianProcess import GaussianProcess
-    from GaussianProcess.trend import constant_trend
+    from bayes_optim import AnnealingBO, BO, ContinuousSpace
+    from bayes_optim.Surrogate import GaussianProcess, trend
 
     space = ContinuousSpace([lb, ub]) * dim
-
-    mean = constant_trend(dim, beta=0)  # equivalent to Ordinary Kriging
+    
+    mean = trend.constant_trend(dim, beta=0)  # equivalent to Ordinary Kriging
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
     thetaU = 10 * (ub - lb) * np.ones(dim)
     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL

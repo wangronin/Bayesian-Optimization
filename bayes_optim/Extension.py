@@ -5,7 +5,7 @@ from typing import Callable
 from copy import copy
 from joblib import Parallel, delayed
 
-from . import InfillCriteria
+from . import AcquisitionFunction
 from .base import baseOptimizer
 from .BayesOpt import BO
 from .misc import LoggerFormatter
@@ -14,7 +14,6 @@ class OptimizerPipeline(baseOptimizer):
     def __init__(
         self,
         obj_fun: Callable,
-        n_point: int = 1,
         ftarget: float = -np.inf,
         max_FEs: int = None,
         minimize: bool = True,
@@ -24,7 +23,6 @@ class OptimizerPipeline(baseOptimizer):
         self.obj_fun = obj_fun
         self.max_FEs = max_FEs
         self.ftarget = ftarget
-        self.n_point = n_point
         self.verbose = verbose
         self.minimize = minimize
         self.queue = []
@@ -67,7 +65,6 @@ class OptimizerPipeline(baseOptimizer):
             self._curr_opt, self._transfer = self.queue[self._counter]
             self._logger.name = self._curr_opt.__class__.__name__
         
-        n_point = n_point if n_point else self.n_point
         return self._curr_opt.ask(n_point=n_point)
 
     def tell(self, X, y):
@@ -118,8 +115,12 @@ class OptimizerPipeline(baseOptimizer):
             
     def evaluate(self, X):
         if not hasattr(X[0], '__iter__'):
-            X = [X]
-        return [self.obj_fun(x) for x in X]
+            return self.obj_fun(X)
+        else:
+            return [self.obj_fun(x) for x in X]
+
+    def check_stop(self):
+        return self._stop
 
 class MultiAcquisitionBO(BO):
     def __init__(self, **kwargs):
@@ -137,7 +138,7 @@ class MultiAcquisitionBO(BO):
         self._N_acquisition = len(self._acquisition_fun_list)
 
         for i, _n in enumerate(self._par_name_list):
-            _criterion = getattr(InfillCriteria, self._acquisition_fun_list[i])()
+            _criterion = getattr(AcquisitionFunction, self._acquisition_fun_list[i])()
             if _n not in self._acquisition_par_list[i]:
                 self._acquisition_par_list[i][_n] = getattr(_criterion, _n)
         

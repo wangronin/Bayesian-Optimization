@@ -1,12 +1,9 @@
 """
-Created on Mon Apr 23 17:16:39 2018
 
 @author: Hao Wang
 @email: wangronin@gmail.com
 
 """
-from pdb import set_trace
-
 from typing import Callable, Any, Tuple
 import os, sys, dill, functools, logging, time
 
@@ -15,16 +12,15 @@ import json, copy, re
 from copy import copy
 from joblib import Parallel, delayed
 
-from . import InfillCriteria
+from . import AcquisitionFunction
 from .base import baseBO
 from .Solution import Solution
 from .SearchSpace import SearchSpace
-from .Surrogate import SurrogateAggregation
 
 class BO(baseBO):
     def _create_acquisition(self, fun=None, par={}, return_dx=False):
         fun = fun if fun is not None else self._acquisition_fun
-        if hasattr(getattr(InfillCriteria, fun), 'plugin'):
+        if hasattr(getattr(AcquisitionFunction, fun), 'plugin'):
             if 'plugin' not in par:
                 par.update({'plugin': self.fmin})
         
@@ -77,7 +73,7 @@ class ParallelBO(BO):
         else:
             raise NotImplementedError
         
-        _criterion = getattr(InfillCriteria, self._acquisition_fun)()
+        _criterion = getattr(AcquisitionFunction, self._acquisition_fun)()
         if self._par_name not in self._acquisition_par:
             self._acquisition_par[self._par_name] = getattr(_criterion, self._par_name)
         
@@ -164,7 +160,7 @@ class NoisyBO(ParallelBO):
         return X
 
     def _create_acquisition(self, fun=None, par={}, return_dx=False):
-        if hasattr(getattr(InfillCriteria, self._acquisition_fun), 'plugin'):
+        if hasattr(getattr(AcquisitionFunction, self._acquisition_fun), 'plugin'):
             # use the model prediction to determine the plugin under noisy scenarios
             # TODO: add more options for determining the plugin value
             y_ = self.model.predict(self.data)

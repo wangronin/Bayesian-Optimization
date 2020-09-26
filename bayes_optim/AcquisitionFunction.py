@@ -2,17 +2,17 @@
 @author: Hao Wang
 @email: wangronin@gmail.com
 """
-from pdb import set_trace
-
 import warnings
 import numpy as np
+
 from numpy import sqrt, exp, pi
 from scipy.stats import norm
 from abc import ABC, abstractmethod
 
-# TODO: implement noisy handling infill criteria, e.g., EQI (expected quantile improvement)
+# TODO: implement noisy handling infill criteria, 
+# e.g., EQI (expected quantile improvement)
 # TODO: perphaps also enable acquisition function engineering here?
-class InfillCriteria(ABC):
+class AcquisitionFunction(ABC):
     def __init__(self, model=None, minimize=True):
         self.model = model
         self.minimize = minimize
@@ -52,7 +52,7 @@ class InfillCriteria(ABC):
         return np.atleast_2d(X)
         # return [X] if not hasattr(X[0], '__iter__') else X
 
-class ImprovementBased(InfillCriteria):
+class ImprovementBased(AcquisitionFunction):
     def  __init__(self, plugin=None, **kwargs):
         super().__init__(**kwargs)
         self.plugin = plugin
@@ -72,7 +72,7 @@ class ImprovementBased(InfillCriteria):
         else:
             self._plugin = plugin if self.minimize else -1.0 * plugin
 
-class UCB(InfillCriteria):
+class UCB(AcquisitionFunction):
     def __init__(self, alpha=0.5, **kwargs):
         """Upper Confidence Bound 
         """

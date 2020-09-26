@@ -1,12 +1,6 @@
-"""
-Created on Mon May 19 10:17:43 2014
-
-@author: Hao Wang
-@email: wangronin@gmail.com
-"""
+import numpy as np
 import logging, os, random, string, re
 from copy import copy
-import numpy as np
 
 # TODO: re-written those functions to C/Cython
 def non_dominated_set_2d(y, minimize=True):

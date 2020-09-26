@@ -100,8 +100,8 @@ def plot_contour_gradient(ax, f, grad, x_lb, x_ub, title='f', is_log=False, n_le
        
    if grad is not None:
        # calculate function gradients
-       x1 = np.linspace(x_lb[0], x_ub[0], int(np.floor(n_per_axis / 10)))
-       x2 = np.linspace(x_lb[1], x_ub[1], int(np.floor(n_per_axis / 10)))
+       x1 = np.linspace(x_lb[0], x_ub[0], np.floor(n_per_axis / 10))
+       x2 = np.linspace(x_lb[1], x_ub[1], np.floor(n_per_axis / 10))
        X1, X2 = np.meshgrid(x1, x2)
        if grad_data is None:
            dx = np.array([grad(p.reshape(1, -1)).flatten() for p in np.c_[X1.flatten(), X2.flatten()]])

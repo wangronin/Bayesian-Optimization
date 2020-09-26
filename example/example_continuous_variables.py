@@ -4,13 +4,10 @@ import numpy as np
 import sys, os
 sys.path.insert(0, '../')
 
-from BayesOpt import AnnealingBO, BO, ContinuousSpace, OrdinalSpace, \
-    NominalSpace, RandomForest
-from GaussianProcess import GaussianProcess
-from GaussianProcess.trend import constant_trend
+from bayes_optim import BO, ContinuousSpace
+from bayes_optim.Surrogate import GaussianProcess, trend
 
 np.random.seed(123)
-
 dim = 5
 lb, ub = -1, 5
 
@@ -20,7 +17,7 @@ def fitness(x):
 
 space = ContinuousSpace([lb, ub]) * dim
 
-mean = constant_trend(dim, beta=None)
+mean = trend.constant_trend(dim, beta=None)
 thetaL = 1e-10 * (ub - lb) * np.ones(dim)
 thetaU = 10 * (ub - lb) * np.ones(dim)
 theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL

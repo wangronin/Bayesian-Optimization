@@ -76,7 +76,7 @@ class OnePlusOne_CMA(object):
     def _init_covariance(self, C):
         if C is None:
             self._C = np.eye(self.dim)
-            self.__A = np.eye(self.dim)
+            self._A = np.eye(self.dim)
         else:
             self.C = C
 
@@ -122,8 +122,8 @@ class OnePlusOne_CMA(object):
             try:
                 A = np.linalg.cholesky(C)
                 if np.all(np.isreal(A)):
-                    # NOTE: `__A` is a private attribute
-                    self.__A = A
+                    # TODO: `_A` should be a private attribute
+                    self._A = A
                     self._C = C
             except np.linalg.LinAlgError:
                 pass
@@ -184,11 +184,14 @@ class OnePlusOne_CMA(object):
             [description]
         """
         z = np.random.randn(self.dim)
-        x = self._x + self.sigma * z.dot(self.__A.T)
+        x = self._x + self.sigma * z.dot(self._A.T)
         x = handle_box_constraint(x, self.lb, self.ub) 
         return x
 
     def tell(self, x, y):
+        if hasattr(y, '__iter__'):
+            y = y[0]
+            
         success = y < self.fopt
         z = (x - self._x) / self._sigma
         self._update_step_size(success)
@@ -199,7 +202,6 @@ class OnePlusOne_CMA(object):
             self._update_covariance(z)
 
         self._handle_exception()
-
         self.eval_count += 1
         self.iter_count += 1
 
@@ -245,7 +247,7 @@ class OnePlusOne_CMA(object):
                 if np.any(~np.isreal(A)):
                     self._exception = True
                 else:
-                    self.__A = A
+                    self._A = A
             except np.linalg.LinAlgError:
                 self._exception = True
 
@@ -256,7 +258,7 @@ class OnePlusOne_CMA(object):
         if self._exception:
             self._C = np.eye(self.dim)
             self.pc = np.zeros((self.dim, 1))
-            self.__A = np.eye(self.dim)
+            self._A = np.eye(self.dim)
             self._sigma = self.sigma0
             self._exception = False
 

@@ -16,12 +16,12 @@ from joblib import Parallel, delayed
 from sklearn.metrics import r2_score
 from sklearn.cluster import KMeans
 
-from . import InfillCriteria
+from . import AcquisitionFunction
 from .Solution import Solution
 from .SearchSpace import SearchSpace
 from .utils import arg_to_int
 from .misc import LoggerFormatter
-from .optimizer import argmax_restart
+from .acquisition_optim import argmax_restart
 
 class baseOptimizer(ABC):
     def __init__(self, verbose):
@@ -351,7 +351,7 @@ class baseBO(ABC):
         if np.isinf(self.max_FEs):
             raise ValueError('max_FEs cannot be infinite')
 
-        assert hasattr(InfillCriteria, self._acquisition_fun)
+        assert hasattr(AcquisitionFunction, self._acquisition_fun)
     
     def _compare(self, f1, f2):
         """Test if objecctive value f1 is better than f2
@@ -556,7 +556,7 @@ class baseBO(ABC):
         par = copy(self._acquisition_par) if not par else par
         par.update({'model' : self.model, 'minimize' : self.minimize})
 
-        criterion = getattr(InfillCriteria, fun)(**par)
+        criterion = getattr(AcquisitionFunction, fun)(**par)
         return functools.partial(criterion, return_dx=return_dx)
 
     def _batch_arg_max_acquisition(self, n_point, return_dx):

@@ -8,18 +8,18 @@ A `Python` implementation of the Bayesian Optimization algorithm working on deci
 
 The project is structured as follows:
 
-* `BayesOpt/base.py`: the base class of Bayesian Optimization.
-* `BayesOpt/BayesOpt.py` contains several BO variants:
-  * `BO`: noiseless + seqential
+* `bayes-optim/SearchSpace.py`: implementation of the search/decision space.
+* `bayes-optim/base.py`: the base class of Bayesian Optimization.
+* `bayes-optim/BayesOpt.py` contains several BO variants:
+  * `BO`: noiseless + sequential
   * `ParallelBO`: noiseless + parallel (a.k.a. batch-sequential)
   * `AnnealingBO`: noiseless + parallel + annealling [WEB18]
   * `SelfAdaptiveBO`: noiseless + parallel + self-adaptive [WEB19]
   * `NoisyBO`: noisy + parallel
-  * `PCABO`: noiseless + parallel + PCA-assisted dimensionality reduction [RaponiWBBD20] **[Under Construction]** 
-* `BayesOpt/InfillCriteria.py`: the implemetation of acquisition functions (see below for the list of implemented ones).
-* `BayesOpt/Surrogate.py`: the implementation/wrapper of sklearn's random forests model.
-* `BayesOpt/SearchSpace.py`: implementation of the search/decision space.
-  
+  * `PCABO`: noiseless + parallel + PCA-assisted dimensionality reduction [RaponiWBBD20] **[Under Construction]**
+* `bayes-optim/AcquisitionFunction.py`: the implemetation of acquisition functions (see below for the list of implemented ones).
+* `bayes-optim/Surrogate`: we implemented the Gaussian Process Regression (GPR) and Random Forest (RF).
+
 <!-- * `optimizer/`: the optimization algorithm to maximize the infill-criteria, two algorithms are implemented:
       1. **CMA-ES**: Covariance Martix Adaptation Evolution Strategy for _continuous_ optimization problems.
       2. **MIES**: Mixed-Integer Evolution Strategy for mixed-integer/categorical optimization problems. -->

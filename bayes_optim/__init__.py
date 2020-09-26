@@ -1,15 +1,16 @@
 import os, logging
 
-from . import InfillCriteria, Surrogate
+from . import AcquisitionFunction, Surrogate
 from .BayesOpt import BO, ParallelBO, NoisyBO, AnnealingBO
 from .Solution import Solution
-from .Surrogate import RandomForest
+from .Surrogate import RandomForest, GaussianProcess
 from .SearchSpace import SearchSpace, OrdinalSpace, ContinuousSpace, NominalSpace
 from .Extension import OptimizerPipeline
 
 __all__ = [
     'BO', 'ParallelBO', 'NoisyBO', 'AnnealingBO', 'Solution',
-    'InfillCriteria', 'Surrogate', 'SearchSpace', 'OrdinalSpace', 'ContinuousSpace', 
+    'AcquisitionFunction', 'Surrogate', 'RandomForest', 'GaussianProcess',
+    'SearchSpace', 'OrdinalSpace', 'ContinuousSpace', 
     'NominalSpace', 'RandomForest', 'OptimizerPipeline'
 ]
 
@@ -24,3 +25,5 @@ verbose = {
 }
 
 # TODO: add an interface function `fmin`
+def fmin():
+    pass

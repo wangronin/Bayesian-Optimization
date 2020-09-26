@@ -5,7 +5,7 @@ from copy import deepcopy
 import numpy as np 
 
 sys.path.insert(0, '../')
-from BayesOpt import ContinuousSpace, OrdinalSpace, NominalSpace, Solution, SearchSpace
+from bayes_optim import ContinuousSpace, OrdinalSpace, NominalSpace, Solution, SearchSpace
 
 np.random.seed(1)
 
