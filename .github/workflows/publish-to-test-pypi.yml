@@ -6,17 +6,17 @@ on:
 
 jobs:
     build-n-publish:
-        name: Build and publish Python 🐍 distributions 📦 to PyPI and TestPyPI
+        name: Build and publish Python distributions to PyPI and TestPyPI
         runs-on: ubuntu-latest
     strategy:
         matrix:
-            python-version: [3.6, 3.7, 3.8]
+          python-version: [3.6, 3.7, 3.8]
     steps:
-        - uses: actions/checkout@master
+        - uses: actions/checkout@v2
         - name: Set up Python ${{ matrix.python-version }}
-            uses: actions/setup-python@v2
-            with:
-                python-version: ${{ matrix.python-version }}
+          uses: actions/setup-python@v2
+          with:
+            python-version: ${{ matrix.python-version }}
         - name: Install pep517
         run: >-
             python -m
@@ -32,12 +32,12 @@ jobs:
             --out-dir dist/
             .
         - name: Publish distribution 📦 to Test PyPI
-            uses: pypa/gh-action-pypi-publish@master
-            with:
-                password: ${{ secrets.test_pypi_password }}
-                repository_url: https://test.pypi.org/legacy/
+          uses: pypa/gh-action-pypi-publish@master
+          with:
+            password: ${{ secrets.test_pypi_password }}
+            repository_url: https://test.pypi.org/legacy/
         - name: Publish distribution 📦 to PyPI
-            if: startsWith(github.ref, 'refs/tags')
-            uses: pypa/gh-action-pypi-publish@master
-            with:
-                password: ${{ secrets.pypi_password }}
+          if: startsWith(github.ref, 'refs/tags')
+          uses: pypa/gh-action-pypi-publish@master
+          with:
+            password: ${{ secrets.pypi_password }}
