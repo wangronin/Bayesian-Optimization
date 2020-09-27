@@ -29,7 +29,7 @@ verbose = {
 Vector = List[float]
 Matrix = List[Vector]
 
-# TODO: implement the code for `callback` and `kwargs`
+# TODO: implement the code for `callback`, `xtol`, `ftol`, and `kwargs`
 def fmin(
     func: Callable, 
     lower: Union[float, Vector],

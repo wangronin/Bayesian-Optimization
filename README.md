@@ -1,35 +1,70 @@
 [![Actions Status](https://github.com/wangronin/Bayesian-Optimization/workflows/Build%20and%20Test/badge.svg)](https://github.com/wangronin/Bayesian-Optimization/actions)
-![Build and Publish](https://github.com/wangronin/Bayesian-Optimization/workflows/Build%20and%20Publish/badge.svg)
 
 # Bayesian Optimization Library
 
-A `Python` implementation of the Bayesian Optimization algorithm working on decision spaces composed of either real, integer, catergorical variables, or a mixture thereof.
+A `Python` implementation of the Bayesian Optimization (BO) algorithm working on decision spaces composed of either real, integer, catergorical variables, or a mixture thereof.
+
+Underpinned by surrogate models, BO iteratively proposes candidate solutions using the so-called **acquisition function** which balances exploration with exploitation, and updates the surrogate model with newly observed objective values. This algorithm is designed to optimize **expensive black-box** problems efficiently.
 
 ![](assets/BO-example.gif)
 
-The project is structured as follows:
-
-* `bayes-optim/SearchSpace.py`: implementation of the search/decision space.
-* `bayes-optim/base.py`: the base class of Bayesian Optimization.
-* `bayes-optim/BayesOpt.py` contains several BO variants:
-  * `BO`: noiseless + sequential
-  * `ParallelBO`: noiseless + parallel (a.k.a. batch-sequential)
-  * `AnnealingBO`: noiseless + parallel + annealling [WEB18]
-  * `SelfAdaptiveBO`: noiseless + parallel + self-adaptive [WEB19]
-  * `NoisyBO`: noisy + parallel
-  * `PCABO`: noiseless + parallel + PCA-assisted dimensionality reduction [RaponiWBBD20] **[Under Construction]**
-* `bayes-optim/AcquisitionFunction.py`: the implemetation of acquisition functions (see below for the list of implemented ones).
-* `bayes-optim/Surrogate`: we implemented the Gaussian Process Regression (GPR) and Random Forest (RF).
-
-<!-- * `optimizer/`: the optimization algorithm to maximize the infill-criteria, two algorithms are implemented:
-      1. **CMA-ES**: Covariance Martix Adaptation Evolution Strategy for _continuous_ optimization problems.
-      2. **MIES**: Mixed-Integer Evolution Strategy for mixed-integer/categorical optimization problems. -->
-
 ## Installation
+
+You could either install the stable version on `pypi`:
 
 ```shell
 pip install bayes-optim
 ```
+
+Or, take the lastest version from github:
+
+```shell
+git clone https://github.com/wangronin/Bayesian-Optimization.git
+cd Bayesian-Optimization && python setup.py install --user
+```
+
+## Example
+
+For real-valued search variables, the simplest usage is via the `fmin` function:
+
+```python
+from bayes_optim import fmin
+
+def f(x):
+  return sum(x ** 2)
+
+minimum = fmin(f, [-5] * 2, [5] * 2, max_FEs=30, seed=42)
+```
+
+And you could also have much finer control over most ingredients of BO, e.g., the surrogate
+model and acquisition functions. Please see the example below:
+
+```python
+from bayes_optim import BO, ContinuousSpace
+from bayes_optim.Surrogate import GaussianProcess
+
+dim = 5
+space = ContinuousSpace([-5, 5]) * dim  # create the search space
+
+# hyperparameters of the GPR model
+thetaL = 1e-10 * (ub - lb) * np.ones(dim)
+thetaU = 10 * (ub - lb) * np.ones(dim)
+model = GaussianProcess(                # create the GPR model
+  thetaL=thetaL, thetaU=thetaU
+)
+
+opt = BO(
+    search_space=space,
+    obj_fun=fitness,
+    model=model,
+    DoE_size=5,                         # number of initial sample points
+    max_FEs=50,                         # maximal function evaluation
+    verbose=True
+)
+opt.run()
+```
+
+For more detailed usage and exmaples, please check out our [wiki page](https://github.com/wangronin/Bayesian-Optimization/wiki).
 
 ## Features
 
@@ -39,7 +74,27 @@ This implementation differs from alternative packages/libraries in the following
 * **Moment-Generating Function of the improvment** (MGFI) [WvSEB17a] is a recently proposed acquistion function, which implictly controls the exploration-exploitation trade-off.
 * **Mixed-Integer Evolution Strategy** for optimizing the acqusition function, which is enabled when the search space is a mixture of real, integer, and categorical variables.
 
-## Acqusition Functions
+## Project Structure
+
+* `bayes-optim/SearchSpace.py`: implementation of the search/decision space.
+* `bayes-optim/base.py`: the base class of Bayesian Optimization.
+* `bayes-optim/AcquisitionFunction.py`: the implemetation of acquisition functions (see below for the list of implemented ones).
+* `bayes-optim/Surrogate`: we implemented the Gaussian Process Regression (GPR) and Random Forest (RF).
+* `bayes-optim/BayesOpt.py` contains several BO variants:
+  * `BO`: noiseless + sequential
+  * `ParallelBO`: noiseless + parallel (a.k.a. batch-sequential)
+  * `AnnealingBO`: noiseless + parallel + annealling [WEB18]
+  * `SelfAdaptiveBO`: noiseless + parallel + self-adaptive [WEB19]
+  * `NoisyBO`: noisy + parallel
+* `bayes-optim/Extension.py` is meant to include the lastest developments that are not extensively tested:
+  * `PCABO`: noiseless + parallel + PCA-assisted dimensionality reduction [RaponiWBBD20] **[Under Construction]**
+  * `MultiAcquisitionBO`: noiseless + parallelization with multiple different acquisition functions **[Under Construction]**
+
+<!-- * `optimizer/`: the optimization algorithm to maximize the infill-criteria, two algorithms are implemented:
+      1. **CMA-ES**: Covariance Martix Adaptation Evolution Strategy for _continuous_ optimization problems.
+      2. **MIES**: Mixed-Integer Evolution Strategy for mixed-integer/categorical optimization problems. -->
+
+## Acquisition Functions
 
 The following infill-criteria are implemented in the library:
 
