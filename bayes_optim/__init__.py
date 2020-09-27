@@ -74,7 +74,7 @@ def fmin(
     n_point : int, optional
         The number of trial points generated in each iteration, by default 1
     args : Tuple, optional
-        Extra arguments passed to `func`, i.e., ``f(x, *args)``.
+        Extra arguments passed to `func`, i.e., ``func(x, *args)``.
     xtol : float, optional
         Absolute error in xopt between iterations that is acceptable for convergence, 
         by default 1e-4.
@@ -82,7 +82,7 @@ def fmin(
         Absolute error in func(xopt) between iterations that is acceptable for convergence, 
         by default 1e-4.
     max_FEs : Optional[int], optional
-        Maximum number of function evaluations to make, by default None.
+        Maximal number of function evaluations to make, by default None.
     verbose : Optional[bool], optional
         Verbosity of the output, by default False.
     callback : Optional[Callable], optional

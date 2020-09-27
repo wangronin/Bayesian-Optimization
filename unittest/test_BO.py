@@ -139,7 +139,7 @@ def test_mix_space():
         search_space=search_space, 
         obj_fun=obj_fun, 
         model=model, 
-        max_FEs=9, 
+        max_FEs=6, 
         DoE_size=3,    # the initial DoE size
         eval_type='dict',
         acquisition_fun='MGFI',
