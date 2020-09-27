@@ -9,9 +9,10 @@ from numpy import sqrt, exp, pi
 from scipy.stats import norm
 from abc import ABC, abstractmethod
 
-# TODO: implement noisy handling infill criteria, 
-# e.g., EQI (expected quantile improvement)
+# TODO: implement noisy handling infill criteria, e.g., EQI (expected quantile improvement)
 # TODO: perphaps also enable acquisition function engineering here?
+# TODO: multi-objective extension
+
 class AcquisitionFunction(ABC):
     def __init__(self, model=None, minimize=True):
         self.model = model
@@ -50,7 +51,6 @@ class AcquisitionFunction(ABC):
         """Keep input as '2D' object 
         """
         return np.atleast_2d(X)
-        # return [X] if not hasattr(X[0], '__iter__') else X
 
 class ImprovementBased(AcquisitionFunction):
     def  __init__(self, plugin=None, **kwargs):

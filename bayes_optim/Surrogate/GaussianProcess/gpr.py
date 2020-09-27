@@ -18,6 +18,7 @@ from sklearn.utils import check_random_state, check_array, check_X_y
 from sklearn.utils.validation import check_is_fitted
 
 from .cma_es import cma_es
+from .trend import constant_trend
 from .kernel import absolute_exponential, squared_exponential, generalized_exponential, \
     cubic, pure_nugget, matern
     
@@ -71,6 +72,8 @@ def my_dot(x, y):
     return res
 
 # TODO: remove the dependences from sklearn
+# TODO: simplify this code, which is way too lengthy
+
 class GaussianProcess(BaseEstimator, RegressorMixin):
     """The Gaussian Process model class.
 
@@ -198,26 +201,29 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         'squared_exponential': squared_exponential,
         'generalized_exponential': generalized_exponential,
         'cubic': cubic,
-        'matern': matern}
-    
+        'matern': matern
+    }
     _likelihood_functions = ['concentrated', 'restricted']
 
     # TODO: separater the kernel function from here
-    def __init__(self, mean, corr='squared_exponential',
-                 theta0=1e-1, thetaL=None, thetaU=None, sigma2=None, 
-                 nugget=1e-6, noise_estim=False, optimizer='BFGS', 
-                 likelihood='concentrated', random_start=1, wait_iter=5,
-                 eval_budget=None, random_state=None, verbose=False):
-
+    def __init__(
+        self, 
+        mean=None, 
+        corr='squared_exponential',
+        theta0=None, thetaL=None, thetaU=None, sigma2=None, 
+        nugget=1e-6, noise_estim=False, optimizer='BFGS', 
+        likelihood='concentrated', random_start=1, wait_iter=5,
+        eval_budget=None, random_state=None, verbose=False
+        ):
         self.mean = mean      # Prior mean function 
         self.corr = corr      # Prior correlation function 
         self.sigma2 = sigma2  # variance of the stationary process
         self.verbose = verbose
         self.corr_type = corr
         self.is_fitted = False
-        
+
         # hyperparameters: kernel function
-        self.theta0 = np.array(theta0).flatten()
+        self.theta0 = np.array(theta0).flatten() if theta0 is not None else None
         self.thetaL = np.array(thetaL).flatten()
         self.thetaU = np.array(thetaU).flatten()
         
@@ -247,6 +253,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         assert likelihood in self._likelihood_functions
         self.likelihood = likelihood  # or restricted
         self.is_fitted = False
+
+        if self.mean is None:
+            self.mean = constant_trend(len(self.thetaU), beta=0)
         
         # estimation mode for the trend
         if isinstance(self.mean, BasisExpansionTrend):
@@ -348,17 +357,23 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             # Maximum Likelihood Estimation of the parameters
             if self.verbose:
                 print("Maximum Likelihood Estimation of the hyperparameters...")
-            self.par, self.log_likelihood_, env = self._optimize_hyperparameter()
-            
-            if np.isinf(self.log_likelihood_):
-                # TODO: open design choice here:
-                #   1) leave this exception handeling part to the program calls gpr
-                #   2) handel it here and save the incident to a log
-                print('Doubling theta upper bound. Increasing nugget...')
-                self.thetaU *= 2
-                self.noise_var *= 10
+
+            while True:
                 self.par, self.log_likelihood_, env = self._optimize_hyperparameter()
-                # raise Exception("Bad parameter region. Try increasing upper bound")
+                if np.isinf(self.log_likelihood_):
+                    # TODO: open design choice here:
+                    #   1) leave this exception handeling part to the program calls gpr
+                    #   2) handel it here and save the incident to a log
+                    print('Invalid likelihood value. Increasing nugget...')
+
+                    # TODO: maybe turn the working mode to 'noise_estim' directly
+                    if self.estimation_mode == 'noiseless':
+                        self.estimation_mode = 'noisy'
+                        self.noise_var = 1e-5
+                    else:
+                        self.noise_var *= 10
+                else:
+                    break
 
         # find a better name for noise_var
         self.theta_ = self.par['theta']
@@ -1185,17 +1200,20 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         # Check correlation parameters
         # self.theta0 = np.atleast_2d(self.theta0)
-        lth = self.theta0.size
+        # lth = self.theta0.size
 
         if self.thetaL is not None and self.thetaU is not None:
-            if self.thetaL.size != lth or self.thetaU.size != lth:
-                raise ValueError("theta0, thetaL and thetaU must have the "
-                                 "same length.")
+            if self.thetaL.size != self.thetaU.size:
+                raise ValueError("thetaL and thetaU must have the same length.")
+            if self.theta0 is not None and self.theta0.size != self.thetaL.size:
+                raise ValueError("theta0, thetaL, and thetaU must have the same length.")
             if np.any(self.thetaL <= 0) or np.any(self.thetaU < self.thetaL):
                 raise ValueError("The bounds must satisfy O < thetaL <= "
                                  "thetaU.")
 
         elif self.thetaL is None and self.thetaU is None:
+            if self.theta0 is None:
+                raise ValueError("theta0 must be provided when both thetaL and thetaU are not set.")
             if np.any(self.theta0 <= 0):
                 raise ValueError("theta0 must be strictly positive.")
 

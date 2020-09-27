@@ -40,8 +40,12 @@ class BO(baseBO):
         for i in range(N):
             x = X[i]
             idx = np.arange(len(X)) != i
-            CON = np.all(np.isclose(np.asarray(X[idx][:, self.r_index], dtype='float'),
-                                    np.asarray(x[self.r_index], dtype='float')), axis=1)
+            CON = np.all(
+                np.isclose(
+                    np.asarray(X[idx][:, self.r_index], dtype='float'),
+                    np.asarray(x[self.r_index], dtype='float')
+                ), axis=1
+            )
             INT = np.all(X[idx][:, self.i_index] == x[self.i_index], axis=1)
             CAT = np.all(X[idx][:, self.d_index] == x[self.d_index], axis=1)
             if not any(CON & INT & CAT):
@@ -50,10 +54,6 @@ class BO(baseBO):
         return X[_]
 
 class ParallelBO(BO):
-    # TODO: add other Parallelization options: 
-    # 1) niching-based approach (my EVOLVE paper),
-    # 2) bi-objective Pareto-front (PI vs. EI) (my WCCI '16 paper), and
-    # 3) maybe QEI?
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         assert self.n_point > 1
@@ -168,7 +168,3 @@ class NoisyBO(ParallelBO):
             par.update({'plugin' : plugin})
         
         return super()._create_acquisition(par=par, return_dx=return_dx)
-
-class PCABO(ParallelBO):
-    def __init__(self):
-        pass

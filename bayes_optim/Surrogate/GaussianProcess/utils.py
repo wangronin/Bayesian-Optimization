@@ -9,12 +9,6 @@ import pdb
 import numpy as np
 from numpy import pi, log
 
-# import matplotlib as mpl
-# #mpl.use('MacOSX')
-# import matplotlib.pyplot as plt
-# import matplotlib.colors as colors
-# import matplotlib.tri as mtri
-
 ## SMSE measurement
 # test_y is the target, pred_y the predicted target, both 1D arrays of same length
 def SMSE(test_y,pred_y):

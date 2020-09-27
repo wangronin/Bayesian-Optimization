@@ -4,8 +4,6 @@ Created on Thu Sep  7 11:10:18 2017
 
 @author: wangronin
 """
-from pdb import set_trace
-
 import numpy as np
 from numpy import exp, nonzero, argsort, ceil, zeros, mod
 from numpy.random import randint, rand, randn, geometric
@@ -191,11 +189,13 @@ class MIES(object):
             X = pop
         elif self._eval_type == 'dict':
             X = [self._space.to_dict(x) for x in pop]
-        #_penalized_fitness = pop.fitness + self._penalty_func(pop, self.iter_count + 1, 
-        _penalized_fitness = pop.fitness + self._penalty_func(X, self.iter_count + 1, 
-                                                              self.eq_func, self.ineq_func, 
-                                                              minimize=self.minimize)
 
+        _penalized_fitness = pop.fitness + \
+            self._penalty_func(
+                X, self.iter_count + 1, 
+                self.eq_func, self.ineq_func, 
+                minimize=self.minimize
+            )
         return (_penalized_fitness if return_penalized else pop.fitness)
 
     def mutate(self, individual):

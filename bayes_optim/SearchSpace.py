@@ -341,7 +341,7 @@ class ContinuousSpace(SearchSpace):
             if N == 1:
                 X = ((ub - lb) * rand(N, self.dim) + lb)
             else:
-                X = ((ub - lb) * lhs(self.dim, samples=N, criterion='cm') + lb)
+                X = ((ub - lb) * lhs(self.dim, samples=N, criterion='maximin') + lb)
         return X.tolist()
 
 

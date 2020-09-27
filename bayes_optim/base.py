@@ -10,7 +10,7 @@ import os, sys, dill, functools, logging, time
 
 from abc import ABC, abstractmethod
 from copy import copy, deepcopy
-from typing import Callable, Any, Tuple
+from typing import Callable, Any, Tuple, Optional
 from joblib import Parallel, delayed
 
 from sklearn.metrics import r2_score
@@ -117,45 +117,52 @@ class baseBO(ABC):
         parallel_obj_fun: Callable = None,
         eq_fun: Callable = None, 
         ineq_fun: Callable = None, 
-        model = None,
+        model: Optional[Any] = None,   # TODO: regulate the type for `model`
         eval_type: str = 'list',
-        DoE_size: int = None, 
+        DoE_size: Optional[int] = None, 
+        warm_data: Tuple = (), 
         n_point: int = 1,
         acquisition_fun: str = 'EI',
         acquisition_par: dict = {},
         acquisition_optimization: dict = {},
-        ftarget: float = None,
-        max_FEs: int = None, 
+        ftarget: Optional[float] = None,
+        max_FEs: Optional[int] = None, 
         minimize: bool = True, 
         n_job: int = 1,
-        data_file: str = None, 
+        data_file: Optional[str] = None, 
         verbose: bool = False, 
-        random_seed: int = None, 
-        logger: str = None,
+        random_seed: Optional[int] = None, 
+        logger: Optional[str] = None,
         ):
-        """The base class for Bayesian Optimization
+        """ The base class for Bayesian Optimization
 
         Parameters
         ----------
         search_space : SearchSpace
-            The search space, an instance of `SearchSpace` class
+            The search space, an instance of `SearchSpace` class.
         obj_fun : Callable
-            The objective function to optimize
+            The objective function to optimize.
         parallel_obj_fun : Callable, optional
-            The objective function that takes multiple solutions simultaneously and implement
-            the parallelization by itself, by default None
+            The objective function that takes multiple solutions simultaneously and 
+            implement the parallelization by itself, by default None.
         eq_fun : Callable, optional
             The equality constraints, whose return value should have the same size as the 
-            number of equality constraints, by default None
+            number of equality constraints, by default None.
         ineq_fun : Callable, optional
-            The inequality constraints, whose return value should have the same size as the 
-            number of inequality constraints, by default None
-        model : optional
-            The surrogate mode, which will be automatically created if not passed in, by default None
+            The inequality constraints, whose return value should have the same size as
+            the number of inequality constraints, by default None.
+        model : Any, optional
+            The surrogate mode, which will be automatically created if not passed in, 
+            by default None.
         eval_type : str, optional
-            type of arguments `obj_fun` or `parallel_obj_fun` takes: ['list', 'dict'], by default 'list'
+            The type of input argument allowed by `obj_func` or `parallel_obj_fun`: 
+            it could be either 'list' or 'dict', by default 'list'.
         DoE_size : int, optional
-            The size of inital Design of Experiment (DoE), by default None
+            The size of inital Design of Experiment (DoE), by default None.
+        warm_data: Tuple, optional
+            The warm-starting data in a pair of design points and its objective values 
+            `(X, y)`, where `X` should be a list of points and has the same length with `y`.
+            When provided, the initial sampling (DoE) operation is skipped. 
         n_point : int, optional
             The number of candidate solutions proposed using infill-criteria, by default 1
         acquisition_fun : str, optional
@@ -172,7 +179,8 @@ class baseBO(ABC):
             To minimize or maximize, by default True
         n_job : int, optional
             The number of allowable jobs for parallelizing the function evaluation 
-            (if `parallel_obj_fun` is not specified) and Only Effective when n_point > 1 , by default 1
+            (if `parallel_obj_fun` is not specified) and Only Effective when n_point > 1, 
+            by default 1
         data_file : str, optional
             The name of the file to store extra historical information during the run,
             by default None
@@ -180,9 +188,8 @@ class baseBO(ABC):
             The verbosity, by default False
         random_seed : int, optional
             The seed for pseudo-random number generators, by default None
-        logger : str | logging.Logger, optional
-            name of the logger file or a `logging.Logger` object, by default None, which turns
-            off the logging behaviour
+        logger : str, optional
+            Name of the logger file, by default None, which turns off the logging behaviour
         """        
         self.obj_fun = obj_fun
         self.parallel_obj_fun = parallel_obj_fun
@@ -198,19 +205,21 @@ class baseBO(ABC):
 
         self.search_space = search_space
         self.DoE_size = DoE_size
+
         self.acquisition_fun = acquisition_fun
         self._acquisition_par = acquisition_par
-        # the callback functions executed after every call of `arg_max_acquisition`
-        self._acquisition_callbacks = []  
+        self._acquisition_callbacks = []   # the callback functions executed after 
+                                           # every call of `arg_max_acquisition`
         self.model = model
         self.logger = logger
         self.random_seed = random_seed
+
         self._set_internal_optimization(**acquisition_optimization)
         self._get_best = np.min if self.minimize else np.max
         self._eval_type = eval_type   
         self._init_flatfitness_trial = 2
         self._set_aux_vars()
-        # self._check_params()
+        self.warm_data = warm_data
     
     @property
     def acquisition_fun(self):
@@ -238,7 +247,7 @@ class baseBO(ABC):
             else: 
                 raise ValueError
         else:
-            self._DoE_size = int(self.dim * 20)
+            self._DoE_size = int(self.dim * 5)
 
     @property
     def random_seed(self):
@@ -268,6 +277,32 @@ class baseBO(ABC):
         self.N_r = len(self.r_index)
         self.N_i = len(self.i_index)
         self.N_d = len(self.d_index)
+
+    @property
+    def warm_data(self):
+        return self._warm_data
+    
+    @warm_data.setter
+    def warm_data(self, data):
+        assert self.iter_count == 0  # warm data should only be provided in the begining
+        if data is None or len(data) == 0:
+            self._warm_data = None
+        else:
+            X, y = data
+            assert len(X) == len(y)
+
+            if isinstance(X, Solution):
+                assert X.var_name == self.var_names
+            else:
+                X = self._to_geno(X)
+
+            X.fitness = y
+            X.n_eval = 1
+            assert all([isinstance(_, float) for _ in X[:, self.r_index].ravel()])
+            assert all([isinstance(_, int) for _ in X[:, self.i_index].ravel()])
+            assert all([isinstance(_, str) for _ in X[:, self.d_index].ravel()])
+            self._warm_data = X
+            self.tell(X, y, warm_start=True)
 
     @property
     def logger(self):
@@ -384,8 +419,7 @@ class baseBO(ABC):
             )
             X = self.pre_eval_check(X)
 
-            # TODO: handle the constrains when performing random sampling
-            # draw the remaining ones randomly
+            # TODO: handle the constraints when performing the random sampling
             if len(X) < n_point:
                 self._logger.warn(
                     "iteration {}: duplicated solution found " 
@@ -401,7 +435,7 @@ class baseBO(ABC):
                     var_name=self.var_names
                 )
                 X = self._search_space.round(X)
-        else: # initial DoE
+        else:   # initial DoE
             if not n_point:
                 n_point = self._DoE_size
                 
@@ -410,7 +444,7 @@ class baseBO(ABC):
             )
         return self._to_pheno(X)
     
-    def tell(self, X, func_vals):
+    def tell(self, X, func_vals, warm_start=False):
         """Tell the BO about the function values of proposed candidate solutions
 
         Parameters
@@ -422,18 +456,26 @@ class baseBO(ABC):
         """
         X = self._to_geno(X)
 
-        msg = 'initial DoE of size {}:'.format(len(X)) if self.iter_count == 0 else \
-            'iteration {}, {} infill points:'.format(self.iter_count, len(X))
-        self._logger.info(msg)
+        if warm_start:
+            msg = 'warm-starting from {} points:'.format(len(X))
+        elif self.iter_count == 0:
+            msg = 'initial DoE of size {}:'.format(len(X))
+        else:
+            msg = 'iteration {}, {} infill points:'.format(self.iter_count, len(X))
 
-        _X = self._to_pheno(X)
+        self._logger.info(msg)
+        X_ = self._to_pheno(X)
+        
         for i in range(len(X)):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
-            self.eval_count += 1
+            
+            if not warm_start:
+                self.eval_count += 1
+
             self._logger.info(
                 '#{} - fitness: {}, solution: {}'.format(
-                    i + 1, func_vals[i], _X[i]
+                    i + 1, func_vals[i], X_[i]
                 )
             )
 
@@ -459,8 +501,9 @@ class baseBO(ABC):
         r2 = self.update_model()   
         self._logger.info('Surrogate model r2: {}\n'.format(r2))
 
-        self.iter_count += 1
-        self.hist_f.append(self.fopt)
+        if not warm_start:
+            self.iter_count += 1
+            self.hist_f.append(self.fopt)
 
     def create_DoE(self, n_point=None):
         DoE = []
@@ -477,10 +520,11 @@ class baseBO(ABC):
     def post_eval_check(self, X):
         _ = np.isnan(X.fitness) | np.isinf(X.fitness)
         if np.any(_):
-            self._logger.warn('{} candidate solutions are removed '
-                             'due to falied fitness evaluation: \n{}'.format(sum(_), str(X[_, :])))
+            self._logger.warn(
+                '{} candidate solutions are removed '
+                'due to falied fitness evaluation: \n{}'.format(sum(_), str(X[_, :]))
+            )
             X = X[~_, :] 
-
         return X
         
     def evaluate(self, X):

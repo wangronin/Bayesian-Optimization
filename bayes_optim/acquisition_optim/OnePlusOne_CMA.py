@@ -4,6 +4,7 @@ import numpy as np
 
 from scipy.linalg import solve_triangular
 from typing import Callable, Any, Tuple, List, Union
+from ..utils import dynamic_penalty
 from ..misc import handle_box_constraint, LoggerFormatter
 
 Vector = List[float]
@@ -26,40 +27,102 @@ class OnePlusOne_CMA(object):
         self, 
         dim: int, 
         obj_fun: Callable,
+        h: Callable = None,
+        g: Callable = None,
         x0: Union[str, Vector, np.ndarray] = None,
         sigma0: Union[float] = None, 
         C0: Union[Matrix, np.ndarray] = None, 
         lb: Union[float, str, Vector, np.ndarray] = -np.inf,
         ub: Union[float, str, Vector, np.ndarray] = np.inf,
-        ftarget: Union[int, float] = np.inf,
+        ftarget: Union[int, float] = None,
         max_FEs: Union[int, str] = np.inf, 
         minimize: bool = True,
-        opts: dict = {},
+        xtol: float = 1e-4, 
+        ftol: float = 1e-4,
         verbose: bool = False,
-        logger = None
+        logger: str = None,
+        **kwargs
         ):
+        """ (1+1)-CMA-ES and (1+1)-Cholesky-CMA-ES 
+        Hereafter, we use the following customized 
+        types to describe the usage:
 
+        - Vector = List[float]
+        - Matrix = List[Vector]
+
+        Parameters
+        ----------
+        dim : int
+            Dimensionality of the search space.
+        obj_fun : Callable
+            The objective function to be minimized.
+        h : Callable, optional
+            The equality constraint function, by default None.
+        g : Callable, optional
+            The inequality constraint function, by default None.
+        x0 : Union[str, Vector, np.ndarray], optional
+            The initial guess (by default None) which must fall between lower and 
+            upper bounds, if non-infinite values are provided for `lb` and `ub`. 
+            Note that, `x0` must be provided when `lb` and `ub` both take infinite values.
+        sigma0 : Union[float], optional
+            The initial step size, by default None
+        C0 : Union[Matrix, np.ndarray], optional
+            The initial covariance matrix which must be positive definite, by default None.
+            Any non-positive definite input will be ignored.
+        lb : Union[float, str, Vector, np.ndarray], optional
+            The lower bound of search variables. When it is not a `float`, it must have 
+            the same length as `upper`, by default `-np.inf`.
+        ub : Union[float, str, Vector, np.ndarray], optional
+            The upper bound of search variables. When it is not a `float`, it must have 
+            the same length as `lower`, by default `np.inf`.
+        ftarget : Union[int, float], optional
+            The target value to hit, by default None.
+        max_FEs : Union[int, str], optional
+            Maximal number of function evaluations to make, by default `np.inf`.
+        minimize : bool, optional
+            To minimize or maximize, by default True.
+        xtol : float, optional
+            Absolute error in xopt between iterations that is acceptable for convergence, 
+            by default 1e-4.
+        ftol : float, optional
+            Absolute error in func(xopt) between iterations that is acceptable for convergence, 
+            by default 1e-4.
+        verbose : bool, optional
+            Verbosity of the output, by default False.
+        logger : str, optional
+            Name of the logger file, by default None, which turns off the logging behaviour.
+        """
         self.dim = dim
         self.obj_fun = obj_fun
-        self.ftarget = ftarget
+        self.h = h
+        self.g = g
         self.minimize = minimize
+        self.ftarget = ftarget
         self.lb = set_bounds(lb, self.dim)
         self.ub = set_bounds(ub, self.dim)
         self.sigma0 = self.sigma = sigma0
 
         self.x = x0
         self.max_FEs = int(eval(max_FEs)) if isinstance(max_FEs, str) else max_FEs
-        self._init_aux_var(opts)
+        self._better = lambda a, b: a <= b if self.minimize else lambda a, b: a >= b
+        self._init_aux_var(kwargs)
         self._init_covariance(C0)
 
         self.eval_count = 0
         self.iter_count = 0
         self.xopt = self._x
         self.fopt = np.inf
+        self.__fopt = np.inf   # penalized `fopt`
         self.stop_dict = {}
         self._exception = False
         self.verbose = verbose
         self.logger = logger
+        
+        # parameters for stopping criteria
+        self.xtol = xtol
+        self.ftol = ftol
+        self._delta_x = None 
+        self._delta_f = None
         
     def _init_aux_var(self, opts):
         self.prob_target = opts['p_succ_target'] if 'p_succ_target' in opts else 2 / 11
@@ -150,7 +213,7 @@ class OnePlusOne_CMA(object):
     
     @sigma.setter
     def sigma(self, sigma):
-        if not sigma:
+        if sigma is None:
             assert all(~np.isinf(self.lb)) & all(~np.isinf(self.ub))
             sigma = np.max(self.ub - self.lb) / 5
         assert sigma > 0
@@ -159,7 +222,6 @@ class OnePlusOne_CMA(object):
     def run(self):
         while not self.check_stop():
             self.step()
-            
         return self.xopt, self.fopt, self.stop_dict
             
     def step(self):
@@ -176,12 +238,13 @@ class OnePlusOne_CMA(object):
         Parameters
         ----------
         n_point : int, optional
-            the number of mutants, by default 1
+            The number of mutants, which is always 1. This argument is only meant to keep
+            the function interface consistant.
 
         Returns
         -------
         np.ndarray
-            [description]
+            The mutation vector
         """
         z = np.random.randn(self.dim)
         x = self._x + self.sigma * z.dot(self._A.T)
@@ -191,13 +254,22 @@ class OnePlusOne_CMA(object):
     def tell(self, x, y):
         if hasattr(y, '__iter__'):
             y = y[0]
+
+        _y = y + dynamic_penalty(
+            x, self.iter_count + 1, 
+            self.h, self.g, 
+            minimize=self.minimize
+        )
             
-        success = y < self.fopt
+        success = self._better(_y, self.__fopt)
         z = (x - self._x) / self._sigma
         self._update_step_size(success)
 
         if success:
+            self._delta_f = self.__fopt - _y
+            self._delta_x = np.sqrt(np.sum((self.xopt - x) ** 2))
             self.fopt = y
+            self.__fopt = _y
             self._x = self.xopt = x
             self._update_covariance(z)
 
@@ -212,11 +284,22 @@ class OnePlusOne_CMA(object):
             self._logger.info('xopt: {}\n'.format(self.xopt.tolist()))
 
     def check_stop(self):
-        if self.fopt <= self.ftarget:
-            self.stop_dict['ftarget'] = self.fopt
+        if self.ftarget is not None:
+            if self._better(self.fopt, self.ftarget):
+                self.stop_dict['ftarget'] = self.fopt
             
         if self.eval_count >= self.max_FEs:
             self.stop_dict['FEs'] = self.eval_count
+        
+        # TODO: add this as an option: lower and upper bounds for regular sigmas
+        if self.sigma < 1e-8 or self.sigma > 1e8:
+            self.stop_dict['sigma'] = self.sigma
+
+        if self._delta_f is not None and self._delta_f < self.ftol:
+            self.stop_dict['ftol'] = self._delta_f
+        
+        if self._delta_x is not None and self._delta_x < self.xtol:
+            self.stop_dict['xtol'] = self._delta_x
 
         return bool(self.stop_dict)
 
@@ -234,7 +317,7 @@ class OnePlusOne_CMA(object):
 
     def _update_step_size(self, success):
         self.success_rate = (1 - self.cp) * self.success_rate + self.cp * success
-        self.sigma *= np.exp(
+        self._sigma *= np.exp(
             (self.success_rate - self.prob_target) / (1 - self.prob_target) / self.d
         )
     
@@ -252,7 +335,7 @@ class OnePlusOne_CMA(object):
                 self._exception = True
 
     def _handle_exception(self):
-        if self._sigma < 1e-16 or self._sigma > 1e16:
+        if self._sigma < 1e-8 or self._sigma > 1e8:
             self._exception = 1
         
         if self._exception:

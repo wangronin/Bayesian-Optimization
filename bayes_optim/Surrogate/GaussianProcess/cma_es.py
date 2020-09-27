@@ -9,7 +9,6 @@ import numpy as np
 # import hello as h
 from .boundary_handling import boundary_handling
 from scipy.stats import chi
-from .function import rand_orth_mat
 from numpy.linalg import eigh, LinAlgError, qr, cond
 from numpy.random import randn, rand, shuffle
 from numpy import sqrt, eye, exp, dot, add, inf, triu, isreal, isinf,\
@@ -24,8 +23,6 @@ sum = np.sum
 norm = np.linalg.norm
 any = np.any
 all = np.all
-# pairwise_selection = h.pairwise_selection
-
 
 # TODO: modularize this function, and possiblly fit it into a optimizer class
 class cma_es(object):
@@ -259,21 +256,22 @@ class cma_es(object):
             self.half = half
         # Orthogonal sampling (random rotation)
         elif mode == 5:
-            z = dot(rand_orth_mat(dim), eye(dim))
-            n = dim
-            if dim > _lambda:
-                p = arange(0, dim)
-                shuffle(p)
-                z = z[:, p[0:_lambda]]
-                n = _lambda
-            l = chi.rvs(dim, size=n)
-            sign = rand(n)
-            sign[sign > .5] = 1
-            sign[sign <= .5] = -1
-            z = sign * l * z
-            if dim < _lambda:
-                ss = randn(dim, _lambda-dim)
-                z = append(z, ss, axis=1)
+            pass
+            # z = dot(rand_orth_mat(dim), eye(dim))
+            # n = dim
+            # if dim > _lambda:
+            #     p = arange(0, dim)
+            #     shuffle(p)
+            #     z = z[:, p[0:_lambda]]
+            #     n = _lambda
+            # l = chi.rvs(dim, size=n)
+            # sign = rand(n)
+            # sign[sign > .5] = 1
+            # sign[sign <= .5] = -1
+            # z = sign * l * z
+            # if dim < _lambda:
+            #     ss = randn(dim, _lambda-dim)
+            #     z = append(z, ss, axis=1)
 
         # Orthogonal sampling (Gram-Schmidt)
         elif mode == 6:
