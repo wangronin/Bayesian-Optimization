@@ -229,7 +229,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         
         if not (np.isfinite(self.thetaL).all() and np.isfinite(self.thetaU).all()):
             raise ValueError("all bounds are required finite.")
-        
+
         # hyperparameter optimization parameters
         self.optimizer = optimizer
         self.random_start = random_start
@@ -1095,7 +1095,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             log10theta0 = log10(self.theta_)
         else:
             log10theta0 = log10(self.theta0) if self.theta0 is not None else \
-                np.random.uniform(log10(bounds)[:, 0], log10(bounds)[:, 1])
+                np.random.uniform(log10(self.thetaL), log10(self.thetaU))
 
         if self.estimation_mode == 'noiseless' and self.likelihood == 'concentrated':
             log10param = log10theta0
