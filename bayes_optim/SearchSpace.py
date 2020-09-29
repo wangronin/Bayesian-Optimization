@@ -161,7 +161,7 @@ class SearchSpace(object):
         return X
 
     @classmethod
-    def from_dict(cls, param, space_name=True):
+    def from_dict(cls, param, space_name=True, source = "default"):
         """Create a search space object from input dictionary
 
         Parameters
@@ -174,6 +174,8 @@ class SearchSpace(object):
             components pertaining to this subspace will be grouped together under the key 
             `space_name`, when this solution is converted to a dictionary/json
             (see `SearchSpace.to_dict`).
+        source : string, optional
+            Where the dictionary originates from. Can be either 'default' or 'irace'
 
         Returns
         -------
@@ -181,34 +183,59 @@ class SearchSpace(object):
         """
         assert isinstance(param, dict)
 
-        # construct the search space
-        for i, (k, v) in enumerate(param.items()):
-            bounds = v['range']
-            if not hasattr(bounds[0], '__iter__') or isinstance(bounds[0], str):
-                bounds = [bounds]
+        if source == "default":
+            # construct the search space
+            for i, (k, v) in enumerate(param.items()):
+                bounds = v['range']
+                if not hasattr(bounds[0], '__iter__') or isinstance(bounds[0], str):
+                    bounds = [bounds]
 
-            N = v['N'] if 'N' in v else int(1)
-            bounds *= N
-            name = k if space_name else None
+                N = v['N'] if 'N' in v else int(1)
+                bounds *= N
+                name = k if space_name else None
 
-            # IMPORTANT: name argument is necessary for the variable grouping
-            if v['type'] in ['r', 'real']:                  # real-valued parameter
-                precision = v['precision'] if 'precision' in v else None 
-                scale = v['scale'] if 'scale' in v else None 
-                space_ = ContinuousSpace(
-                    bounds, var_name=k, name=name, 
-                    precision=precision, scale=scale
-                )
-            elif v['type'] in ['i', 'int', 'integer']:      # integer-valued parameter
-                space_ = OrdinalSpace(bounds, var_name=k, name=name)
-            elif v['type'] in ['c', 'cat', 'bool']:         # category-valued parameter
-                space_ = NominalSpace(bounds, var_name=k, name=name) 
-            
-            if i == 0:
-                space = space_
-            else:
-                space += space_
-        return space
+                # IMPORTANT: name argument is necessary for the variable grouping
+                if v['type'] in ['r', 'real']:                  # real-valued parameter
+                    precision = v['precision'] if 'precision' in v else None
+                    scale = v['scale'] if 'scale' in v else None
+                    space_ = ContinuousSpace(
+                        bounds, var_name=k, name=name,
+                        precision=precision, scale=scale
+                    )
+                elif v['type'] in ['i', 'int', 'integer']:      # integer-valued parameter
+                    space_ = OrdinalSpace(bounds, var_name=k, name=name)
+                elif v['type'] in ['c', 'cat', 'bool']:         # category-valued parameter
+                    space_ = NominalSpace(bounds, var_name=k, name=name)
+
+                if i == 0:
+                    space = space_
+                else:
+                    space += space_
+            return space
+        
+        elif source == "irace":
+            param_names = param['names']
+            cont_params = [x for (x,y) in zip(param_names, param['types']) if y == "r"]
+            ordinal_params = [x for (x,y) in zip(param_names, param['types']) if y == "i"]
+            nominal_params = [x for (x,y) in zip(param_names, param['types']) if y == "c" or y == "o"]
+            search_space = None
+            if len(cont_params) > 0:
+                search_space = ContinuousSpace([param['domain'][x] for x in cont_params], var_name=cont_params)
+            if len(ordinal_params) > 0:
+                search_space_ordinal = OrdinalSpace([param['domain'][x] for x in ordinal_params], var_name=ordinal_params)
+                if search_space is None:
+                    search_space = search_space_ordinal
+                else:
+                    search_space += search_space_ordinal
+            if len(nominal_params) > 0:
+                search_space_nominal = NominalSpace([param['domain'][x] for x in nominal_params], var_name=nominal_params)
+                if search_space is None:
+                    search_space = search_space_nominal
+                else:
+                    search_space += search_space_nominal
+            return search_space
+        else:
+            raise ValueError("This source is not currently supported")
 
     @classmethod
     def from_json(cls, file):
