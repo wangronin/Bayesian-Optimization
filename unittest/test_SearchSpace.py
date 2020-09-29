@@ -113,4 +113,4 @@ def test_irace_dict():
     with open(f"ccmaes_params.pkl", "rb") as f:
         params = pickle.load(f)
     a = SearchSpace.from_dict(params, source = "irace")
-    assert(ss.var_name == params["names"])
+    assert(a.var_name == params["names"])
