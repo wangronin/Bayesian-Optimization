@@ -227,7 +227,7 @@ class MultiAcquisitionBO(BO):
             lambda x: 1 / (1 + np.exp((x['alpha'] * 4 - 2) + 0.6 * np.random.randn())) 
         ]
         self._par_name_list = ['t', 'alpha']
-        self._acquisition_par_list = [{'t' : 1}, {'alpha' : 0.1}]
+        self._acquisition_par_list = [{'t' : 1}, {'alpha' : 0.2}]
         self._N_acquisition = len(self._acquisition_fun_list)
 
         for i, _n in enumerate(self._par_name_list):

@@ -102,17 +102,14 @@ class OnePlusOne_CMA(object):
         self.ub = set_bounds(ub, self.dim)
         self.sigma0 = self.sigma = sigma0
 
-        self.x = x0
+        self.eval_count = 0
+        self.iter_count = 0
         self.max_FEs = int(eval(max_FEs)) if isinstance(max_FEs, str) else max_FEs
         self._better = lambda a, b: a <= b if self.minimize else lambda a, b: a >= b
         self._init_aux_var(kwargs)
         self._init_covariance(C0)
 
-        self.eval_count = 0
-        self.iter_count = 0
-        self.xopt = self._x
-        self.fopt = np.inf
-        self.__fopt = np.inf   # penalized `fopt`
+        self.x = x0
         self.stop_dict = {}
         self._exception = False
         self.verbose = verbose
@@ -207,6 +204,18 @@ class OnePlusOne_CMA(object):
             x = (self.ub - self.lb) * np.random.rand(self.dim) + self.lb
         self._x = x
         
+        y = self.evaluate(x)
+        _y = y + dynamic_penalty(
+            x, self.iter_count + 1, 
+            self.h, self.g, 
+            minimize=self.minimize
+        )
+
+        if not hasattr(self, '__fopt') or self._better(_y, self.__fopt):
+            self.fopt = y
+            self.__fopt = _y
+            self.xopt = self._x
+        
     @property
     def sigma(self):
         return self._sigma
@@ -278,7 +287,7 @@ class OnePlusOne_CMA(object):
         self.iter_count += 1
 
         if self.verbose:
-            self._logger.info('iteration {},'.format(self.eval_count))
+            self._logger.info('iteration {}'.format(self.eval_count))
             self._logger.info('fopt: {}'.format(self.fopt)) 
             self._logger.info('sigma: {}'.format(self._sigma)) 
             self._logger.info('xopt: {}\n'.format(self.xopt.tolist()))

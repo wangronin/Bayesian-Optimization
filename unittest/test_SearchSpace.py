@@ -3,6 +3,7 @@ import pytest, sys, re
 from pdb import set_trace
 from copy import deepcopy
 import numpy as np 
+import pickle
 
 sys.path.insert(0, '../')
 from bayes_optim import ContinuousSpace, OrdinalSpace, NominalSpace, Solution, SearchSpace
@@ -107,3 +108,9 @@ def test_from_dict():
 
     a = NominalSpace(['aaa'], name='test')
     print(a.sampling(3))
+    
+def test_irace_dict():
+    with open(f"ccmaes_params.pkl", "rb") as f:
+        params = pickle.load(f)
+    a = SearchSpace.from_dict(params, source = "irace")
+    assert(a.var_name == params["names"])
