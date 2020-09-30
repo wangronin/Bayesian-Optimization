@@ -407,7 +407,9 @@ class baseBO(ABC):
 
         self.tell(X, func_vals)
 
-    def ask(self, n_point=None):
+    def ask(self, n_point=None, seed = None):
+        if isinstance(seed, int):
+            np.random.seed(seed)
         if self.model.is_fitted:
             n_point = self.n_point if n_point is None else self.n_point
             X = self.arg_max_acquisition(n_point=n_point)
