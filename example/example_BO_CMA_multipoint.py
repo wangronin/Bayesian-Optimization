@@ -137,16 +137,16 @@ class _CMA(CMAEvolutionStrategy):
 
 dim = 2
 n_point = 8
-max_FEs = 30 * n_point
-obj_fun = lambda x: benchmarks.himmelblau(x)[0]
-lb, ub = -6, 6
+max_FEs = 16 * n_point
+obj_fun = lambda x: benchmarks.ackley(x)[0]
+lb, ub = -1, 1
 
 search_space = ContinuousSpace([lb, ub]) * dim
 mean = trend.constant_trend(dim, beta=0)    # Ordinary Kriging 
 
 # autocorrelation parameters of GPR
-thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-thetaU = 10 * (ub - lb) * np.ones(dim)
+thetaL = 1e-10 * np.ones(dim)
+thetaU = 10 * np.ones(dim)
 theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
 model = GaussianProcess(
@@ -179,9 +179,41 @@ def post_BO(BO):
     g = BO.model.gradient(xopt)[0]
 
     w, B = np.linalg.eigh(H)
+    w[w <= 0] = 1e-6     # replace the negative eigenvalues by a very small value
+    w_min, w_max = np.min(w), np.max(w)
+
+    # to avoid the conditional number gets too high
+    cond_upper = 1e3
+    delta = (cond_upper * w_min - w_max) / (1 - cond_upper)
+    w += delta
+
     M = np.diag(1 / np.sqrt(w)).dot(B.T)
     H_inv = B.dot(np.diag(1 / w)).dot(B.T)
     sigma0 = np.linalg.norm(M.dot(g)) / np.sqrt(dim - 0.5)
+
+    # use a backtracking line search to determine the initial step-size
+    tau, c = 0.9, .1
+    p = -1 * H_inv.dot(g).ravel()
+    slope = np.inner(g.ravel(), p.ravel())
+
+    if slope > 0:  # this should not happen..
+        p *= -1
+        slope *= -1
+
+    f = lambda x: BO.model.predict(x)
+    while True:
+        _x = (xopt + sigma0 * p).reshape(1, -1)
+        if f(_x) <= f(xopt.reshape(1, -1)) + c * sigma0 * slope:
+            break
+        sigma0 *= tau
+
+    if sigma0 == 0:
+        sigma0 = 1 / 5
+
+    if np.isnan(sigma0):
+        sigma0 = 1 / 5
+        H_inv = np.eye(dim)
+    
     kwargs = {
         'x' : xopt,
         'sigma' : sigma0,
@@ -192,7 +224,6 @@ def post_BO(BO):
 pipe = OptimizerPipeline(
     obj_fun=obj_fun, 
     minimize=True, 
-    n_point=n_point,
     max_FEs=max_FEs, 
     verbose=True
 )
