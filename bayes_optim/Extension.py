@@ -62,7 +62,7 @@ class PCABO(ParallelBO):
 
     def _compute_bounds(self, pca, search_space):
         C = np.array([(l + u) / 2 for l, u in search_space.bounds])
-        radius = norm(np.np.array([l for l, _ in search_space.bounds]) - C)
+        radius = norm(np.array([l for l, _ in search_space.bounds]) - C)
         C = C - pca.mean_ - self._X_mean
         C_ = C.dot(pca.components_.T)
         return [(_ - radius, _ + radius) for _ in C_]
