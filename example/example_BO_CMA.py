@@ -8,6 +8,7 @@ from deap import benchmarks
 from bayes_optim import OptimizerPipeline, BO, Solution, ContinuousSpace
 from bayes_optim.acquisition_optim import OnePlusOne_Cholesky_CMA
 from bayes_optim.Surrogate import GaussianProcess, trend
+from bayes_optim.Extension import warm_start_pycma
 
 class _BO(BO):
     def __init__(self, **kwargs):
@@ -33,7 +34,7 @@ class _BO(BO):
         return super().check_stop()
 
 
-np.random.seed(42)
+np.random.seed(666)
 dim = 2
 max_FEs = 40
 obj_fun = lambda x: benchmarks.himmelblau(x)[0]
@@ -68,59 +69,9 @@ bo = _BO(
 )
 cma = OnePlusOne_Cholesky_CMA(dim=dim, obj_fun=obj_fun, lb=lb, ub=ub)
 
-def post_BO(BO):
-    xopt = np.array(BO.xopt)
-    dim = BO.dim
-
-    H = BO.model.Hessian(xopt)
-    g = BO.model.gradient(xopt)[0]
-
-    w, B = np.linalg.eigh(H)
-    w[w <= 0] = 1e-6     # replace the negative eigenvalues by a very small value
-    w_min, w_max = np.min(w), np.max(w)
-
-    # to avoid the conditional number gets too high
-    cond_upper = 1e3
-    delta = (cond_upper * w_min - w_max) / (1 - cond_upper)
-    w += delta
-
-    M = np.diag(1 / np.sqrt(w)).dot(B.T)
-    H_inv = B.dot(np.diag(1 / w)).dot(B.T)
-    sigma0 = np.linalg.norm(M.dot(g)) / np.sqrt(dim - 0.5)
-
-    # use a backtracking line search to determine the initial step-size
-    tau, c = 0.9, .1
-    p = -1 * H_inv.dot(g).ravel()
-    slope = np.inner(g.ravel(), p.ravel())
-
-    if slope > 0:  # this should not happen..
-        p *= -1
-        slope *= -1
-
-    f = lambda x: BO.model.predict(x)
-    while True:
-        _x = (xopt + sigma0 * p).reshape(1, -1)
-        if f(_x) <= f(xopt.reshape(1, -1)) + c * sigma0 * slope:
-            break
-        sigma0 *= tau
-
-    if sigma0 == 0:
-        sigma0 = 1 / 5
-
-    if np.isnan(sigma0):
-        sigma0 = 1 / 5
-        H_inv = np.eye(dim)
-    
-    kwargs = {
-        'x' : xopt,
-        'sigma' : sigma0,
-        'Cov' : H_inv,
-    }
-    return kwargs
-
 pipe = OptimizerPipeline(
     obj_fun=obj_fun, minimize=True, max_FEs=max_FEs, verbose=True
 )
-pipe.add(bo, transfer=post_BO)
+pipe.add(bo, transfer=warm_start_pycma)
 pipe.add(cma)
 pipe.run()

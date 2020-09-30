@@ -214,6 +214,56 @@ class OptimizerPipeline(baseOptimizer):
     def check_stop(self):
         return self._stop
 
+def warm_start_pycma(BO):
+    xopt = np.array(BO.xopt)
+    dim = BO.dim
+
+    H = BO.model.Hessian(xopt)
+    g = BO.model.gradient(xopt)[0]
+    g /= np.linalg.norm(g)   #  normalize the gradient since its scale can be huge
+
+    w, B = np.linalg.eigh(H)
+    w[w <= 0] = 1e-6     # replace the negative eigenvalues by a very small value
+    w_min, w_max = np.min(w), np.max(w)
+
+    # to avoid the condition number gets too high
+    cond_upper = 1e3
+    delta = (cond_upper * w_min - w_max) / (1 - cond_upper)
+    w += delta
+
+    # the inverse transformation from the Hessian
+    M = np.diag(1 / np.sqrt(w)).dot(B.T)  
+    H_inv = B.dot(np.diag(1 / w)).dot(B.T)
+    p = -1 * H_inv.dot(g).ravel()
+    alpha = np.linalg.norm(p)
+    # sigma0 = np.linalg.norm(M.dot(g)) / np.sqrt(dim - 0.5)
+
+    if np.isnan(alpha):
+        alpha = 2
+        H_inv = np.eye(dim)
+
+    # use a backtracking line search to determine the initial step-size
+    tau, c = 0.9, .1
+    slope = np.inner(g.ravel(), p.ravel())
+
+    if slope > 0:  # this should not happen..
+        p *= -1
+        slope *= -1
+
+    f = lambda x: BO.model.predict(x)
+    while True:
+        _x = (xopt + alpha * p).reshape(1, -1)
+        if f(_x) <= f(xopt.reshape(1, -1)) + c * alpha * slope:
+            break
+        alpha *= tau
+
+    sigma0 = np.linalg.norm(M.dot(alpha * p)) / np.sqrt(dim - 0.5)
+    kwargs = {
+        'x' : xopt,
+        'sigma' : sigma0,
+        'Cov' : H_inv,
+    }
+    return kwargs
 
 class MultiAcquisitionBO(BO):
     def __init__(self, **kwargs):
