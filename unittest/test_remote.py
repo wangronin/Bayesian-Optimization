@@ -1,7 +1,7 @@
-import requests, json
+import requests, json, os, subprocess, shutil, sys, time 
 import numpy as np
 
-data = {
+payload = {
     "search_param" : {
         "emissivity" : {     
             "type" : "r",          
@@ -29,16 +29,13 @@ data = {
         "n_job" : 1,         # 服务器上并行进程数
         "n_point" : 1,       # 每次迭代返回参数值个数
         "max_iter" : 20,     # 最大迭代次数
-        "n_init_sample" : 3, # 初始（第一代）采样点个数，其一般与`n_point`相等
+        "DoE_size" : 3,      # 初始（第一代）采样点个数，其一般与`n_point`相等
         "minimize" : True,   # 最大化/最小化
-        "noisy" : True,      # 设置为True，若我们已知目标值的噪声很大
-        "infill" : 'PI',     # 两种选择优化策略：'PI' --> 保守; 'EI'反之
         "n_obj": 1
     }
 }
 
-address = 'http://207.246.97.250:7200'
-# address = 'http://207.246.97.250:7200'
+address = 'http://127.0.0.1:7200'
 
 def obj_func_dict_eval2(par):
     """范例目标函数，其输入`par`为一个包含了一组候选参数的字典
@@ -53,26 +50,37 @@ def obj_func_dict_eval2(par):
             np.sum(x_r2 ** 2.) + \
                 np.random.randn() * np.sqrt(.5)
 
-# 请求创建新的优化任务，其初始化数据由一个json数据`data`给定
-r = requests.post(address, json=data)
-job_id = r.json()['job_id']
-print('Job id is %s'%(job_id))
+def test_remote():
+    env = os.environ.copy()
+    if not 'PYTHONPATH' in env:
+        env['PYTHONPATH'] = ''
 
-for i in range(20):  
-    print('iteration %d'%(i))
+    env['PYTHONPATH'] = "../" +  env['PYTHONPATH']
 
-    # 请求一组候选参数值用于测试。请求时必须附加之前初始化时返回的任务id
-    r = requests.get(address, params={'ask' : 'null', 'job_id' : job_id})
-    tell_data = r.json()
+    proc = subprocess.Popen([
+        'python3', '-m', 'bayes_optim.Interface', '-w', '7200', '-v'
+    ], env=env)
+    time.sleep(3)
     
-    # 运行并评估优化服务器返回的候选参数
-    y = [obj_func_dict_eval2(_) for _ in tell_data['X']]
-    tell_data['y'] = y 
+    r = requests.post(address, json=payload)
+    job_id = r.json()['job_id']
+    print('Job id is %s'%(job_id))
 
-    print(tell_data)
-    
-    # 将候选参数的目标值`y`返回给服务器
-    r = requests.post(address, json=tell_data)
+    for i in range(3):  
+        print('iteration %d'%(i))
 
-# 在优化任务结束后，我们向服务器发出请求结束掉这个任务并清除服务器上的相关文件
-r = requests.get(address, params={'finalize' : 'null', 'job_id' : job_id})
+        r = requests.get(address, params={'ask' : 'null', 'job_id' : job_id})
+        tell_data = r.json()
+        
+        y = [obj_func_dict_eval2(_) for _ in tell_data['X']]
+        tell_data['y'] = y 
+
+        print(tell_data)
+        r = requests.post(address, json=tell_data)
+
+    r = requests.get(address, params={'finalize' : 'null', 'job_id' : job_id})
+
+    proc.kill()
+    shutil.rmtree('7200')
+
+test_remote()

@@ -1,4 +1,4 @@
-import requests, json
+import requests, json, subprocess, time, shutil, os
 import numpy as np
 
 data = {
@@ -29,16 +29,13 @@ data = {
         "n_job" : 1,         # 服务器上并行进程数
         "n_point" : 1,       # 每次迭代返回参数值个数
         "max_iter" : 20,     # 最大迭代次数
-        "n_init_sample" : 3, # 初始（第一代）采样点个数，其一般与`n_point`相等
+        "DoE_size" : 3,      # 初始（第一代）采样点个数，其一般与`n_point`相等
         "minimize" : True,   # 最大化/最小化
-        "noisy" : True,      # 设置为True，若我们已知目标值的噪声很大
-        "infill" : 'PI',     # 两种选择优化策略：'PI' --> 保守; 'EI'反之
         "n_obj": 1
     }
 }
 
-address = 'http://207.246.97.250:7200'
-# address = 'http://207.246.97.250:7200'
+address = 'http://127.0.0.1:7200'
 
 def obj_func_dict_eval2(par):
     """范例目标函数，其输入`par`为一个包含了一组候选参数的字典
@@ -53,15 +50,27 @@ def obj_func_dict_eval2(par):
             np.sum(x_r2 ** 2.) + \
                 np.random.randn() * np.sqrt(.5)
 
+env = os.environ.copy()
+if not 'PYTHONPATH' in env:
+    env['PYTHONPATH'] = ''
+
+env['PYTHONPATH'] = "../" +  env['PYTHONPATH']
+
+# 我们先启动优化器服务进程
+proc = subprocess.Popen([
+    'python3', '-m', 'bayes_optim.Interface', '-w', '7200', '-v'
+], env=env)
+time.sleep(3)
+
 # 请求创建新的优化任务，其初始化数据由一个json数据`data`给定
 r = requests.post(address, json=data)
 job_id = r.json()['job_id']
 print('Job id is %s'%(job_id))
 
-for i in range(20):  
+for i in range(3):  
     print('iteration %d'%(i))
 
-    # 请求一组候选参数值用于测试。请求时必须附加之前初始化时返回的任务id
+    # 请求一组候选参数值用于测试。请求时必须附加之前初始化时返回的任务`id`
     r = requests.get(address, params={'ask' : 'null', 'job_id' : job_id})
     tell_data = r.json()
     
@@ -70,9 +79,10 @@ for i in range(20):
     tell_data['y'] = y 
 
     print(tell_data)
-    
-    # 将候选参数的目标值`y`返回给服务器
     r = requests.post(address, json=tell_data)
 
 # 在优化任务结束后，我们向服务器发出请求结束掉这个任务并清除服务器上的相关文件
 r = requests.get(address, params={'finalize' : 'null', 'job_id' : job_id})
+
+proc.kill()
+shutil.rmtree('7200')

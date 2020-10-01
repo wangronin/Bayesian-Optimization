@@ -3,22 +3,18 @@
 @email: wangronin@gmail.com
 """
 
-from pdb import set_trace
 import os, sys, json, logging, dill
 import numpy as np
 
 import urllib.parse as urlparse
 from optparse import OptionParser
 from http.server import BaseHTTPRequestHandler, HTTPServer
-    
-from GaussianProcess import GaussianProcess
-from GaussianProcess.trend import constant_trend
 
-from BayesOpt.utils import Daemon
-from BayesOpt import ParallelBO, SearchSpace
-from BayesOpt.SearchSpace import ContinuousSpace
-from BayesOpt.Surrogate import RandomForest
-from BayesOpt.misc import random_string
+from .BayesOpt import ParallelBO, BO
+from .SearchSpace import SearchSpace, ContinuousSpace
+from .Surrogate import RandomForest, GaussianProcess, trend
+from .misc import random_string
+from .utils import Daemon
 
 # Configuration request Handler
 class RemoteBO(BaseHTTPRequestHandler, object):
@@ -97,6 +93,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 job_id = self._get_job_id(info)
                 self.logger.info('finalize request from job %s'%job_id)
                 dump_file = self._get_dump_file(job_id)
+                # TODO: decide whether the data file should be removed
                 # data_file = os.path.join(self.work_dir, job_id + '.csv')
             except Exception as ex:
                 self.logger.error(str(ex))
@@ -114,8 +111,10 @@ class RemoteBO(BaseHTTPRequestHandler, object):
         search_space = SearchSpace.from_dict(search_param, space_name=False)
         n_obj = bo_param['n_obj']
         max_FEs = bo_param['max_iter'] * bo_param['n_point'] + bo_param['DoE_size']
+
         del bo_param['max_iter']
         del bo_param['n_obj']
+        _BO = ParallelBO if bo_param['n_point'] > 1 else BO
 
         # TODO: turn this off until the feature importance of GPR is implemented
         if len(search_space.id_N) == 0 and len(search_space.id_O) == 0 and 11 < 2:
@@ -123,14 +122,14 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             lb, ub = np.atleast_2d(search_space.bounds).T 
             # autocorrelation parameters of GPR
             thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-            thetaU = 2 * (ub - lb) * np.ones(dim)
+            thetaU = 10 * (ub - lb) * np.ones(dim)
             theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
-            mean = constant_trend(dim, beta=0) 
+            mean = trend.constant_trend(dim, beta=0) 
             model = GaussianProcess(
                 mean=mean, corr='matern',
                 theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-                nugget=1e-10, noise_estim=True,
+                nugget=1e-5, noise_estim=False,
                 optimizer='BFGS', wait_iter=5, random_start=30 * dim,
                 likelihood='concentrated', eval_budget=200 * dim
             )
@@ -140,7 +139,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             optimizer = 'MIES'
 
         if n_obj == 1:   # single-objective Bayesian optimizer
-            opt = ParallelBO(
+            opt = _BO(
                 search_space=search_space, 
                 obj_fun=None,
                 model=model, 
@@ -234,7 +233,6 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                     rsp_data[job_id] = {}
                     continue
                 
-                
                 feature_name = opt.search_space.var_name
                 levels = opt.search_space.levels
                 imp = model.feature_importances_ if hasattr(model, 'feature_importances_')\
@@ -310,10 +308,11 @@ class RemoteBODaemon(Daemon):
         self.logger.propagate = False
 
     def run(self, host, port, verbose, work_dir, log_file):
-        print('initialize the remote BO server...')
+        # print('initialize the remote BO server...')
+        
+        work_dir = os.path.join(os.path.expanduser('~'), 'BO-' + str(port)) \
+            if work_dir is None else work_dir
 
-        work_dir = str(port) if len(work_dir) == 0 else work_dir
-        work_dir = os.path.join(os.path.expanduser('~'), work_dir)
         if not os.path.exists(work_dir):
             os.makedirs(work_dir)
 
@@ -325,7 +324,7 @@ class RemoteBODaemon(Daemon):
         RemoteBO.work_dir = work_dir
         httpd = HTTPServer((host, port), RemoteBO)
 
-        print('runnning...')
+        # print('runnning...')
         httpd.serve_forever()
   
 if __name__ == '__main__':
@@ -341,7 +340,7 @@ if __name__ == '__main__':
                           help='log file name', default='log', type='string')
     
     opt_parser.add_option('-w', '--working-dir', action='store', dest='work_dir', 
-                          help='directory of temporary files', default='', type='string')
+                          help='directory of temporary files', default=None, type='string')
     
     opt_parser.add_option('-v', '--verbose', action='store_true', dest='verbose', 
                           help='foreground/background mode', default=False)
@@ -354,4 +353,6 @@ if __name__ == '__main__':
     if options.verbose:
         dm.run(**options.__dict__)
     else:
-        dm.start(**options.__dict__)
+        pid = dm.start(**options.__dict__)
+        sys.stdout.write(str(pid))
+        sys.exit(0)
