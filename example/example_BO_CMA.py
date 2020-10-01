@@ -5,14 +5,11 @@ import numpy as np
 sys.path.insert(0, '../')
 
 from deap import benchmarks
-from BayesOpt import OptimizerPipeline, BO, SearchSpace, Solution
-from BayesOpt.optimizer import OnePlusOne_Cholesky_CMA
+from bayes_optim import OptimizerPipeline, BO, Solution, ContinuousSpace
+from bayes_optim.acquisition_optim import OnePlusOne_Cholesky_CMA
+from bayes_optim.Surrogate import GaussianProcess, trend
 
-from BayesOpt.SearchSpace import ContinuousSpace
-from GaussianProcess import GaussianProcess
-from GaussianProcess.trend import constant_trend
-
-class _BO(ParallelBO):
+class _BO(BO):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._hist_EI = np.zeros(3)
@@ -37,14 +34,13 @@ class _BO(ParallelBO):
 
 
 np.random.seed(42)
-
 dim = 2
-max_FEs = 100
+max_FEs = 80
 obj_fun = lambda x: benchmarks.griewank(x)[0]
 lb, ub = -600, 600
 
 search_space = ContinuousSpace([lb, ub]) * dim
-mean = constant_trend(dim, beta=None)    
+mean = trend.constant_trend(dim, beta=None)    
 
 # autocorrelation parameters of GPR
 thetaL = 1e-10 * (ub - lb) * np.ones(dim)
@@ -54,7 +50,7 @@ theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 model = GaussianProcess(
     mean=mean, corr='squared_exponential',
     theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-    nugget=1e-6, noise_estim=False,
+    nugget=1e-5, noise_estim=False,
     optimizer='BFGS', wait_iter=5, random_start=5 * dim,
     eval_budget=100 * dim
 )
@@ -83,9 +79,16 @@ def post_BO(BO):
     M = np.diag(1 / np.sqrt(w)).dot(B.T)
     H_inv = B.dot(np.diag(1 / w)).dot(B.T)
     sigma0 = np.linalg.norm(M.dot(g)) / np.sqrt(dim - 0.5)
+    if sigma0 == 0:
+        sigma0 = 1 / 5
+
+    if np.isnan(sigma0):
+        sigma0 = 1 / 5
+        H_inv = np.eye(dim)
 
     kwargs = {
         'x' : xopt,
+        'fopt': BO.fopt,
         'sigma' : sigma0,
         'C' : H_inv,
     }

@@ -3,57 +3,62 @@ import numpy as np
 
 data = {
     "search_param" : {
-        "continuous" : {
-            "type" : "r",     # 实数型变量
-            "range" : [-5, 5],
-            "N" : 2           # 复制该变量N次
+        "emissivity" : {     
+            "type" : "r",          
+            "range" : [0.95, 1],
+            "N" : 2,
+            "precision" : 2    
         },
 
-        "ordinal" : {
-            "type" : "i",     # 整数型变量
-            "range" : [-100, 100],
-            "N" : 1
+        "offset" : {       
+            "type" : "r",
+            "range" : [-10, 10],    
+            "N" : 2,
+            "precision" : 2
         },
 
-        "nominal" : {
-            "type" : "c",     # 离散型变量 (类别)
-            "range" : ['OK', 'A', 'B', 'C', 'D', 'E'],
-            "N" : 1
-        }
+        "power" : {           
+            "type" : "r",
+            "range" : [3.2, 3.8],    
+            "N" : 1,
+            "precision" : 2  # 数值精度：小数点后位数
+        },
     },
 
     "bo_param" : {
-        "n_job" : 3,         # 服务器上并行进程数
-        "n_point" : 3,       # 每次迭代返回参数值个数
+        "n_job" : 1,         # 服务器上并行进程数
+        "n_point" : 1,       # 每次迭代返回参数值个数
         "max_iter" : 20,     # 最大迭代次数
-        "DoE_size" : 3, # 初始（第一代）采样点个数，其一般与`n_point`相等
-        "minimize" : True,
+        "n_init_sample" : 3, # 初始（第一代）采样点个数，其一般与`n_point`相等
+        "minimize" : True,   # 最大化/最小化
+        "noisy" : True,      # 设置为True，若我们已知目标值的噪声很大
+        "infill" : 'PI',     # 两种选择优化策略：'PI' --> 保守; 'EI'反之
         "n_obj": 1
     }
 }
 
-# address = 'http://207.246.97.250:7200'
 address = 'http://207.246.97.250:7200'
+# address = 'http://207.246.97.250:7200'
 
-def obj_func_dict_eval(par):
+def obj_func_dict_eval2(par):
     """范例目标函数，其输入`par`为一个包含了一组候选参数的字典
     这些参数在字典中的键值是`search_space`中给出的参数名，如'continuous'，'nominal'
     这个函数应该返回由用户自定义的目标值。在这里我们给出了一个很简单的范例，其不蕴含任何实际意义
     """
-    x_r = np.asarray([par[k] for k in par.keys() if k.startswith('continuous')])
-    x_i, x_d = par['ordinal'], par['nominal']
-    if x_d == 'OK':
-        tmp = 0
-    else:
-        tmp = 1
-    return np.sum(x_r ** 2.) + abs(x_i - 10) / 123. + tmp * 2.
+    x_r = np.asarray([par[k] for k in par.keys() if k.startswith('emissivity')])
+    x_r2 = np.asarray([par[k] for k in par.keys() if k.startswith('offset')])
+    x_i = par['power']
+    return np.sum(x_r ** 2.) + \
+        abs(x_i - 3.5) + \
+            np.sum(x_r2 ** 2.) + \
+                np.random.randn() * np.sqrt(.5)
 
 # 请求创建新的优化任务，其初始化数据由一个json数据`data`给定
 r = requests.post(address, json=data)
 job_id = r.json()['job_id']
 print('Job id is %s'%(job_id))
 
-for i in range(2):  
+for i in range(20):  
     print('iteration %d'%(i))
 
     # 请求一组候选参数值用于测试。请求时必须附加之前初始化时返回的任务id
@@ -61,7 +66,7 @@ for i in range(2):
     tell_data = r.json()
     
     # 运行并评估优化服务器返回的候选参数
-    y = [obj_func_dict_eval(_) for _ in tell_data['X']]
+    y = [obj_func_dict_eval2(_) for _ in tell_data['X']]
     tell_data['y'] = y 
 
     print(tell_data)

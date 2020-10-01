@@ -3,7 +3,7 @@ import sys, os
 import numpy as np
 
 sys.path.insert(0, '../')
-from BayesOpt import Solution
+from bayes_optim import Solution
 
 def test_1D():
     s = Solution(

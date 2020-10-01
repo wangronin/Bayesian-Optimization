@@ -2,8 +2,9 @@ import numpy as np
 import sys, os
 sys.path.insert(0, '../')
 
-from BayesOpt import ContinuousSpace, OrdinalSpace, NominalSpace, RandomForest
-from BayesOpt.Extension import MultiAcquisitionBO
+from bayes_optim import ContinuousSpace, OrdinalSpace, NominalSpace
+from bayes_optim.Surrogate import RandomForest
+from bayes_optim.Extension import MultiAcquisitionBO
 
 dim_r = 2  # dimension of the real values
 def obj_fun(x):

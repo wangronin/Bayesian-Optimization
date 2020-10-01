@@ -4,8 +4,8 @@ import sys
 import numpy as np
 sys.path.insert(0, '../')
 
-from BayesOpt import BO, ParallelBO, ContinuousSpace, OrdinalSpace, \
-    NominalSpace, RandomForest
+from bayes_optim import ParallelBO, ContinuousSpace, OrdinalSpace, NominalSpace
+from bayes_optim.Surrogate import RandomForest
 
 seed = 666
 np.random.seed(seed)

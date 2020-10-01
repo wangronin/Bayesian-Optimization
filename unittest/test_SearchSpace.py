@@ -3,9 +3,10 @@ import pytest, sys, re
 from pdb import set_trace
 from copy import deepcopy
 import numpy as np 
+import pickle
 
 sys.path.insert(0, '../')
-from BayesOpt import ContinuousSpace, OrdinalSpace, NominalSpace, from_dict, Solution
+from bayes_optim import ContinuousSpace, OrdinalSpace, NominalSpace, Solution, SearchSpace
 
 np.random.seed(1)
 
@@ -25,10 +26,12 @@ def test_NominalSpace():
 
 def test_precision():
     C = ContinuousSpace([-5, 5], precision=2) * 3 
-    X = [re.sub(r'^-?\d+\.(\d+)$', r'\1', str(_)) for _ in C.sampling(1, method='LHS')[0]]
+    X = C.round(C.sampling(1, method='LHS'))
+    X = [re.sub(r'^-?\d+\.(\d+)$', r'\1', str(_)) for _ in X[0]]
     assert all([len(x) <= 2 for x in X])
 
-    X = [re.sub(r'^-?\d+\.(\d+)$', r'\1', str(_)) for _ in C.sampling(1, method='uniform')[0]]
+    X = C.round(C.sampling(1, method='uniform'))
+    X = [re.sub(r'^-?\d+\.(\d+)$', r'\1', str(_)) for _ in X[0]]
     assert all([len(x) <= 2 for x in X])
 
     X = np.random.rand(2, 3) * 10 - 5
@@ -86,7 +89,7 @@ def test_ProductSpace():
     print(C.var_name)
 
 def test_from_dict():
-    a = from_dict(
+    a = SearchSpace.from_dict(
         {
             "activation" : 
             {
@@ -105,3 +108,9 @@ def test_from_dict():
 
     a = NominalSpace(['aaa'], name='test')
     print(a.sampling(3))
+    
+def test_irace_dict():
+    with open(f"ccmaes_params.pkl", "rb") as f:
+        params = pickle.load(f)
+    a = SearchSpace.from_dict(params, source = "irace")
+    assert(a.var_name == params["names"])

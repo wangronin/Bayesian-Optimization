@@ -9,10 +9,8 @@ from copy import copy
 from deap import benchmarks
 from typing import Callable, Any, Tuple, List, Union
 
-from BayesOpt import OptimizerPipeline, ParallelBO, SearchSpace
-from BayesOpt.SearchSpace import ContinuousSpace
-from GaussianProcess import GaussianProcess
-from GaussianProcess.trend import constant_trend
+from bayes_optim import OptimizerPipeline, ParallelBO, ContinuousSpace
+from bayes_optim.Surrogate import GaussianProcess, trend
 
 from cma import CMAEvolutionStrategy, CMAOptions
 
@@ -144,7 +142,7 @@ obj_fun = lambda x: benchmarks.himmelblau(x)[0]
 lb, ub = -6, 6
 
 search_space = ContinuousSpace([lb, ub]) * dim
-mean = constant_trend(dim, beta=0)    # Ordinary Kriging 
+mean = trend.constant_trend(dim, beta=0)    # Ordinary Kriging 
 
 # autocorrelation parameters of GPR
 thetaL = 1e-10 * (ub - lb) * np.ones(dim)
