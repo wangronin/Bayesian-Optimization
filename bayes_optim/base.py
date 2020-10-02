@@ -156,7 +156,7 @@ class baseBO(ABC):
             by default None.
         eval_type : str, optional
             The type of input argument allowed by `obj_func` or `parallel_obj_fun`: 
-            it could be either 'list' or 'dict', by default 'list'.
+            it could be either 'list', 'dict' or 'dataframe', by default 'list'.
         DoE_size : int, optional
             The size of inital Design of Experiment (DoE), by default None.
         warm_data: Tuple, optional
@@ -348,7 +348,10 @@ class baseBO(ABC):
         elif self._eval_type == 'dict':
             self._to_pheno = lambda x: x.to_dict(space=self._search_space)
             self._to_geno = lambda x: Solution.from_dict(x, space=self._search_space)
-
+        elif self._eval_type == 'dataframe':
+            self._to_pheno = lambda x: x.to_dataframe()
+            self._to_geno = lambda x: Solution.from_dataframe(x)
+            
     def _set_internal_optimization(self, **kwargs):
         if 'optimizer' in kwargs:
             self._optimizer = kwargs['optimizer']

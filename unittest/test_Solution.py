@@ -70,3 +70,13 @@ def test_from_dict():
     assert np.all(s == s2)
     assert isinstance(s.to_dict(orient='index', with_index=True), dict)
     assert isinstance(s.to_dict(orient='var', with_index=True), dict)
+    
+def test_to_dataframe():
+    s = Solution(np.random.randn(10, 5))
+    print(s.to_dataframe())
+    
+def test_from_dataframe():
+    s = Solution(np.random.randn(10, 5))
+    dt = s.to_dict(orient='index')
+    s2 = Solution.from_dataframe(dt)
+    assert np.all(s == s2)
