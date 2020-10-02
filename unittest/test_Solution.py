@@ -77,6 +77,6 @@ def test_to_dataframe():
     
 def test_from_dataframe():
     s = Solution(np.random.randn(10, 5))
-    dt = s.to_dataframe(orient='index')
+    dt = s.to_dataframe()
     s2 = Solution.from_dataframe(dt)
     assert np.all(s == s2)
