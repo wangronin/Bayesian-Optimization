@@ -410,7 +410,7 @@ class baseBO(ABC):
 
         self.tell(X, func_vals)
 
-    def ask(self, n_point=None, seed = None):
+    def ask(self, n_point=None, seed=None):
         if isinstance(seed, int):
             np.random.seed(seed)
         if self.model.is_fitted:
