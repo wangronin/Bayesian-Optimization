@@ -2,8 +2,6 @@ import numpy as np
 import sys, os
 sys.path.insert(0, '../')
 
-from deap import benchmarks
-
 from bayes_optim import ParallelBO, BO, ContinuousSpace, OrdinalSpace, NominalSpace
 from bayes_optim.Surrogate import RandomForest
 
