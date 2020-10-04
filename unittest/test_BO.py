@@ -30,12 +30,12 @@ def test_pickling():
         likelihood='concentrated', eval_budget=100 * dim
     )
     opt = BO(
-        search_space=space, 
-        obj_fun=fitness, 
-        model=model, 
+        search_space=space,
+        obj_fun=fitness,
+        model=model,
         DoE_size=5,
-        max_FEs=10, 
-        verbose=True, 
+        max_FEs=10,
+        verbose=True,
         n_point=1
     )
     opt.step()
@@ -69,12 +69,12 @@ def test_pickling2():
         likelihood='concentrated', eval_budget=100 * dim
     )
     opt = BO(
-        search_space=space, 
-        obj_fun=fitness, 
-        model=model, 
+        search_space=space,
+        obj_fun=fitness,
+        model=model,
         DoE_size=5,
-        max_FEs=10, 
-        verbose=True, 
+        max_FEs=10,
+        verbose=True,
         n_point=1,
         logger='log'
     )
@@ -110,12 +110,12 @@ def test_continuous():
     )
 
     opt = BO(
-        search_space=space, 
-        obj_fun=fitness, 
-        model=model, 
+        search_space=space,
+        obj_fun=fitness,
+        model=model,
         DoE_size=5,
-        max_FEs=10, 
-        verbose=True, 
+        max_FEs=10,
+        verbose=True,
         n_point=1
     )
     print(opt.run())
@@ -136,10 +136,10 @@ def test_mix_space():
     model = RandomForest(levels=search_space.levels)
 
     opt = ParallelBO(
-        search_space=search_space, 
-        obj_fun=obj_fun, 
-        model=model, 
-        max_FEs=6, 
+        search_space=search_space,
+        obj_fun=obj_fun,
+        model=model,
+        max_FEs=6,
         DoE_size=3,    # the initial DoE size
         eval_type='dict',
         acquisition_fun='MGFI',
@@ -177,12 +177,12 @@ def test_warm_data():
         likelihood='concentrated', eval_budget=100 * dim
     )
     opt = BO(
-        search_space=space, 
-        obj_fun=fitness, 
-        model=model, 
+        search_space=space,
+        obj_fun=fitness,
+        model=model,
         warm_data=(X, y),
-        max_FEs=10, 
-        verbose=True, 
+        max_FEs=10,
+        verbose=True,
         n_point=1
     )
     assert np.all(np.asarray(opt.data) == np.asarray(opt.warm_data))
