@@ -414,7 +414,8 @@ class baseBO(ABC):
         if isinstance(seed, int):
             np.random.seed(seed)
         if self.model.is_fitted:
-            n_point = self.n_point if n_point is None else self.n_point
+            if n_point is None:
+                n_point = self.n_point
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
 
@@ -469,7 +470,7 @@ class baseBO(ABC):
             msg = 'iteration {}, {} infill points:'.format(self.iter_count, len(X))
 
         self._logger.info(msg)
-        X_ = self._to_pheno(X)
+#         X_ = self._to_pheno(X)
         
         for i in range(len(X)):
             X[i].fitness = func_vals[i]
@@ -480,7 +481,7 @@ class baseBO(ABC):
 
             self._logger.info(
                 '#{} - fitness: {}, solution: {}'.format(
-                    i + 1, func_vals[i], X_[i]
+                    i + 1, func_vals[i], X[i].to_dict
                 )
             )
 

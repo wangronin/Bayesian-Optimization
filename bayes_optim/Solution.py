@@ -269,6 +269,8 @@ class Solution(np.ndarray):
     @classmethod
     def from_dataframe(cls, x, space=None):
         if isinstance(x, pd.DataFrame):
+            #Remove columns containing the n_evals and funtion values
+            x = x.drop(["f","n_eval"], 1, errors='ignore')
             var_name = list(x.columns.values)
             res = cls.__new__(cls, x=list(x.values), var_name=var_name)
         else:
@@ -277,7 +279,7 @@ class Solution(np.ndarray):
     
     def to_dataframe(self, space=None):
         var_name = self.var_name.tolist()
-        dt = pd.DataFrame(self.tolist(), columns = var_name)
+        dt = pd.DataFrame(np.atleast_2d(self.tolist()), columns = var_name)
         dt['n_eval'] = self.n_eval.tolist()
         fname = self.fitness_name
         if isinstance(fname, list):
