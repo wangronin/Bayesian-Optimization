@@ -280,11 +280,11 @@ class baseBO(ABC):
         self.logger = logger
         self.random_seed = random_seed
 
-        self._set_internal_optimization(**acquisition_optimization)
         self._get_best = np.min if self.minimize else np.max
         self._eval_type = eval_type
         self._init_flatfitness_trial = 2
         self._set_aux_vars()
+        self._set_internal_optimization(**acquisition_optimization)
         self.warm_data = warm_data
 
     @property
@@ -441,6 +441,7 @@ class baseBO(ABC):
             search_space=self._search_space,
             h=self.h,
             g=self.g,
+            eval_type=self._eval_type,
             eval_budget=self.AQ_max_FEs,
             n_restart=self.AQ_n_restart,
             wait_iter=self.AQ_wait_iter,

@@ -104,7 +104,7 @@ class OnePlusOne_CMA(object):
         self.eval_count = 0
         self.iter_count = 0
         self.max_FEs = int(eval(max_FEs)) if isinstance(max_FEs, str) else max_FEs
-        self._better = lambda a, b: a <= b if self.minimize else lambda a, b: a >= b
+        self._better = (lambda a, b: a <= b) if self.minimize else (lambda a, b: a >= b)
         self._init_aux_var(kwargs)
         self._init_covariance(C0)
         self._init_logging_var()
