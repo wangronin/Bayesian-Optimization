@@ -11,6 +11,7 @@ from typing import Callable, Any, Tuple, List, Union
 
 from bayes_optim import OptimizerPipeline, ParallelBO, ContinuousSpace
 from bayes_optim.Surrogate import GaussianProcess, trend
+from bayes_optim.Extension import warm_start_pycma
 
 from cma import CMAEvolutionStrategy, CMAOptions
 
@@ -137,16 +138,16 @@ class _CMA(CMAEvolutionStrategy):
 
 dim = 2
 n_point = 8
-max_FEs = 30 * n_point
-obj_fun = lambda x: benchmarks.himmelblau(x)[0]
-lb, ub = -6, 6
+max_FEs = 16 * n_point
+obj_fun = lambda x: benchmarks.ackley(x)[0]
+lb, ub = -1, 1
 
 search_space = ContinuousSpace([lb, ub]) * dim
 mean = trend.constant_trend(dim, beta=0)    # Ordinary Kriging 
 
 # autocorrelation parameters of GPR
-thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-thetaU = 10 * (ub - lb) * np.ones(dim)
+thetaL = 1e-10 * np.ones(dim)
+thetaU = 10 * np.ones(dim)
 theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
 model = GaussianProcess(
@@ -171,31 +172,12 @@ bo = _BO(
 )
 cma = _CMA(dim=dim, popsize=n_point, lb=lb, ub=ub)
 
-def post_BO(BO):
-    xopt = np.array(BO.xopt)
-    dim = BO.dim
-
-    H = BO.model.Hessian(xopt)
-    g = BO.model.gradient(xopt)[0]
-
-    w, B = np.linalg.eigh(H)
-    M = np.diag(1 / np.sqrt(w)).dot(B.T)
-    H_inv = B.dot(np.diag(1 / w)).dot(B.T)
-    sigma0 = np.linalg.norm(M.dot(g)) / np.sqrt(dim - 0.5)
-    kwargs = {
-        'x' : xopt,
-        'sigma' : sigma0,
-        'Cov' : H_inv,
-    }
-    return kwargs
-
 pipe = OptimizerPipeline(
     obj_fun=obj_fun, 
     minimize=True, 
-    n_point=n_point,
     max_FEs=max_FEs, 
     verbose=True
 )
-pipe.add(bo, transfer=post_BO)
+pipe.add(bo, transfer=warm_start_pycma)
 pipe.add(cma)
 pipe.run()
