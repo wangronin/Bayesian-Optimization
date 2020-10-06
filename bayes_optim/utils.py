@@ -63,7 +63,7 @@ def dynamic_penalty(X, t, equality=None, inequality=None, C=0.5, alpha=1, beta=2
     if inequality is not None:
         v = np.atleast_2d(list(map(inequality, X))).reshape(N, -1)
         v[v <= 0] = 0
-        p += np.sum(np.abs(v) ** beta, axis=1)
+        p += np.sum(v ** beta, axis=1)
 
     p = (-1) ** (not minimize) * (C * t) ** alpha * p
     return p
