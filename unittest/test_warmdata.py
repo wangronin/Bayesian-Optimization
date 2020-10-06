@@ -30,12 +30,10 @@ def test_warmdata():
         model=model,
         minimize=True,
         eval_type='list',
-        max_FEs=5,
+        max_FEs=10,
         verbose=True,
         acquisition_fun='EI',
         warm_data=(X, y)
     )
     opt.run()
-    assert opt.data.shape[0] == 15
-
-test_warmdata()
+    assert opt.data.shape[0] == 20

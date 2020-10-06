@@ -34,8 +34,7 @@ class OnePlusOne_CMA(object):
         **kwargs
         ):
         """ (1+1)-CMA-ES and (1+1)-Cholesky-CMA-ES
-        Hereafter, we use the following customized
-        types to describe the usage:
+        Hereafter, we use the following customized types to describe the usage:
 
         - Vector = List[float]
         - Matrix = List[Vector]

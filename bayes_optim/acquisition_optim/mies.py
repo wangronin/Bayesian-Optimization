@@ -195,17 +195,20 @@ class MIES(object):
         self.fitness = fitness[_]
 
     def evaluate(self, pop, return_penalized=True):
+        X = pop[:, self._id_var]
+        if self._eval_type == 'list':
+            X = X.tolist()
+        elif self._eval_type == 'dict':
+            X = X.to_dict()
+
         if len(pop.shape) == 1:  # one solution
-            pop.fitness = np.asarray(self.obj_func(pop[self._id_var]))
+            # make `np.array` here is not needed
+            pop.fitness = np.array(self.obj_func(X))
         else:                    # for a population
-            pop.fitness = self.obj_func(pop[:, self._id_var])
+            pop.fitness = self.obj_func(X)
+            # pop.fitness = [self.obj_func(x) for x in X]
 
         self.eval_count += pop.N
-        if self._eval_type == 'list':
-            X = pop
-        elif self._eval_type == 'dict':
-            X = [self._space.to_dict(x) for x in pop]
-
         _penalized_fitness = pop.fitness + \
             self._penalty_func(
                 X, self.iter_count + 1,
@@ -214,69 +217,78 @@ class MIES(object):
             )
         return (_penalized_fitness if return_penalized else pop.fitness)
 
-    def mutate(self, individual):
+    def mutate(self, X):
         if self.N_r:
-            self._mutate_r(individual)
+            self._mutate_r(X)
         if self.N_i:
-            self._mutate_i(individual)
+            self._mutate_i(X)
         if self.N_d:
-            self._mutate_d(individual)
-        return individual
+            self._mutate_d(X)
+        return X
 
-    def _mutate_r(self, individual):
-        sigma = np.asarray(individual[self._id_sigma], dtype='float')
+    def _mutate_r(self, X):
+        n_point = X.shape[0]
+        sigma = np.array(X[:, self._id_sigma], dtype=float).reshape(n_point, -1)
+        X_ = np.array(X[:, self.id_r], dtype=float)
+
         # mutate step-sizes
         if len(self._id_sigma) == 1:
-            sigma = sigma * exp(self.tau_r * randn())
+            sigma *= exp(self.tau_r * randn(n_point, 1))
         else:
-            sigma = sigma * exp(self.tau_r * randn() + self.tau_p_r * randn(self.N_r))
+            sigma *= exp(self.tau_r * randn(n_point, 1) + \
+                self.tau_p_r * randn(n_point, self.N_r))
 
         # Gaussian mutation
-        R = randn(self.N_r)
-        x = np.asarray(individual[self.id_r], dtype='float')
-        x_ = x + sigma * R
+        R = randn(n_point, self.N_r)
+        _X = X_ + sigma * R
 
         # Interval Bounds Treatment
-        x_ = handle_box_constraint(x_, self.bounds_r[:, 0], self.bounds_r[:, 1])
+        _X = handle_box_constraint(_X, self.bounds_r[:, 0], self.bounds_r[:, 1])
 
         # TODO: check if this interval boundary handling works with penalty functions
         # the constraint handling method will (by chance) turn really bad cadidates
         # (the one with huge sigmas) to good ones and hence making the step size explode
-        # Repair the step-size if x_ is out of bounds
-        if 11 < 2:
-            individual[self._id_sigma] = np.abs((x_ - x) / R)
+        # Repair the step-size if `_X` is out of bounds
+        if 1 < 2:
+            X[:, self._id_sigma] = np.abs((_X - X_) / R)
         else:
-            individual[self._id_sigma] = sigma
-        individual[self.id_r] = x_
+            X[:, self._id_sigma] = sigma
+        X[:, self.id_r] = _X
 
-    def _mutate_i(self, individual):
-        eta = np.asarray(individual[self._id_eta].tolist(), dtype='float')
-        x = np.asarray(individual[self.id_i], dtype='int')
+    def _mutate_i(self, X):
+        n_point = X.shape[0]
+        eta = np.array(X[:, self._id_eta], dtype=float).reshape(n_point, -1)
+        X_ = np.array(X[:, self.id_i], dtype=int)
+
         if len(self._id_eta) == 1:
-            eta = eta * exp(self.tau_i * randn())
+            eta *= exp(self.tau_i * randn(n_point, 1))
         else:
-            eta = eta * exp(self.tau_i * randn() + self.tau_p_i * randn(self.N_i))
-        eta[eta > 1] = 1
+            eta *= exp(self.tau_i * randn(n_point, 1) + \
+                self.tau_p_i * randn(n_point, self.N_i))
 
+        eta[eta > 1] = 1
         p = 1 - (eta / self.N_i) / (1 + np.sqrt(1 + (eta / self.N_i) ** 2.))
-        x_ = x + geometric(p) - geometric(p)
+        _X = X_ + geometric(p) - geometric(p)
 
         # Interval Bounds Treatment
-        x_ = np.asarray(handle_box_constraint(x_, self.bounds_i[:, 0], self.bounds_i[:, 1]), dtype='int')
+        _X = handle_box_constraint(_X, self.bounds_i[:, 0], self.bounds_i[:, 1])
+        _X = _X.astype(int)
 
-        individual[self.id_i] = x_
-        individual[self._id_eta] = eta
+        X[:, self.id_i] = _X
+        X[:, self._id_eta] = eta
 
-    def _mutate_d(self, individual):
-        P = np.asarray(individual[self._id_p], dtype='float')
+    def _mutate_d(self, X):
+        n_point = X.shape[0]
+        P = np.array(X[:, self._id_p], dtype=float).reshape(n_point, -1)
+
         #  Unbiased mutation on the mutation probability
-        P = 1. / (1. + (1. - P) / P * exp(-self.tau_d * randn()))
-        individual[self._id_p] = handle_box_constraint(P, 1. / (3. * self.N_d), 0.5)
+        P = 1. / (1. + (1. - P) / P * exp(-1 * self.tau_d * randn(n_point, 1)))
+        X[:, self._id_p] = handle_box_constraint(P, 1. / (3. * self.N_d), 0.5)
 
-        idx, = np.nonzero(rand(self.N_d) < P)
-        for i in idx:
-            levels = self.bounds_d[i]
-            individual[self.id_d[i]] = levels[randint(0, len(levels))]
+        idx = rand(n_point, self.N_d) < P
+        for i in range(self.N_d):
+            _ = idx[:, i]
+            X[_, self.id_d[i]] = np.random.choice(self.bounds_d[i], sum(_))
 
     def stop(self):
         if self.eval_count > self.max_eval:
@@ -321,11 +333,12 @@ class MIES(object):
 
     def optimize(self):
         while not self.stop():
-            # TODO: vectorize this part
+
             for i in range(self.lambda_):
                 p1, p2 = randint(0, self.mu_), randint(0, self.mu_)
-                individual = self.recombine(p1, p2)
-                self.offspring[i] = self.mutate(individual)
+                self.offspring[i] = self.recombine(p1, p2)
+
+            self.offspring = self.mutate(self.offspring)
 
             # NOTE: `self.fitness` and `self.f_offspring` are penalized function values
             self.f_offspring[:] = self.evaluate(self.offspring)

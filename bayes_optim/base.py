@@ -24,8 +24,34 @@ from .misc import LoggerFormatter
 from .acquisition_optim import argmax_restart
 
 class baseOptimizer(ABC):
-    def __init__(self, verbose):
+    def __init__(
+        self,
+        search_space: SearchSpace,
+        obj_fun: Callable,
+        parallel_obj_fun: Callable = None,
+        eq_fun: Callable = None,
+        ineq_fun: Callable = None,
+        ftarget: Optional[float] = None,
+        max_FEs: Optional[int] = None,
+        minimize: bool = True,
+        n_job: int = 1,
+        verbose = False,
+        random_seed: Optional[int] = None,
+        logger: Optional[str] = None
+        ):
         self.verbose = verbose
+        self.logger = logger
+        self.random_seed = random_seed
+
+        self.search_space = search_space
+        self.obj_fun = obj_fun
+        self.parallel_obj_fun = parallel_obj_fun
+        self.h = eq_fun
+        self.g = ineq_fun
+        self.n_job = max(1, int(n_job))
+        self.ftarget = ftarget
+        self.minimize = minimize
+
         self.xopt = None
         self.fopt = None
         self.stop_dict = {}
@@ -63,9 +89,20 @@ class baseOptimizer(ABC):
         """
         return
 
-    @abstractmethod
     def evaluate(self, X):
-        return
+        """Evaluate the candidate points in `X`
+        """
+        # Parallelization is handled by the objective function itself
+        if self.parallel_obj_fun is not None:
+            func_vals = self.parallel_obj_fun(X)
+        else:
+            if self.n_job > 1: # or by ourselves..
+                func_vals = Parallel(n_jobs=self.n_job)(
+                    delayed(self.obj_fun)(x) for x in X
+                )
+            else:              # or sequential execution
+                func_vals = [self.obj_fun(x) for x in X]
+        return func_vals
 
     @abstractmethod
     def check_stop(self):
@@ -80,6 +117,35 @@ class baseOptimizer(ABC):
         while not self.check_stop():
             self.step()
         return self.xopt, self.fopt, self.stop_dict
+
+    @property
+    def search_space(self):
+        return self._search_space
+
+    @search_space.setter
+    def search_space(self, search_space):
+        self._search_space = search_space
+        self.dim = len(self._search_space)
+        self.var_names = self._search_space.var_name
+        self.r_index = self._search_space.id_C       # indices of continuous variable
+        self.i_index = self._search_space.id_O       # indices of integer variable
+        self.d_index = self._search_space.id_N       # indices of categorical variable
+
+        self.param_type = self._search_space.var_type
+        self.N_r = len(self.r_index)
+        self.N_i = len(self.i_index)
+        self.N_d = len(self.d_index)
+
+    @property
+    def random_seed(self):
+        return self._random_seed
+
+    @random_seed.setter
+    def random_seed(self, seed):
+        if seed:
+            self._random_seed = int(seed)
+            if self._random_seed:
+                np.random.seed(self._random_seed)
 
     @property
     def logger(self):
