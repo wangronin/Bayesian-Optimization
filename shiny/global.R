@@ -46,6 +46,38 @@ legend_below <- list(
   zeroline = F
 )
 
+color_palettes <- function(ncolor) {
+  brewer <- function(n) {
+    colors <- RColorBrewer::brewer.pal(n, 'Spectral')
+    colors[colors == "#FFFFBF"] <- "#B2B285"
+    colors[colors == "#E6F598"] <- "#86FF33"
+    colors[colors == '#FEE08B'] <- "#FFFF33"
+    colors
+  }
+
+  color_fcts <- c(colorRamps::primary.colors)
+
+  n <- min(11, ncolor)
+  colors <- brewer(n)
+  ncolor <- ncolor - n
+
+  i <- 1
+  while (ncolor > 0) {
+    n <- min(8, ncolor)
+    if (i > length(color_fcts)) {
+      colors <- c(colors, colorRamps::primary.colors(ncolor))
+      break
+    } else {
+      colors <- c(colors, color_fcts[[i]](n))
+      ncolor <- ncolor - n
+    }
+    i <- i + 1
+  }
+  colors
+}
+
+.colors <- color_palettes(8)
+
 plotly_default <- function(title = NULL, x.title = NULL, y.title = NULL) {
   plot_ly() %>%
     layout(
