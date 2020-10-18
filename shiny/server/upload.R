@@ -14,6 +14,18 @@ job_table <- reactive({
   as.data.frame(do.call(rbind, content(r)))
 })
 
+output$upload_box.download <- downloadHandler(
+  filename = function() {
+    'configuration.json'
+  },
+  content = function(.file) {
+    data <- jsonlite::toJSON(jsonlite::read_json('../test.json'), pretty = TRUE)
+    con <- file(.file)
+    writeLines(data, con)
+    close (con)
+  }
+)
+
 observeEvent(input$upload.create_job, {
   .cs <- search_space()
   

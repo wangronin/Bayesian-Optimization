@@ -1,16 +1,20 @@
 upload_box <- function(width = 12, collapsible = T, collapsed = T,
-                       height = '300px') {
+                       height = '400px') {
   box(
     title = HTML('<p style="font-size:120%;">创建优化任务</p>'),
     width = width, height = height, collapsed = collapsed, collapsible = collapsible,
     solidHeader = T, status = "primary",
     sidebarPanel(
       width = 12,
+      
+      downloadButton("upload_box.download", "下载JSON配置文件模板"),
+      hr(),
+      
       fileInput(
         "upload.add_zip",
         label = HTML(
           '<p align="left">
-           Please choose a <i>JSON file</i> specifying the search space.</p>'
+           请上传一个<i>JSON配置文件</i>来创建优化实例</p>'
         ),
         multiple = FALSE, accept = c("Application/json", ".json")
       ),
