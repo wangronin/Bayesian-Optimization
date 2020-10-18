@@ -1,25 +1,25 @@
-import requests, json, os, subprocess, shutil, sys, time 
+import requests, json, os, subprocess, shutil, sys, time
 import numpy as np
 
 payload = {
     "search_param" : {
-        "emissivity" : {     
-            "type" : "r",          
-            "range" : [0.95, 1],
-            "N" : 2,
-            "precision" : 2    
-        },
-
-        "offset" : {       
+        "emissivity" : {
             "type" : "r",
-            "range" : [-10, 10],    
+            "range" : [0.95, 1],
             "N" : 2,
             "precision" : 2
         },
 
-        "power" : {           
+        "offset" : {
             "type" : "r",
-            "range" : [3.2, 3.8],    
+            "range" : [-10, 10],
+            "N" : 2,
+            "precision" : 2
+        },
+
+        "power" : {
+            "type" : "r",
+            "range" : [3.2, 3.8],
             "N" : 1,
             "precision" : 2  # 数值精度：小数点后位数
         },
@@ -58,22 +58,22 @@ def test_remote():
     env['PYTHONPATH'] = "../" +  env['PYTHONPATH']
 
     proc = subprocess.Popen([
-        'python3', '-m', 'bayes_optim.Interface', '-w', '7200', '-v'
+        'python3', '-m', 'bayes_optim.SimpleHTTPServer', '-w', '7200', '-v'
     ], env=env)
     time.sleep(3)
-    
+
     r = requests.post(address, json=payload)
     job_id = r.json()['job_id']
     print('Job id is %s'%(job_id))
 
-    for i in range(3):  
+    for i in range(3):
         print('iteration %d'%(i))
 
         r = requests.get(address, params={'ask' : 'null', 'job_id' : job_id})
         tell_data = r.json()
-        
+
         y = [obj_func_dict_eval2(_) for _ in tell_data['X']]
-        tell_data['y'] = y 
+        tell_data['y'] = y
 
         print(tell_data)
         r = requests.post(address, json=tell_data)

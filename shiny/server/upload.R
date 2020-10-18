@@ -25,13 +25,19 @@ observeEvent(input$upload.create_job, {
       
       print_html(
         paste0(
-          '<p style="color:red;">成功创建',
+          '成功创建',
           job_id,
-          '任务!</p>'
+          '任务!'
         )
       )
-    } else {
-      print_html('<p style="color:red;">任务创建失败!</p>')
+    } else if (status_code(r) == 500) {
+      print_html(
+        paste0(
+          '<p style="color:red;">任务创建失败:',
+          content(r)$error,
+          '</p>'
+        )
+      )
     }
   }
 })
@@ -46,15 +52,21 @@ observeEvent(input$upload.delete_job, {
   
   if (status_code(r) == 200) {
     job_list$list <- setdiff(job_list$list, list(job_id))
-    print_html2(
+    print_html(
       paste0(
         '<p style="color:red;">成功删除',
         job_id,
         '任务!</p>'
       )
     )
-  } else {
-    print_html2('<p style="color:red;">删除任务失败!</p>')
+  } else if (status_code(r) == 500) {
+    print_html(
+      paste0(
+        '<p style="color:red;">删除任务失败:',
+        content(r)$error,
+        '</p>'
+      )
+    )
   }
 })
 
