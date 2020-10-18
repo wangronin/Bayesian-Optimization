@@ -7,10 +7,12 @@ suppressMessages(library(shinydashboard))
 suppressMessages(library(DT))
 suppressMessages(library(httr))
 
-# ip <- "207.246.97.250"
-ip <- "127.0.0.1"
+ip <- "207.246.97.250"
+# ip <- "127.0.0.1"
 port <- 7200
 address <- paste0('http://', ip, ':', port)
+
+HTML_P <- function(s) HTML(paste0('<p align="left" style="font-size:120%;">', s, '</p>'))
 
 f1 <- function(size = 16) {
   list(
@@ -22,7 +24,7 @@ f1 <- function(size = 16) {
 f2 <- function(size = 12) {
   list(
     family = 'Old Standard TT, serif',
-    size = size, 
+    size = size,
     color = 'black'
   )
 }
