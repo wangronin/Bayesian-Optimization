@@ -19,7 +19,7 @@ output$upload_box.download <- downloadHandler(
     'configuration.json'
   },
   content = function(.file) {
-    data <- jsonlite::toJSON(jsonlite::read_json('../test.json'), pretty = TRUE)
+    data <- jsonlite::toJSON(jsonlite::read_json('test.json'), pretty = TRUE)
     con <- file(.file)
     writeLines(data, con)
     close (con)
