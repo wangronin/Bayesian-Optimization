@@ -1,5 +1,6 @@
 import numpy as np
 import sys, os
+import pytest
 sys.path.insert(0, '../')
 
 from bayes_optim import ParallelBO, BO, ContinuousSpace, OrdinalSpace, NominalSpace
@@ -120,7 +121,8 @@ def test_continuous():
     )
     print(opt.run())
 
-def test_mix_space():
+@pytest.mark.parametrize("eval_type", ['list', 'dict', 'dataframe'])  # type: ignore
+def test_mix_space(eval_type):
     dim_r = 2  # dimension of the real values
     def obj_fun(x):
         x_r = np.array([x['continuous_%d'%i] for i in range(dim_r)])
@@ -141,7 +143,7 @@ def test_mix_space():
         model=model, 
         max_FEs=6, 
         DoE_size=3,    # the initial DoE size
-        eval_type='dict',
+        eval_type=eval_type,
         acquisition_fun='MGFI',
         acquisition_par={'t' : 2},
         n_job=3,       # number of processes

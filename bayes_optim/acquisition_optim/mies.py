@@ -189,6 +189,8 @@ class MIES(object):
             X = pop
         elif self._eval_type == 'dict':
             X = [self._space.to_dict(x) for x in pop]
+        elif self._eval_type == 'dataframe':
+            X = pop.to_dataframe()
 
         _penalized_fitness = pop.fitness + \
             self._penalty_func(
