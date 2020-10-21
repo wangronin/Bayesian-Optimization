@@ -15,8 +15,10 @@ from sklearn.metrics import r2_score
 
 from joblib import Parallel, delayed
 
-# TODO: implement multi-output/objetive surrogate models, better to model the c
-# orrelation among targets
+# TODO: implement multi-output/objetive surrogate models,
+# better to model the correlation among targets
+# TODO: implement auto-selection for the number of trees in `RandomForest`
+
 class SurrogateAggregation(object):
     def __init__(self, surrogates, aggregation='WS', **kwargs):
         self.surrogates = surrogates
@@ -45,13 +47,13 @@ class SurrogateAggregation(object):
         elif self.aggregation == 'Tchebycheff':
             # TODO: implement this part
             pass
-        
+
         return (y_hat, MSE) if eval_MSE else y_hat
-    
+
     def gradient(self, X):
         # TODO: implement
         pass
-        
+
 def _save_prediction(predict, X, index, out):
     """
     It can't go locally in ForestClassifier or ForestRegressor, because joblib
@@ -61,16 +63,17 @@ def _save_prediction(predict, X, index, out):
 
 class RandomForest(RandomForestRegressor):
     """Extension on the sklearn's `RandomForestRegressor`
-    Added functionality: 
-        1) MSE estimate, 
+    Added functionality:
+        1) MSE estimate,
         2) OneHotEncoding to handle categorical variables
     """
     def __init__(
-        self, 
-        n_estimators=100, 
-        max_features=5/6, 
-        min_samples_leaf=2, 
-        levels=None, 
+        self,
+        n_estimators=20,
+        max_features=5/6,
+        min_samples_leaf=2,
+        levels=None,
+        n_jobs=5,
         **kwargs
         ):
         """
@@ -84,6 +87,7 @@ class RandomForest(RandomForestRegressor):
             n_estimators=n_estimators,
             max_features=max_features,
             min_samples_leaf=min_samples_leaf,
+            n_jobs=n_jobs,
             **kwargs
         )
         self.is_fitted = False
@@ -148,11 +152,16 @@ class RandomForest(RandomForestRegressor):
         else:
             y_hat_all = np.zeros((X.shape[0], self.n_estimators), dtype=np.float64)
 
+        for i, e in enumerate(self.estimators_):
+            y_hat_all[..., i] = e.predict(X, check_input=False)
+
+        # TODO: this actually takes much longer than the sequential execution
+        # which might be caused by the overheads in spawning the threads.
         # Parallel loop
-        Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
-            delayed(_save_prediction)(e.predict, X, i, y_hat_all) \
-                for i, e in enumerate(self.estimators_)
-        )
+        # Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
+        #     delayed(_save_prediction)(e.predict, X, i, y_hat_all) \
+        #         for i, e in enumerate(self.estimators_)
+        # )
 
         y_hat = np.mean(y_hat_all, axis=1).flatten()
         if eval_MSE:
@@ -163,7 +172,7 @@ class RandomForest(RandomForestRegressor):
         return (y_hat, _MSE_hat) if eval_MSE else y_hat
 
 if __name__ == '__main__':
-    # TODO: this part goes into test 
+    # TODO: this part goes into test
     # simple test for mixed variables...
     np.random.seed(12)
 
