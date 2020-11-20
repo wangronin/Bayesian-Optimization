@@ -200,6 +200,8 @@ class MIES(object):
             X = X.tolist()
         elif self._eval_type == 'dict':
             X = X.to_dict()
+        elif self._eval_type == 'dataframe':
+            X = pop.to_dataframe()
 
         if len(pop.shape) == 1:  # one solution
             # make `np.array` here is not needed

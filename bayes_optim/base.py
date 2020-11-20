@@ -221,8 +221,8 @@ class baseBO(ABC):
             The surrogate mode, which will be automatically created if not passed in,
             by default None.
         eval_type : str, optional
-            The type of input argument allowed by `obj_func` or `parallel_obj_fun`:
-            it could be either 'list' or 'dict', by default 'list'.
+            The type of input argument allowed by `obj_func` or `parallel_obj_fun`: 
+            it could be either 'list', 'dict' or 'dataframe', by default 'list'.
         DoE_size : int, optional
             The size of inital Design of Experiment (DoE), by default None.
         warm_data: Tuple, optional
@@ -414,7 +414,10 @@ class baseBO(ABC):
         elif self._eval_type == 'dict':
             self._to_pheno = lambda x: x.to_dict(space=self._search_space)
             self._to_geno = lambda x: Solution.from_dict(x, space=self._search_space)
-
+        elif self._eval_type == 'dataframe':
+            self._to_pheno = lambda x: x.to_dataframe()
+            self._to_geno = lambda x: Solution.from_dataframe(x)
+            
     def _set_internal_optimization(self, **kwargs):
         if 'optimizer' in kwargs:
             self._optimizer = kwargs['optimizer']
@@ -478,7 +481,8 @@ class baseBO(ABC):
         if isinstance(seed, int):
             np.random.seed(seed)
         if self.model.is_fitted:
-            n_point = self.n_point if n_point is None else self.n_point
+            if n_point is None:
+                n_point = self.n_point
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
 
@@ -533,8 +537,8 @@ class baseBO(ABC):
             msg = 'iteration {}, {} infill points:'.format(self.iter_count, len(X))
 
         self._logger.info(msg)
-        X_ = self._to_pheno(X)
-
+#         X_ = self._to_pheno(X)
+        
         for i in range(len(X)):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
@@ -544,7 +548,7 @@ class baseBO(ABC):
 
             self._logger.info(
                 '#{} - fitness: {}, solution: {}'.format(
-                    i + 1, func_vals[i], X_[i]
+                    i + 1, func_vals[i], X[i].to_dict
                 )
             )
 
