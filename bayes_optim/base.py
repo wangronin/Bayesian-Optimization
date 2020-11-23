@@ -608,7 +608,10 @@ class baseBO(ABC):
             func_vals = self.parallel_obj_fun(X)
         else:
             if self.n_job > 1: # or by ourselves..
-                func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for x in X)
+                if self._eval_type == 'dataframe':
+                    func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for _, x in X.iterrows())
+                else:
+                    func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for x in X)
             else:              # or sequential execution
                 func_vals = [self.obj_fun(x) for x in X]
 
