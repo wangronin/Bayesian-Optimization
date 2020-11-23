@@ -124,13 +124,23 @@ def test_continuous():
 @pytest.mark.parametrize("eval_type", ['list', 'dict', 'dataframe'])  # type: ignore
 def test_mix_space(eval_type):
     dim_r = 2  # dimension of the real values
-    def obj_fun(x):
-        x_r = np.array([x['continuous_%d'%i] for i in range(dim_r)])
-        x_i = x['ordinal']
-        x_d = x['nominal']
-        _ = 0 if x_d == 'OK' else 1
-        return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + _ * 2
-
+    if eval_type == 'dict' or eval_type == 'dataframe':
+        def obj_fun(x):
+            #Do explicit type-casting since dataframe rows might be strings otherwise
+            x_r = np.array([float(x['continuous_%d'%i]) for i in range(dim_r)])
+            x_i = int(x['ordinal'])
+            x_d = x['nominal']
+            _ = 0 if x_d == 'OK' else 1
+            return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + _ * 2
+    elif eval_type == 'list':
+        def obj_fun(x):
+            x_r = np.array([x[i] for i in range(dim_r)])
+            x_i = x[-2]
+            x_d = x[-1]
+            _ = 0 if x_d == 'OK' else 1
+            return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + _ * 2
+    else:
+        raise NotImplemented
     search_space = ContinuousSpace([-5, 5], var_name='continuous') * dim_r + \
         OrdinalSpace([5, 15], var_name='ordinal') + \
         NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'], var_name='nominal')
