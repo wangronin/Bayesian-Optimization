@@ -168,3 +168,74 @@ class NoisyBO(ParallelBO):
             par.update({'plugin' : plugin})
         
         return super()._create_acquisition(par=par, return_dx=return_dx)
+
+class NarrowingBO(BO):
+    def __init__(self,
+                 narrowing_fun: Callable = None,
+                 narrowing_improving_fun: Callable = None,
+                 narrowing_FEs: int = 1,
+                 *argv,
+                 **kwargs):
+        """ The base class for Bayesian Optimization
+
+        Parameters
+        ----------
+        narrowing_fun: Callable
+            Function that rank the solution features, and returns a sub set of
+            features to discard. The function will receive as input the data points
+            evaluated and their fitness, the model, and the list of active features.
+            Then, the function should return a dict of features and default value to deactivate.
+        narrowing_improving_fun: Callable
+            Function that evaluates the overall performance of the narrowed search space. It should
+            return a decision value (boolean, true if we should continue narrowing), and a dict with
+            all the metrics. As input, the function receives the data, the model, and the previous 
+            metrics.
+        narrowing_FEs: int
+            Number of function evaluations before a narrowing occurs
+        """
+        kwargs['eq_fun'] = self._penalty
+        if 'acquisition_optimization' in kwargs:
+            kwargs['acquisition_optimization']['optimizer'] = 'MIES'
+        else:
+            kwargs['acquisition_optimization'] = {'optimizer': 'MIES'}
+        super().__init__(*argv, **kwargs)
+        self.narrowing_fun = narrowing_fun
+        self.narrowing_improving_fun = narrowing_improving_fun
+        assert narrowing_FEs < self.max_FEs
+        self.narrowing_FEs = narrowing_FEs
+        self.active_fs = self.search_space.var_name.copy()
+        self.deactivation_fs_stack = []        
+        self.h = self._penalty # h is the eq_fun
+
+    def _penalty(self, x):
+        penalty = 0
+        for deact_step in self.deactivation_fs_stack:
+            for k, v in deact_step.items():
+                ix = self.search_space.var_name.index(k)
+                penalty = penalty + abs(x[ix] - v)
+        return penalty
+
+    def run(self):
+        _metrics = {}
+        while not self.check_stop():
+            self.step()
+            if ((self.eval_count % self.narrowing_FEs) == 0 and
+                (self.DoE_size is None or self.eval_count > self.DoE_size)):
+                decision, _metrics = self.narrowing_improving_fun(self.data, self.model, _metrics)
+                if decision:
+                    _deactive_fs = self.narrowing_fun(self.data, self.model, self.active_fs)
+                    self.deactivation_fs_stack.append(_deactive_fs)
+                    self.active_fs = list(set(self.active_fs) - set(_deactive_fs.keys()))
+                    self._logger.info('narrowing the search space, remove ' + str(self.deactivation_fs_stack[-1]))
+                else:
+                    if len(self.deactivation_fs_stack):
+                        _pop = list(self.deactivation_fs_stack.pop().keys())
+                        self.active_fs = self.active_fs + _pop
+                        self._logger.info('narrowing the search space, add ' + str(_pop))
+                    else:
+                        self._logger.info('narrowing the search space, nothing changed')
+             # Currently, the features disabled are treated as eq constraints
+
+        return self.xopt, self.fopt, self.stop_dict
+
+

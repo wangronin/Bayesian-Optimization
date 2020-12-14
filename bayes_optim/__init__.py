@@ -3,7 +3,7 @@ import numpy as np
 from typing import Callable, Any, Tuple, List, Union, Optional
 
 from . import AcquisitionFunction, Surrogate
-from .BayesOpt import BO, ParallelBO, NoisyBO, AnnealingBO
+from .BayesOpt import BO, ParallelBO, NoisyBO, AnnealingBO, NarrowingBO
 from .Solution import Solution
 from .Surrogate import RandomForest, GaussianProcess, trend
 from .SearchSpace import SearchSpace, OrdinalSpace, ContinuousSpace, NominalSpace
@@ -13,7 +13,8 @@ __all__ = [
     'BO', 'ParallelBO', 'NoisyBO', 'AnnealingBO', 'Solution', 'AcquisitionFunction', 
     'Surrogate', 'RandomForest', 'GaussianProcess', 'trend',
     'SearchSpace', 'OrdinalSpace', 'ContinuousSpace', 
-    'NominalSpace', 'RandomForest', 'OptimizerPipeline', 'fmin'
+    'NominalSpace', 'RandomForest', 'OptimizerPipeline', 'fmin',
+    'NarrowingBO'
 ]
 
 # To use `dill` for the pickling, which works for
