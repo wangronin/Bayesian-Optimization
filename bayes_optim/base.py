@@ -198,8 +198,7 @@ class baseBO(ABC):
         data_file: Optional[str] = None,
         verbose: bool = False,
         random_seed: Optional[int] = None,
-        logger: Optional[str] = None,
-        optimizer: Optional[str] = None
+        logger: Optional[str] = None
         ):
         """ The base class for Bayesian Optimization
 
@@ -427,7 +426,7 @@ class baseBO(ABC):
                 self._optimizer = 'BFGS'
             else:
                 self._optimizer = 'MIES'
-        print(self._optimizer)
+
         # NOTE: `AQ`: acquisition
         if 'max_FEs' in kwargs:
             self.AQ_max_FEs = arg_to_int(kwargs['max_FEs'])
