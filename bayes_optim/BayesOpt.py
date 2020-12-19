@@ -1,4 +1,4 @@
-from typing import Callable, Any, Tuple, List
+from typing import Callable, Any, Tuple, List, Optional
 import os, sys, dill, functools, logging, time
 
 import numpy as np
@@ -16,7 +16,12 @@ __license__ = "3-clause BSD"
 
 
 class BO(baseBO):
-    def _create_acquisition(self, fun=None, par={}, return_dx=False):
+    def _create_acquisition(
+        self,
+        fun: Optional[Callable] = None,
+        par: dict = {},
+        return_dx: bool = False
+    ):
         fun = fun if fun is not None else self._acquisition_fun
         if hasattr(getattr(AcquisitionFunction, fun), 'plugin'):
             if 'plugin' not in par:
@@ -24,7 +29,7 @@ class BO(baseBO):
 
         return super()._create_acquisition(fun, par, return_dx)
 
-    def pre_eval_check(self, X):
+    def pre_eval_check(self, X: Solution) -> Solution:
         """Check for the duplicated solutions as it is not allowed in noiseless cases
         """
         if not isinstance(X, Solution):
@@ -75,7 +80,11 @@ class ParallelBO(BO):
         if self._par_name not in self._acquisition_par:
             self._acquisition_par[self._par_name] = getattr(_criterion, self._par_name)
 
-    def _batch_arg_max_acquisition(self, n_point, return_dx):
+    def _batch_arg_max_acquisition(
+        self,
+        n_point: int,
+        return_dx: bool
+    ):
         criteria = []
         for _ in range(n_point):
             _par = self._sampler(self._acquisition_par)
@@ -97,9 +106,9 @@ class ParallelBO(BO):
 class AnnealingBO(ParallelBO):
     def __init__(
         self,
-        t0=2,
-        tf=1e-1,
-        schedule='exp',
+        t0: float = 2.,
+        tf: float = 1e-1,
+        schedule: str ='exp',
         *argv, **kwargs
     ):
         super().__init__(*argv, **kwargs)
@@ -131,7 +140,11 @@ class SelfAdaptiveBO(ParallelBO):
         super.__init__(*argv, **kwargs)
         assert self.n_point > 1
 
-    def _batch_arg_max_acquisition(self, n_point, return_dx):
+    def _batch_arg_max_acquisition(
+        self,
+        n_point: int,
+        return_dx: bool
+    ):
         criteria = []
         _t_list = []
         N = int(n_point / 2)
