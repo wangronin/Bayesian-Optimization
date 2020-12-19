@@ -1,11 +1,3 @@
-"""
-Created on Mon Apr 23 17:16:39 2018
-
-@author: Hao Wang
-@email: wangronin@gmail.com
-
-"""
-import numpy as np
 import os, sys, dill, functools, logging, time
 
 from abc import ABC, abstractmethod
@@ -13,6 +5,7 @@ from copy import copy, deepcopy
 from typing import Callable, Any, Tuple, Optional
 from joblib import Parallel, delayed
 
+import numpy as np
 from sklearn.metrics import r2_score
 from sklearn.cluster import KMeans
 
@@ -22,6 +15,10 @@ from .SearchSpace import SearchSpace
 from .utils import arg_to_int
 from .misc import LoggerFormatter
 from .acquisition_optim import argmax_restart
+
+__author__ = "Hao Wang"
+__license__ = "3-clause BSD"
+
 
 class baseOptimizer(ABC):
     def __init__(

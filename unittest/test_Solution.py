@@ -11,7 +11,7 @@ def test_1D():
         index=1
     )
     assert isinstance(s[0], int)
-    s.fitness = 3 
+    s.fitness = 3
     assert s.ndim == 1
     assert s.fitness == 3
 
@@ -19,8 +19,8 @@ def test_2D():
     # test for 2D solution
     A, B = np.random.randn(5, 3).tolist(), ['simida', 'niubia', 'bang', 'GG', 'blyat']
     s = Solution(
-        [A[i] + [B[i]] for i in range(5)], 
-        verbose=True, fitness=0, 
+        [A[i] + [B[i]] for i in range(5)],
+        verbose=True, fitness=0,
         fitness_name='f'
     )
     assert s.ndim == 2
@@ -33,6 +33,10 @@ def test_2D():
     a = s[0]
     a.fitness = 3
     assert s.fitness[0] == 3
+
+    a = s[1]
+    a.n_eval = 3
+    assert s.n_eval[1] == 3
 
     s[2:4].fitness = 1
     assert np.all(s.fitness[2:4] == 1)
@@ -70,11 +74,11 @@ def test_from_dict():
     assert np.all(s == s2)
     assert isinstance(s.to_dict(orient='index', with_index=True), dict)
     assert isinstance(s.to_dict(orient='var', with_index=True), dict)
-    
+
 def test_to_dataframe():
     s = Solution(np.random.randn(10, 5))
     print(s.to_dataframe())
-    
+
 def test_from_dataframe():
     s = Solution(np.random.randn(10, 5))
     dt = s.to_dataframe()
