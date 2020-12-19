@@ -221,7 +221,7 @@ class baseBO(ABC):
             The surrogate mode, which will be automatically created if not passed in,
             by default None.
         eval_type : str, optional
-            The type of input argument allowed by `obj_func` or `parallel_obj_fun`: 
+            The type of input argument allowed by `obj_func` or `parallel_obj_fun`:
             it could be either 'list', 'dict' or 'dataframe', by default 'list'.
         DoE_size : int, optional
             The size of inital Design of Experiment (DoE), by default None.
@@ -417,7 +417,7 @@ class baseBO(ABC):
         elif self._eval_type == 'dataframe':
             self._to_pheno = lambda x: x.to_dataframe()
             self._to_geno = lambda x: Solution.from_dataframe(x)
-            
+
     def _set_internal_optimization(self, **kwargs):
         if 'optimizer' in kwargs:
             self._optimizer = kwargs['optimizer']
@@ -530,15 +530,13 @@ class baseBO(ABC):
         X = self._to_geno(X)
 
         if warm_start:
-            msg = 'warm-starting from {} points:'.format(len(X))
+            msg = f'warm-starting from {len(X)} points:'
         elif self.iter_count == 0:
-            msg = 'initial DoE of size {}:'.format(len(X))
+            msg = f'initial DoE of size {len(X)}:'
         else:
-            msg = 'iteration {}, {} infill points:'.format(self.iter_count, len(X))
-
+            msg = f'iteration {self.iter_count}, {len(X)} infill points:'
         self._logger.info(msg)
-#         X_ = self._to_pheno(X)
-        
+
         for i in range(len(X)):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
@@ -547,9 +545,7 @@ class baseBO(ABC):
                 self.eval_count += 1
 
             self._logger.info(
-                '#{} - fitness: {}, solution: {}'.format(
-                    i + 1, func_vals[i], X[i].to_dict
-                )
+                f'#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])}'
             )
 
         X = self.post_eval_check(X)
@@ -568,8 +564,8 @@ class baseBO(ABC):
         self._logger.info('xopt: {}'.format(self.xopt))
 
         if not self.model.is_fitted:
-            self._fBest_DoE = copy(self.fopt) # the best point in the DoE
-            self._xBest_DoE = copy(self.xopt)
+            self._fBest_DoE = copy(self.fopt) # the best f-value from DoE
+            self._xBest_DoE = copy(self.xopt) # the best point from DoE
 
         r2 = self.update_model()
         self._logger.info('Surrogate model r2: {}\n'.format(r2))
@@ -609,9 +605,13 @@ class baseBO(ABC):
         else:
             if self.n_job > 1: # or by ourselves..
                 if self._eval_type == 'dataframe':
-                    func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for _, x in X.iterrows())
+                    func_vals = Parallel(n_jobs=self.n_job)(
+                        delayed(self.obj_fun)(x) for _, x in X.iterrows()
+                    )
                 else:
-                    func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for x in X)
+                    func_vals = Parallel(n_jobs=self.n_job)(
+                        delayed(self.obj_fun)(x) for x in X
+                    )
             else:              # or sequential execution
                 func_vals = [self.obj_fun(x) for x in X]
 
