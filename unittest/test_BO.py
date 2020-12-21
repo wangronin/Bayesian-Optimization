@@ -3,7 +3,7 @@ import sys, os
 import pytest
 sys.path.insert(0, '../')
 
-from bayes_optim import ParallelBO, BO, ContinuousSpace, OrdinalSpace, NominalSpace
+from bayes_optim import ParallelBO, BO, ContinuousSpace, OrdinalSpace, NominalSpace, IntensificationBO
 from bayes_optim.Surrogate import trend, GaussianProcess, RandomForest
 
 np.random.seed(123)
@@ -159,6 +159,57 @@ def test_mix_space(eval_type):
         n_job=3,       # number of processes
         n_point=3,     # number of the candidate solution proposed in each iteration
         verbose=True   # turn this off, if you prefer no output
+    )
+    xopt, fopt, stop_dict = opt.run()
+
+    print('xopt: {}'.format(xopt))
+    print('fopt: {}'.format(fopt))
+    print('stop criteria: {}'.format(stop_dict))
+    
+
+# Test for intensification BO is the same as the mixed_param test, can probably merge them in future
+@pytest.mark.parametrize("eval_type", ['list', 'dict', 'dataframe'])  # type: ignore
+def test_intensification(eval_type):
+    dim_r = 2  # dimension of the real values
+    if eval_type == 'dict' or eval_type == 'dataframe':
+        def obj_fun(x):
+            #Do explicit type-casting since dataframe rows might be strings otherwise
+            x_r = np.array([float(x['continuous_%d'%i]) for i in range(dim_r)])
+            x_i = int(x['ordinal'])
+            x_d = x['nominal']
+            if type(x_d) != str: #TODO: Check why this is needed here
+                x_d = x_d[0]
+            _ = 0 if x_d == 'OK' else 1
+            temp = np.random.normal(1,0.1)*np.sum(x_r ** 2) + abs(x_i - 10) / 123. + _ * 2
+            return temp
+    elif eval_type == 'list':
+        def obj_fun(x):
+            x_r = np.array([x[i] for i in range(dim_r)])
+            x_i = x[-2]
+            x_d = x[-1]
+            _ = 0 if x_d == 'OK' else 1
+            temp = np.random.normal(1,0.1)*np.sum(x_r ** 2) + abs(x_i - 10) / 123. + _ * 2
+            return temp
+    else:
+        raise NotImplemented
+    search_space = ContinuousSpace([-5, 5], var_name='continuous') * dim_r + \
+        OrdinalSpace([5, 15], var_name='ordinal') + \
+        NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'], var_name='nominal')
+
+    model = RandomForest(levels=search_space.levels)
+
+    opt = IntensificationBO(
+        search_space=search_space,
+        obj_fun=obj_fun,
+        model=model,
+        max_FEs=60,
+        DoE_size=5,    # the initial DoE size
+        eval_type=eval_type,
+        acquisition_fun='MGFI',
+        acquisition_par={'t' : 2},
+        n_job=3,       # number of processes
+        n_point=3,     # number of the candidate solution proposed in each iteration
+        verbose=False   # turn this off, if you prefer no output
     )
     xopt, fopt, stop_dict = opt.run()
 

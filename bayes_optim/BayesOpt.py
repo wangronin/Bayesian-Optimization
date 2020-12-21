@@ -170,7 +170,7 @@ class SelfAdaptiveBO(ParallelBO):
         self._acquisition_par['t'] = np.mean([_t_list[i] for i in idx])
         return tuple(zip(*__))
 
-class NoisyBO(ParallelBO):
+class IntensificationBO(ParallelBO):
     def __init__(
         self,
         max_r: int = 200,
@@ -219,25 +219,62 @@ class NoisyBO(ParallelBO):
         List
             The objective value for each solution in `X`
         """
-        incumbent = self.xopt
-        for i in enumerate(X):
-            x = X[i]
-
+        #Convert to internal representation to allow storing n_eval
+        X = self._to_geno(X)
+        #Need to explicitly check remaining budget to not exceed in intensification
+        remaining_budget = self.max_FEs - self.eval_count
+        print(f"rem: {remaining_budget}; max: {self.max_FEs}")
+        if self.xopt is None:
+            #First iteration, no incumbant yet
+            incumbent = X[0]
+        else:
+            incumbent = self.xopt
+            
+        
+        for x in X:
             # add one more sampling point to the incumbent
             if incumbent.n_eval < self._max_r:
-                incumbent.fitness = (
-                    incumbent.fitness * incumbent.n_eval + self.obj_fun(incumbent)
-                ) / (incumbent.n_eval + 1)
-                incumbent.n_eval += 1
+                if remaining_budget > 0:
+                    inc_pheno = self._to_pheno(incumbent)
+                    if self._eval_type == 'dict':
+                        inc_pheno = inc_pheno[0]
+                    if incumbent.n_eval == 0:
+                        #check for 0 since otherwise fitness keeps being nan
+                        incumbent.fitness = self.obj_fun(inc_pheno)
+                        incumbent.n_eval = 1
+                        remaining_budget -= 1
+                        self.eval_count += 1
+                    else:
+                        incumbent.fitness = (
+                            incumbent.fitness * incumbent.n_eval + self.obj_fun(inc_pheno)
+                        ) / (incumbent.n_eval + 1)
+                        incumbent.n_eval += 1
+                        remaining_budget -= 1
+                        self.eval_count += 1
+                else:
+                    break
 
             N = 1
             while True:
-                _N = min(N, incumbent.n_eval - x.n_eval)
-                if _N != 0:
-                    _val = np.sum([self.obj_fun(x) for _ in range(_N)])
-                    x.fitness = (x.fitness * x.n_eval + _val) / (x.n_eval + _N)
-                    x.n_eval += _N
-
+                _N = min(N, incumbent.n_eval[0] - x.n_eval[0])
+                _N = min(_N, remaining_budget)
+                if _N > 0:
+                    if self._eval_type == 'dict':
+                        vals = [self.obj_fun(self._to_pheno(x)[0]) for _ in range(_N)]
+                    else:
+                        vals = [self.obj_fun(self._to_pheno(x)) for _ in range(_N)]
+                    remaining_budget -= _N
+                    self.eval_count += _N
+                    print(f"new rem: {remaining_budget} ({self.max_FEs} - {self.eval_count})")
+                    _val = np.sum(vals)
+                    if x.n_eval == 0:
+                        #check for 0 since otherwise fitness keeps being nan
+                        x.fitness = _val
+                        x.n_eval = _N
+                    else:
+                        x.fitness = (x.fitness * x.n_eval + _val) / (x.n_eval + _N)
+                        x.n_eval += _N
+                
                 if self._compare(x.fitness, incumbent.fitness):
                     break
                 elif _N == 0:
@@ -245,7 +282,8 @@ class NoisyBO(ParallelBO):
                     break
                 else:
                     N *= 2
-
+            x.n_eval -= 1 #TODO: Fix this. Currently here because tell always adds 1
+            self.eval_count -= 1 #TODO: Fix this. Currently here because tell always adds 1
         return X.fitness.tolist()
 
     def _create_acquisition(

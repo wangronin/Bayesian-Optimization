@@ -3,7 +3,7 @@ import numpy as np
 from typing import Callable, Any, Tuple, List, Union, Optional
 
 from . import AcquisitionFunction, Surrogate
-from .BayesOpt import BO, ParallelBO, NoisyBO, AnnealingBO
+from .BayesOpt import BO, ParallelBO, IntensificationBO, AnnealingBO
 from .Solution import Solution
 from .Surrogate import RandomForest, GaussianProcess, trend
 from .SearchSpace import SearchSpace, OrdinalSpace, ContinuousSpace, NominalSpace

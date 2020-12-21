@@ -283,7 +283,9 @@ class baseBO(ABC):
         self._set_aux_vars()
         self._set_internal_optimization(**acquisition_optimization)
         self.warm_data = warm_data
-
+        self.xopt = None
+        self.fopt = None
+        
     @property
     def acquisition_fun(self):
         return self._acquisition_fun
@@ -463,7 +465,10 @@ class baseBO(ABC):
     def run(self):
         while not self.check_stop():
             self.step()
-        return self.xopt, self.fopt, self.stop_dict
+        _xopt_write = self._to_pheno(self.xopt)
+        if self._eval_type == 'dict':
+            _xopt_write = _xopt_write[0]
+        return _xopt_write, self.fopt, self.stop_dict
 
     def step(self):
         X = self.ask()
@@ -552,13 +557,13 @@ class baseBO(ABC):
             X.to_csv(self.data_file, header=False, append=True)
 
         self.fopt = self._get_best(self.data.fitness)
-        _xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]
-        self.xopt = self._to_pheno(_xopt)
+        self.xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]
+        _xopt_write = self._to_pheno(self.xopt)
         if self._eval_type == 'dict':
-            self.xopt = self.xopt[0]
+            _xopt_write = _xopt_write[0]
 
         self._logger.info('fopt: {}'.format(self.fopt))
-        self._logger.info('xopt: {}'.format(self.xopt))
+        self._logger.info('xopt: {}'.format(_xopt_write))
 
         if not self.model.is_fitted:
             self._fBest_DoE = copy(self.fopt) # the best f-value from DoE
@@ -586,7 +591,7 @@ class baseBO(ABC):
     def post_eval_check(self, X):
         _ = np.isnan(X.fitness) | np.isinf(X.fitness)
         if np.any(_):
-            self._logger.warn(
+            self._logger.warning(
                 '{} candidate solutions are removed '
                 'due to falied fitness evaluation: \n{}'.format(sum(_), str(X[_, :]))
             )
