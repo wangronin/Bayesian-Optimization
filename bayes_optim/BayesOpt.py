@@ -59,7 +59,7 @@ class BO(baseBO):
 class ParallelBO(BO):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        assert self.n_point > 1
+#         assert self.n_point > 1
 
         if self._acquisition_fun == 'MGFI':
             self._par_name = 't'
@@ -241,7 +241,6 @@ class IntensificationBO(ParallelBO):
         X = self._to_geno(X)
         #Need to explicitly check remaining budget to not exceed in intensification
         remaining_budget = self.max_FEs - self.eval_count
-        print(f"rem: {remaining_budget}; max: {self.max_FEs}")
         if self.xopt is None:
             #First iteration, no incumbant yet
             incumbent = X[0]
@@ -283,7 +282,6 @@ class IntensificationBO(ParallelBO):
                         vals = [self.obj_fun(self._to_pheno(x)) for _ in range(_N)]
                     remaining_budget -= _N
                     self.eval_count += _N
-                    print(f"new rem: {remaining_budget} ({self.max_FEs} - {self.eval_count})")
                     _val = np.sum(vals)
                     if x.n_eval == 0:
                         #check for 0 since otherwise fitness keeps being nan
