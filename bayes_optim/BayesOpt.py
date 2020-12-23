@@ -170,6 +170,24 @@ class SelfAdaptiveBO(ParallelBO):
         self._acquisition_par['t'] = np.mean([_t_list[i] for i in idx])
         return tuple(zip(*__))
 
+    
+class NoisyBO(ParallelBO):
+    def pre_eval_check(self, X):
+        if not isinstance(X, Solution):
+            X = Solution(X, var_name=self.var_names)
+        return X
+
+    def _create_acquisition(self, fun=None, par={}, return_dx=False):
+        if hasattr(getattr(AcquisitionFunction, self._acquisition_fun), 'plugin'):
+            # use the model prediction to determine the plugin under noisy scenarios
+            # TODO: add more options for determining the plugin value
+            y_ = self.model.predict(self.data)
+            plugin = np.min(y_) if self.minimize else np.max(y_)
+            par.update({'plugin' : plugin})
+        
+        return super()._create_acquisition(par=par, return_dx=return_dx)
+    
+
 class IntensificationBO(ParallelBO):
     def __init__(
         self,
