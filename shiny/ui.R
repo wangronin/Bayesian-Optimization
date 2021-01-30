@@ -2,7 +2,7 @@ for (f in list.files('ui', pattern = '.R', full.names = T)) {
   source(f)
 }
 
-header <- dashboardHeader(title = HTML('<div align="center"><b>AIxcelsior</b></div>'))
+header <- dashboardHeader(title = HTML('<div align="center"><b>AI Excelsior</b></div>'))
 
 # The side bar layout ---------------------------------------------
 sidebar <- dashboardSidebar(

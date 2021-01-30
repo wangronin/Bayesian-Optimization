@@ -82,5 +82,3 @@ def test_remote():
 
     proc.kill()
     shutil.rmtree('7200')
-
-test_remote()
