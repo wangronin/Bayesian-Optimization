@@ -25,6 +25,7 @@ def argmax_restart(
     best = -np.inf
     wait_count = 0
 
+    # TODO: this should be removed
     if (h is not None or g is not None) and optimizer == 'BFGS':
         optimizer = 'OnePlusOne_Cholesky_CMA'
 

@@ -6,11 +6,11 @@ def arg_to_int(arg):
         x = int(eval(arg))
     elif isinstance(arg, (int, float)):
         x = int(arg)
-    else: 
+    else:
         raise ValueError
     return x
 
-def dynamic_penalty(X, t, equality=None, inequality=None, C=0.5, alpha=1, beta=2, 
+def dynamic_penalty(X, t, equality=None, inequality=None, C=0.5, alpha=1, beta=2,
                     epsilon=0.01, minimize=True):
     X = np.atleast_2d(X)
     N = X.shape[0]
@@ -28,9 +28,9 @@ def dynamic_penalty(X, t, equality=None, inequality=None, C=0.5, alpha=1, beta=2
 
     p = (-1) ** (not minimize) * (C * t) ** alpha * p
     return p
-    
+
 # TODO: get this done and test it
-def stochastic_ranking(X, fitness, equality=None, inquality=None, P=0.4, gamma=1, 
+def stochastic_ranking(X, fitness, equality=None, inquality=None, P=0.4, gamma=1,
                        beta=1, epsilon=0):
     N = len(X) if isinstance(X, list) else X.shape[0]
     #N = X.shape[0]

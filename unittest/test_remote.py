@@ -5,21 +5,21 @@ payload = {
     "search_param" : {
         "emissivity" : {
             "type" : "r",
-            "range" : [0.95, 1],
+            "range" : [0, 1],
             "N" : 2,
             "precision" : 2
         },
 
         "offset" : {
             "type" : "r",
-            "range" : [-10, 10],
+            "range" : [0, 1],
             "N" : 2,
             "precision" : 2
         },
 
         "power" : {
             "type" : "r",
-            "range" : [3.2, 3.8],
+            "range" : [0, 1],
             "N" : 1,
             "precision" : 2  # 数值精度：小数点后位数
         },
@@ -57,10 +57,10 @@ def test_remote():
 
     env['PYTHONPATH'] = "../" +  env['PYTHONPATH']
 
-    proc = subprocess.Popen([
-        'python3', '-m', 'bayes_optim.SimpleHTTPServer', '-w', '7200', '-v'
-    ], env=env)
-    time.sleep(3)
+    # proc = subprocess.Popen([
+    #     'python3', '-m', 'bayes_optim.SimpleHTTPServer', '-w', '7200', '-v'
+    # ], env=env)
+    # time.sleep(3)
 
     r = requests.post(address, json=payload)
     job_id = r.json()['job_id']
@@ -80,5 +80,7 @@ def test_remote():
 
     r = requests.get(address, params={'finalize' : 'null', 'job_id' : job_id})
 
-    proc.kill()
-    shutil.rmtree('7200')
+    # proc.kill()
+    # shutil.rmtree('7200')
+
+test_remote()

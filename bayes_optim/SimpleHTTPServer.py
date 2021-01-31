@@ -75,7 +75,9 @@ class RemoteBO(BaseHTTPRequestHandler, object):
         _BO = ParallelBO if bo_param['n_point'] > 1 else BO
 
         # NOTE: this is an ad-hoc solution for MOTI
-        eq_fun = lambda x: np.sum(x) == 1
+        def eq_fun(x):
+            _x = x.tolist()
+            return np.abs(np.sum(_x) - 1)
 
         # TODO: turn this off until the feature importance of GPR is implemented
         if len(search_space.id_N) == 0 and len(search_space.id_O) == 0 and 11 < 2:
