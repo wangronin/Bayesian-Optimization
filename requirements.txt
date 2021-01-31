@@ -7,3 +7,4 @@ scipy==1.5.2
 sklearn==0.0
 tabulate==0.8.7
 threadpoolctl==2.1.0
+pandas==1.0.5

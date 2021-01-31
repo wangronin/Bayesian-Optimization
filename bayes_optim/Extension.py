@@ -35,7 +35,7 @@ def penalized_acquisition(x, acquisition_func, X_mean, pca, bounds, return_dx):
 
 class PCABO(ParallelBO):
     def __init__(
-        self, 
+        self,
         kernel_pca: bool = False,
         n_components: Union[float, int] = None,
         **kwargs
@@ -52,7 +52,7 @@ class PCABO(ParallelBO):
         X_ = X - self._X_mean
 
         if not self.minimize:
-            func_vals = -1 * func_vals 
+            func_vals = -1 * func_vals
 
         r = rankdata(func_vals)
         N = len(func_vals)
@@ -70,11 +70,11 @@ class PCABO(ParallelBO):
     def _create_acquisition(self, fun=None, par={}, return_dx=False):
         acquisition_func = super()._create_acquisition(fun, par, return_dx)
         fun = functools.partial(
-            penalized_acquisition, 
-            acquisition_func=acquisition_func, 
-            X_mean=self._X_mean, 
-            pca=self._pca, 
-            bounds=self.__search_space.bounds, 
+            penalized_acquisition,
+            acquisition_func=acquisition_func,
+            X_mean=self._X_mean,
+            pca=self._pca,
+            bounds=self.__search_space.bounds,
             return_dx=return_dx
         )
         return fun
@@ -84,7 +84,7 @@ class PCABO(ParallelBO):
         if hasattr(self, '_pca'):
             X = self._pca.inverse_transform(X) + self._X_mean
         return X
-    
+
     def tell(self, X, func_vals):
         X_ = self._scale_X(X, func_vals)
 
@@ -135,7 +135,7 @@ class OptimizerPipeline(baseOptimizer):
         opt.logger = self._logger
 
         # add pairs of (optimizer, transfer function)
-        self.queue.append((opt, transfer)) 
+        self.queue.append((opt, transfer))
         self.N += 1
 
     def ask(self, n_point=None):
@@ -156,7 +156,7 @@ class OptimizerPipeline(baseOptimizer):
         if not self._curr_opt:
             self._curr_opt, self._transfer = self.queue[self._counter]
             self._logger.name = self._curr_opt.__class__.__name__
-        
+
         return self._curr_opt.ask(n_point=n_point)
 
     def tell(self, X, y):
@@ -204,7 +204,7 @@ class OptimizerPipeline(baseOptimizer):
                 self._transfer = _transfer
             else:
                 self._stop = True
-            
+
     def evaluate(self, X):
         if not hasattr(X[0], '__iter__'):
             return self.obj_fun(X)
@@ -214,6 +214,58 @@ class OptimizerPipeline(baseOptimizer):
     def check_stop(self):
         return self._stop
 
+def warm_start_pycma(BO):
+    xopt = np.array(BO.xopt)
+    fopt = np.array(BO.fopt)
+    dim = BO.dim
+
+    H = BO.model.Hessian(xopt)
+    g = BO.model.gradient(xopt)[0]
+    g /= np.linalg.norm(g)   #  normalize the gradient since its scale can be huge
+
+    w, B = np.linalg.eigh(H)
+    w[w <= 0] = 1e-6     # replace the negative eigenvalues by a very small value
+    w_min, w_max = np.min(w), np.max(w)
+
+    # to avoid the condition number gets too high
+    cond_upper = 1e3
+    delta = (cond_upper * w_min - w_max) / (1 - cond_upper)
+    w += delta
+
+    # the inverse transformation from the Hessian
+    M = np.diag(1 / np.sqrt(w)).dot(B.T)
+    H_inv = B.dot(np.diag(1 / w)).dot(B.T)
+    p = -1 * H_inv.dot(g).ravel()
+    alpha = np.linalg.norm(p)
+    # sigma0 = np.linalg.norm(M.dot(g)) / np.sqrt(dim - 0.5)
+
+    if np.isnan(alpha):
+        alpha = 1
+        H_inv = np.eye(dim)
+
+    # use a backtracking line search to determine the initial step-size
+    tau, c = 0.9, 1e-4
+    slope = np.inner(g.ravel(), p.ravel())
+
+    if slope > 0:  # this should not happen..
+        p *= -1
+        slope *= -1
+
+    f = lambda x: BO.model.predict(x)
+    while True:
+        _x = (xopt + alpha * p).reshape(1, -1)
+        if f(_x) <= f(xopt.reshape(1, -1)) + c * alpha * slope:
+            break
+        alpha *= tau
+
+    sigma0 = np.linalg.norm(M.dot(alpha * p)) / np.sqrt(dim - 0.5)
+    kwargs = {
+        'x' : xopt,
+        'fopt' : fopt,
+        'sigma' : sigma0,
+        'Cov' : H_inv,
+    }
+    return kwargs
 
 class MultiAcquisitionBO(BO):
     def __init__(self, **kwargs):
@@ -224,7 +276,7 @@ class MultiAcquisitionBO(BO):
         self._acquisition_fun_list = ['MGFI', 'UCB']
         self._sampler_list = [
             lambda x: np.exp(np.log(x['t']) + 0.5 * np.random.randn()),
-            lambda x: 1 / (1 + np.exp((x['alpha'] * 4 - 2) + 0.6 * np.random.randn())) 
+            lambda x: 1 / (1 + np.exp((x['alpha'] * 4 - 2) + 0.6 * np.random.randn()))
         ]
         self._par_name_list = ['t', 'alpha']
         self._acquisition_par_list = [{'t' : 1}, {'alpha' : 0.1}]
@@ -234,10 +286,10 @@ class MultiAcquisitionBO(BO):
             _criterion = getattr(AcquisitionFunction, self._acquisition_fun_list[i])()
             if _n not in self._acquisition_par_list[i]:
                 self._acquisition_par_list[i][_n] = getattr(_criterion, _n)
-        
+
     def _batch_arg_max_acquisition(self, n_point, return_dx):
         criteria = []
-        
+
         for i in range(n_point):
             k = i % self._N_acquisition
             _acquisition_fun = self._acquisition_fun_list[k]
@@ -250,19 +302,19 @@ class MultiAcquisitionBO(BO):
                     fun=_acquisition_fun, par=_acquisition_par, return_dx=return_dx
                 )
             )
-        
+
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(
                 delayed(self._argmax_restart)(c, logger=self._logger) for c in criteria
             )
         else:
             __ = [list(self._argmax_restart(_, logger=self._logger)) for _ in criteria]
-        
+
         return tuple(zip(*__))
 
 
 class ParallelBO2(ParallelBO):
-    # TODO: add other Parallelization options: 
+    # TODO: add other Parallelization options:
     # 1) niching-based approach (my EVOLVE paper),
     # 2) bi-objective Pareto-front (PI vs. EI) (my WCCI '16 paper), and
     # 3) maybe QEI?

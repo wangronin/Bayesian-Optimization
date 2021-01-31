@@ -29,9 +29,9 @@ def obj_fun(x):
 C = ContinuousSpace([-5, 5], var_name='continuous') * dim_r
 
 # Equivalently, you can also use
-# C = ContinuousSpace([[-5, 5]]] * dim) 
+# C = ContinuousSpace([[-5, 5]]] * dim)
 # The general usage is:
-# ContinuousSpace([[lb_1, ub_1], [lb_2, ub_2], ..., [lb_n, ub_n]]) 
+# ContinuousSpace([[lb_1, ub_1], [lb_2, ub_2], ..., [lb_n, ub_n]])
 
 # Integer (ordinal) variables can be specified as follows:
 # The domain of integer variables can be given as with continuous ones
@@ -50,10 +50,10 @@ search_space = C + I + N
 model = RandomForest(levels=search_space.levels)
 
 opt = ParallelBO(
-    search_space=search_space, 
-    obj_fun=obj_fun, 
-    model=model, 
-    max_FEs=50, 
+    search_space=search_space,
+    obj_fun=obj_fun,
+    model=model,
+    max_FEs=100,
     DoE_size=3,    # the initial DoE size
     eval_type='dict',
     acquisition_fun='MGFI',

@@ -6,6 +6,7 @@ Created on Mon Apr 23 17:16:39 2018
 
 """
 import numpy as np
+import pandas as pd
 from tabulate import tabulate
 from typing import Callable, Any, Tuple
 
@@ -257,6 +258,7 @@ class Solution(np.ndarray):
                 ]
                 # if len(res) == 1:
                 #     res = res[0]
+
         elif orient == 'var':
             if with_index:
                 res = {
@@ -269,6 +271,27 @@ class Solution(np.ndarray):
                     _name : list(obj[:, k]) for k, _name in enumerate(self.var_name)
                 }
         return res
+
+    @classmethod
+    def from_dataframe(cls, x, space=None):
+        if isinstance(x, pd.DataFrame):
+            #Remove columns containing the n_evals and funtion values
+            x = x.drop(["f","n_eval"], 1, errors='ignore')
+            var_name = list(x.columns.values)
+            res = cls.__new__(cls, x=list(x.values), var_name=var_name)
+        else:
+            raise ValueError("x must be a dataframe")
+        return res
+
+    def to_dataframe(self, space=None):
+        var_name = self.var_name.tolist()
+        dt = pd.DataFrame(np.atleast_2d(self.tolist()), columns = var_name)
+        dt['n_eval'] = self.n_eval.tolist()
+        fname = self.fitness_name
+        if isinstance(fname, list):
+            fname = fname[0]
+        dt[fname] = self.fitness.tolist()
+        return dt
 
     def __str__(self):
         var_name = self.var_name.tolist()
