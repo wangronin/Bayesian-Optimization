@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 sys.path.insert(0, '../')
 
-from bayes_optim import BO, ContinuousSpace, OrdinalSpace, NominalSpace
+from bayes_optim import BO, RealSpace, IntegerSpace, DiscreteSpace
 from bayes_optim.Surrogate import RandomForest
 from bayes_optim.acquisition_optim import OnePlusOne_Cholesky_CMA
 
@@ -21,7 +21,7 @@ def g(x):
 
 @pytest.mark.skip(reason="OnePlusOne_Cholesky_CMA does not work this constraints yet..")
 def test_BO_equality():
-    search_space = ContinuousSpace([0, 1]) * 2
+    search_space = RealSpace([0, 1]) * 2
     model = RandomForest(levels=search_space.levels)
     xopt, _, __ = BO(
         search_space=search_space,
@@ -39,10 +39,10 @@ def test_BO_equality():
     assert np.isclose(h(xopt), 0, atol=1e-2)
 
 def test_BO_constraints():
-    search_space = OrdinalSpace([1, 10], var_name='mu') + \
-        OrdinalSpace([1, 10], var_name='lambda') + \
-            ContinuousSpace([0, 1], var_name='pc') + \
-                ContinuousSpace([0.005, 0.5], var_name='p')
+    search_space = IntegerSpace([1, 10], var_name='mu') + \
+        IntegerSpace([1, 10], var_name='lambda') + \
+            RealSpace([0, 1], var_name='pc') + \
+                RealSpace([0.005, 0.5], var_name='p')
 
     model = RandomForest(levels=search_space.levels)
     xopt, _, __ = BO(

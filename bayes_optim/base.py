@@ -15,7 +15,7 @@ from sklearn.metrics import r2_score, mean_absolute_percentage_error
 
 from . import AcquisitionFunction
 from .Solution import Solution
-from .SearchSpace import SearchSpace
+from .search_space import SearchSpace
 from .utils import arg_to_int, dynamic_penalty
 from .misc import LoggerFormatter
 from .acquisition_optim import argmax_restart
@@ -287,9 +287,9 @@ class baseBO(ABC):
         self._search_space = search_space
         self.dim = len(self._search_space)
         self.var_names = self._search_space.var_name
-        self.r_index = self._search_space.id_C       # indices of continuous variable
-        self.i_index = self._search_space.id_O       # indices of integer variable
-        self.d_index = self._search_space.id_N       # indices of categorical variable
+        self.r_index = self._search_space.id_r       # indices of continuous variable
+        self.i_index = self._search_space.id_i       # indices of integer variable
+        self.d_index = self._search_space.id_d       # indices of categorical variable
 
         self.param_type = self._search_space.var_type
         self.N_r = len(self.r_index)
@@ -454,7 +454,7 @@ class baseBO(ABC):
                 )
                 N = n_point - len(X)
                 method = 'LHS' if N > 1 else 'uniform'
-                s = self._search_space.sampling(N=N, method=method)
+                s = self._search_space.sample(N=N, method=method)
                 X = X.tolist() + s
                 X = Solution(
                     X, index=len(self.data) + np.arange(len(X)),
@@ -536,7 +536,7 @@ class baseBO(ABC):
     def create_DoE(self, n_point=None):
         DoE = []
         while len(DoE) < n_point:
-            DoE += self._search_space.sampling(n_point - len(DoE), method='LHS')
+            DoE += self._search_space.sample(n_point - len(DoE), method='LHS')
             DoE = self.pre_eval_check(DoE).tolist()
 
         return Solution(DoE, var_name=self.var_names)

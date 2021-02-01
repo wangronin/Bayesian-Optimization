@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 
 sys.path.insert(0, '../')
-from bayes_optim import ParallelBO, BO, ContinuousSpace, OrdinalSpace, NominalSpace
+from bayes_optim import ParallelBO, BO, RealSpace, IntegerSpace, DiscreteSpace
 from bayes_optim.Surrogate import trend, GaussianProcess, RandomForest
 
 np.random.seed(123)
@@ -17,7 +17,7 @@ def test_pickling():
         x = np.asarray(x)
         return np.sum(x ** 2)
 
-    space = ContinuousSpace([lb, ub]) * dim
+    space = RealSpace([lb, ub]) * dim
 
     mean = trend.constant_trend(dim, beta=None)
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
@@ -57,7 +57,7 @@ def test_continuous():
         x = np.asarray(x)
         return np.sum(x ** 2)
 
-    space = ContinuousSpace([lb, ub]) * dim
+    space = RealSpace([lb, ub]) * dim
 
     mean = trend.constant_trend(dim, beta=None)
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
@@ -89,7 +89,7 @@ def test_mix_space(eval_type):
     if eval_type == 'dict':
         def obj_fun(x):
             #Do explicit type-casting since dataframe rows might be strings otherwise
-            x_r = np.array([float(x['continuous_%d'%i]) for i in range(dim_r)])
+            x_r = np.array([float(x['continuous%d'%i]) for i in range(dim_r)])
             x_i = int(x['ordinal'])
             x_d = x['nominal']
             _ = 0 if x_d == 'OK' else 1
@@ -104,9 +104,9 @@ def test_mix_space(eval_type):
     else:
         raise NotImplementedError
 
-    search_space = ContinuousSpace([-5, 5], var_name='continuous') * dim_r + \
-        OrdinalSpace([5, 15], var_name='ordinal') + \
-        NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'], var_name='nominal')
+    search_space = RealSpace([-5, 5], var_name='continuous') * dim_r + \
+        IntegerSpace([5, 15], var_name='ordinal') + \
+        DiscreteSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'], var_name='nominal')
 
     model = RandomForest(levels=search_space.levels)
 

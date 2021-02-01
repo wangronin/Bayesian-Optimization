@@ -11,7 +11,7 @@ from optparse import OptionParser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .BayesOpt import ParallelBO, BO
-from .SearchSpace import SearchSpace, ContinuousSpace
+from .search_space import SearchSpace, RealSpace
 from .Surrogate import RandomForest, GaussianProcess, trend
 from .misc import random_string
 from .utils import Daemon
@@ -79,7 +79,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             return np.sum(x) - 1
 
         # TODO: turn this off until the feature importance of GPR is implemented
-        if len(search_space.id_N) == 0 and len(search_space.id_O) == 0 and 11 < 2:
+        if len(search_space.id_d) == 0 and len(search_space.id_i) == 0 and 11 < 2:
             dim = search_space.dim
             lb, ub = np.atleast_2d(search_space.bounds).T
             # autocorrelation parameters of GPR

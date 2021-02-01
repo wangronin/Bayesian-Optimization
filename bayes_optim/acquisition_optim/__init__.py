@@ -30,11 +30,11 @@ def argmax_restart(
         optimizer = 'OnePlusOne_Cholesky_CMA'
 
     for iteration in range(n_restart):
-        x0 = search_space.sampling(N=1, method='uniform')[0]
+        x0 = search_space.sample(N=1, method='uniform')[0]
 
         # TODO: add constraint handling for BFGS
         if optimizer == 'BFGS':
-            mask = np.nonzero(search_space.C_mask | search_space.O_mask)[0]
+            mask = np.nonzero(search_space.r_mask | search_space.i_mask)[0]
             bounds = np.array([search_space.bounds[i] for i in mask])
 
             if not all([isinstance(_, float) for _ in x0]):

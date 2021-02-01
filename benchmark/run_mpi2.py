@@ -1,18 +1,18 @@
 import os, sys
 import numpy as np
-import cocoex, cocopp 
+import cocoex, cocopp
 from time import time
 
 def run_optimizer(
-    optimizer, 
-    dim, 
-    fID, 
-    instance, 
-    logfile, 
-    lb, 
-    ub, 
-    max_FEs, 
-    data_path, 
+    optimizer,
+    dim,
+    fID,
+    instance,
+    logfile,
+    lb,
+    ub,
+    max_FEs,
+    data_path,
     bbob_opt
     ):
     """Parallel BBOB/COCO experiment wrapper
@@ -21,10 +21,10 @@ def run_optimizer(
     start = time()
     seed = np.mod(int(start) + os.getpid(), 1000)
     np.random.seed(seed)
-    
+
     data_path = os.path.join(data_path, str(instance))
     max_FEs = eval(max_FEs)
-    
+
     suite_filter_options = "dimensions: %d instance_indices: %d year:2019"%(dim, instance)
     suite = cocoex.Suite('bbob', "", suite_filter_options)
 
@@ -39,17 +39,17 @@ def run_optimizer(
     f.finalizerun()
     with open('out', 'a') as fout:
         fout.write(
-            "{} on f{} in {}D, instance {}: FEs={}, fbest-ftarget={:.4e}, " 
-            "elapsed time [m]: {:.3f}\n".format(optimizer, fID, dim, 
+            "{} on f{} in {}D, instance {}: FEs={}, fbest-ftarget={:.4e}, "
+            "elapsed time [m]: {:.3f}\n".format(optimizer, fID, dim,
             instance, f.evaluations, f.fbest - f.ftarget, (time() - start) / 60.)
         )
 
 def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
     sys.path.insert(0, '../')
-    from bayes_optim import AnnealingBO, BO, ContinuousSpace
+    from bayes_optim import AnnealingBO, BO, RealSpace
     from bayes_optim.Surrogate import GaussianProcess, trend
 
-    space = ContinuousSpace(list(zip(lb, ub)))
+    space = RealSpace(list(zip(lb, ub)))
     mean = trend.constant_trend(dim, beta=None)  # equivalent to Ordinary Kriging
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
     thetaU = 10 * (ub - lb) * np.ones(dim)
@@ -64,25 +64,25 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
     )
 
     return BO(
-        search_space=space, 
-        obj_fun=obj_fun, 
-        model=model, 
+        search_space=space,
+        obj_fun=obj_fun,
+        model=model,
         DoE_size=dim * 5,
-        max_FEs=max_FEs, 
-        verbose=False, 
+        max_FEs=max_FEs,
+        verbose=False,
         n_point=1,
         minimize=True,
         ftarget=ftarget,
         logger=logfile
     )
 
-if __name__ == '__main__': 
+if __name__ == '__main__':
     from mpi4py import MPI
-    
+
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
-    
+
     dims = (2, 5)
     fIDs = range(25)
     instance = range(1, size + 1)
@@ -98,11 +98,11 @@ if __name__ == '__main__':
         'data_path' : '',
     }
     opts['bbob_opt'] = {
-        'comments': 'max_FEs={0}'.format(opts['max_FEs']), 
+        'comments': 'max_FEs={0}'.format(opts['max_FEs']),
     }
-    
+
     for algorithm in algorithms:
-        opts['data_path'] = './bbob_data/{}'.format(algorithm.__name__) 
+        opts['data_path'] = './bbob_data/{}'.format(algorithm.__name__)
         opts['bbob_opt']['algid'] = algorithm.__name__
         for dim in dims:
             for fID in fIDs:

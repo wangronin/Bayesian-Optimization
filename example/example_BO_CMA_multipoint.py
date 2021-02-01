@@ -9,7 +9,7 @@ from copy import copy
 from deap import benchmarks
 from typing import Callable, Any, Tuple, List, Union
 
-from bayes_optim import OptimizerPipeline, ParallelBO, ContinuousSpace
+from bayes_optim import OptimizerPipeline, ParallelBO, RealSpace
 from bayes_optim.Surrogate import GaussianProcess, trend
 
 from cma import CMAEvolutionStrategy, CMAOptions
@@ -44,12 +44,12 @@ class _BO(ParallelBO):
 class _CMA(CMAEvolutionStrategy):
     def __init__(
         self,
-        dim: int, 
+        dim: int,
         popsize: int,
         lb: Union[float, str, Vector, np.ndarray] = -np.inf,
         ub: Union[float, str, Vector, np.ndarray] = np.inf,
         ftarget: Union[int, float] = -np.inf,
-        max_FEs: Union[int, str] = np.inf, 
+        max_FEs: Union[int, str] = np.inf,
         verbose: bool = False,
         logger = None
         ):
@@ -75,7 +75,7 @@ class _CMA(CMAEvolutionStrategy):
     @property
     def eval_count(self):
         return self.countevals
-    
+
     @property
     def iter_count(self):
         return self.countiter
@@ -91,7 +91,7 @@ class _CMA(CMAEvolutionStrategy):
     @property
     def Cov(self):
         return self.C
-    
+
     @Cov.setter
     def Cov(self, C):
         try:
@@ -114,10 +114,10 @@ class _CMA(CMAEvolutionStrategy):
             self._logger = logger
             self._logger.propagate = False
             return
-    
+
     def ask(self, n_point=None):
         return super().ask(number=n_point)
-    
+
     def tell(self, X, y):
         super().tell(X, y)
         x, f, _ = self.best.get()
@@ -129,7 +129,7 @@ class _CMA(CMAEvolutionStrategy):
         _, f, __ = self.best.get()
         if f <= self.ftarget:
             self.stop_dict['ftarget'] = f
-            
+
         if self.countevals >= self.max_FEs:
             self.stop_dict['FEs'] = self.countevals
 
@@ -141,8 +141,8 @@ max_FEs = 30 * n_point
 obj_fun = lambda x: benchmarks.himmelblau(x)[0]
 lb, ub = -6, 6
 
-search_space = ContinuousSpace([lb, ub]) * dim
-mean = trend.constant_trend(dim, beta=0)    # Ordinary Kriging 
+search_space = RealSpace([lb, ub]) * dim
+mean = trend.constant_trend(dim, beta=0)    # Ordinary Kriging
 
 # autocorrelation parameters of GPR
 thetaL = 1e-10 * (ub - lb) * np.ones(dim)
@@ -190,10 +190,10 @@ def post_BO(BO):
     return kwargs
 
 pipe = OptimizerPipeline(
-    obj_fun=obj_fun, 
-    minimize=True, 
+    obj_fun=obj_fun,
+    minimize=True,
     n_point=n_point,
-    max_FEs=max_FEs, 
+    max_FEs=max_FEs,
     verbose=True
 )
 pipe.add(bo, transfer=post_BO)

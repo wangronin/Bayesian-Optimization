@@ -2,7 +2,7 @@ import numpy as np
 import sys, os
 sys.path.insert(0, '../')
 
-from bayes_optim import BO, ContinuousSpace
+from bayes_optim import BO, RealSpace
 from bayes_optim.Surrogate import GaussianProcess, trend
 
 np.random.seed(123)
@@ -13,7 +13,7 @@ def fitness(x):
     x = np.asarray(x)
     return np.sum(x ** 2)
 
-space = ContinuousSpace([lb, ub]) * dim
+space = RealSpace([lb, ub]) * dim
 
 mean = trend.constant_trend(dim, beta=None)
 thetaL = 1e-10 * (ub - lb) * np.ones(dim)

@@ -2,7 +2,7 @@ import numpy as np
 import sys, os
 sys.path.insert(0, '../')
 
-from bayes_optim import ParallelBO, BO, ContinuousSpace, OrdinalSpace, NominalSpace
+from bayes_optim import ParallelBO, BO, RealSpace, IntegerSpace, DiscreteSpace
 from bayes_optim.Surrogate import trend, GaussianProcess, RandomForest
 
 np.random.seed(42)
@@ -25,7 +25,7 @@ def test_warm_data_with_GPR():
 
     X = np.random.rand(5, dim) * (ub - lb) + lb
     y = [fitness(x) for x in X]
-    space = ContinuousSpace([lb, ub]) * dim
+    space = RealSpace([lb, ub]) * dim
 
     thetaL = 1e-10 * (ub - lb) * np.ones(dim)
     thetaU = 10 * (ub - lb) * np.ones(dim)
@@ -51,11 +51,11 @@ def test_warm_data_with_GPR():
     opt.run()
 
 def test_warm_data_with_RF():
-    space = ContinuousSpace([-10, 10]) * 2 + \
-        OrdinalSpace([5, 15]) + \
-        NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'])
+    space = RealSpace([-10, 10]) * 2 + \
+        IntegerSpace([5, 15]) + \
+        DiscreteSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'])
 
-    X = space.sampling(10)
+    X = space.sample(10)
     y = [obj_fun(x) for x in X]
 
     model = RandomForest(levels=space.levels)

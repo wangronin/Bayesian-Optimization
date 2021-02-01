@@ -5,7 +5,7 @@ import numpy as np
 sys.path.insert(0, '../')
 
 from deap import benchmarks
-from bayes_optim import OptimizerPipeline, BO, Solution, ContinuousSpace
+from bayes_optim import OptimizerPipeline, BO, Solution, RealSpace
 from bayes_optim.acquisition_optim import OnePlusOne_Cholesky_CMA
 from bayes_optim.Surrogate import GaussianProcess, trend
 
@@ -39,8 +39,8 @@ max_FEs = 80
 obj_fun = lambda x: benchmarks.griewank(x)[0]
 lb, ub = -600, 600
 
-search_space = ContinuousSpace([lb, ub]) * dim
-mean = trend.constant_trend(dim, beta=None)    
+search_space = RealSpace([lb, ub]) * dim
+mean = trend.constant_trend(dim, beta=None)
 
 # autocorrelation parameters of GPR
 thetaL = 1e-10 * (ub - lb) * np.ones(dim)

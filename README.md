@@ -40,11 +40,11 @@ And you could also have much finer control over most ingredients of BO, e.g., th
 model and acquisition functions. Please see the example below:
 
 ```python
-from bayes_optim import BO, ContinuousSpace
+from bayes_optim import BO, RealSpace
 from bayes_optim.Surrogate import GaussianProcess
 
 dim = 5
-space = ContinuousSpace([-5, 5]) * dim  # create the search space
+space = RealSpace([-5, 5]) * dim  # create the search space
 
 # hyperparameters of the GPR model
 thetaL = 1e-10 * (ub - lb) * np.ones(dim)
@@ -133,7 +133,7 @@ $$f\in \mathcal{C}^1\left(\mathbb{R}^d\right)$$
 Then, it is possible to pose a prior distribution of _function_ $f$ in $\mathcal{C}^1\left(\mathbb{R}^d\right)$ (given that this space is also measurable):
 $$f \sim P(f)$$
 This prior distribution models our belief on $f$ before observing any data samples from it. The likelihood can be obtained by observing (noisy) samples on this function $f$, which is the  joint probability (density) of observing the data set given the function $f$:
-$$P(\{\mathbf{x}_i\}_{i=1}^n, \{y_i\}_{i=1}^n | f)$$ 
+$$P(\{\mathbf{x}_i\}_{i=1}^n, \{y_i\}_{i=1}^n | f)$$
 Then, using the Bayes rule, the __posterior__ distribution of $f$ is calculated as:
 $$\underbrace{P(f | \{\mathbf{x}_i\}_{i=1}^n, \{y_i\}_{i=1}^n)}_{\text{posterior}} \propto \underbrace{P(\{\mathbf{x}_i\}_{i=1}^n, \{y_i\}_{i=1}^n | f)}_{\text{likelihood/evidence}}\underbrace{P(f)}_{\text{prior}}$$
 Intuitively, the posterior tells us that how the function $f$ distributes once some data/evidence from it are available. At this point, our knowledge on $f$ is better than nothing, but it is represented as a distribution, containing uncertainties. Therefore, the optimal decision-making task can be tackled by optimizing the expected loss function:

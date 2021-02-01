@@ -11,14 +11,14 @@ from numpy.random import randint, rand, randn, geometric
 from ..misc import handle_box_constraint
 from ..base import Solution
 from ..utils import dynamic_penalty
-from ..SearchSpace import ContinuousSpace, OrdinalSpace, NominalSpace
+from ..search_space import RealSpace, IntegerSpace, DiscreteSpace
 
 # TODO: test more contraint handling methods
 # TODO: improve efficiency, e.g. compile it with cython
-# TODO: try to use advanced python default parameter 
+# TODO: try to use advanced python default parameter
 class MIES(object):
-    def __init__(self, search_space, obj_func, eq_func=None, ineq_func=None, x0=None, 
-                 ftarget=None, max_eval=np.inf, minimize=True, elitism=False, mu_=4, 
+    def __init__(self, search_space, obj_func, eq_func=None, ineq_func=None, x0=None,
+                 ftarget=None, max_eval=np.inf, minimize=True, elitism=False, mu_=4,
                  lambda_=10, sigma0=None, eta0=None, P0=None, verbose=False,
                  eval_type='list'):
 
@@ -37,15 +37,15 @@ class MIES(object):
         self.elitism = False
         self._penalty_func = dynamic_penalty
         self._eval_type = eval_type
-        
+
         self._space = search_space
         self.var_names = self._space.var_name
         self.param_type = self._space.var_type
 
         # index of each type of variables in the dataframe
-        self.id_r = self._space.id_C       # index of continuous variable
-        self.id_i = self._space.id_O       # index of integer variable
-        self.id_d = self._space.id_N       # index of categorical variable
+        self.id_r = self._space.id_r       # index of continuous variable
+        self.id_i = self._space.id_i       # index of integer variable
+        self.id_d = self._space.id_d       # index of categorical variable
 
         # the number of variables per each type
         self.N_r = len(self.id_r)
@@ -53,36 +53,36 @@ class MIES(object):
         self.N_d = len(self.id_d)
         self.dim = self.N_r + self.N_i + self.N_d
 
-        # by default, we use individual step sizes for continuous and 
+        # by default, we use individual step sizes for continuous and
         # integer variables and global strength for the nominal variables
         self.N_p = min(self.N_d, int(1))
-        
+
         # total length of the solution vector
-        self._len = self.dim + self.N_r + self.N_i + self.N_p 
-        
+        self._len = self.dim + self.N_r + self.N_i + self.N_p
+
         # unpack interval bounds
         self.bounds_r = np.asarray([self._space.bounds[_] for _ in self.id_r])
         self.bounds_i = np.asarray([self._space.bounds[_] for _ in self.id_i])
         self.bounds_d = np.asarray([self._space.bounds[_] for _ in self.id_d])
         self._check_bounds(self.bounds_r)
         self._check_bounds(self.bounds_i)
-        
+
         # step default step-sizes/mutation strength
         par_name = []
         if sigma0 is None and self.N_r:
             sigma0 = 0.05 * (self.bounds_r[:, 1] - self.bounds_r[:, 0])
             par_name += ['sigma' + str(_) for _ in range(self.N_r)]
         if eta0 is None and self.N_i:
-            eta0 = 0.05 * (self.bounds_i[:, 1] - self.bounds_i[:, 0]) 
+            eta0 = 0.05 * (self.bounds_i[:, 1] - self.bounds_i[:, 0])
             par_name += ['eta' + str(_) for _ in range(self.N_i)]
         if P0 is None and self.N_d:
             P0 = 1. / self.N_d
             par_name += ['P' + str(_) for _ in range(self.N_p)]
 
         # column indices: used for slicing
-        self._id_var = np.arange(self.dim)                    
+        self._id_var = np.arange(self.dim)
         self._id_sigma = np.arange(self.N_r) + len(self._id_var)
-        self._id_eta = np.arange(self.N_i) + len(self._id_var) + len(self._id_sigma) 
+        self._id_eta = np.arange(self.N_i) + len(self._id_var) + len(self._id_sigma)
         self._id_p = np.arange(self.N_p) + len(self._id_var) + len(self._id_sigma) \
             + len(self._id_eta)
         self._id_hyperpar = np.arange(self.dim, self._len)
@@ -98,14 +98,14 @@ class MIES(object):
                 par += [P0] * self.N_p
 
             self.pop = Solution(np.tile(np.r_[x0, par], (self.mu_, 1)),
-                                var_name=self.var_names + par_name, 
+                                var_name=self.var_names + par_name,
                                 verbose=self.verbose)
             fitness0 = self.evaluate(self.pop[0])
             self.fitness = np.repeat(fitness0, self.mu_)
             self.xopt = x0
             self.fopt = sum(fitness0)
-        else:                                      # uniform sampling                 
-            x = np.asarray(self._space.sampling(self.mu_), dtype='object')   
+        else:                                      # uniform sampling
+            x = np.asarray(self._space.sample(self.mu_), dtype='object')
 
             par = []
             if self.N_r:
@@ -117,13 +117,13 @@ class MIES(object):
 
             par = np.concatenate(par, axis=1)
             x = np.c_[x, par].tolist()
-            
+
             self.pop = Solution(x, var_name=self.var_names + par_name, verbose=self.verbose)
             self.fitness = self.evaluate(self.pop)
             self.fopt = min(self.fitness) if self.minimize else max(self.fitness)
             _ = np.nonzero(self.fopt == self.fitness)[0][0]
             self.xopt = self.pop[_, self._id_var]
-        
+
         self.offspring = self.pop[0] * self.lambda_
         self.f_offspring = np.repeat(self.fitness[0], self.lambda_)
         self._set_hyperparameter()
@@ -132,7 +132,7 @@ class MIES(object):
         self.tolfun = 1e-5
         self.nbin = int(3 + ceil(30. * self.dim / self.lambda_))
         self.histfunval = zeros(self.nbin)
-    
+
     def _check_bounds(self, bounds):
         if len(bounds) == 0:
             return
@@ -173,7 +173,7 @@ class MIES(object):
 
         if not self.minimize:
             rank = rank[::-1]
-        
+
         _ = rank[:self.mu_]
         self.pop = pop[_]
         self.fitness = fitness[_]
@@ -183,7 +183,7 @@ class MIES(object):
             pop.fitness = np.asarray(self.obj_func(pop[self._id_var]))
         else:                    # a population
             pop.fitness = np.array(list(map(self.obj_func, pop[:, self._id_var])))
-        
+
         self.eval_count += pop.N
         if self._eval_type == 'list':
             X = pop
@@ -192,8 +192,8 @@ class MIES(object):
 
         _penalized_fitness = pop.fitness + \
             self._penalty_func(
-                X, self.iter_count + 1, 
-                self.eq_func, self.ineq_func, 
+                X, self.iter_count + 1,
+                self.eq_func, self.ineq_func,
                 minimize=self.minimize
             )
         return (_penalized_fitness if return_penalized else pop.fitness)
@@ -214,15 +214,15 @@ class MIES(object):
             sigma = sigma * exp(self.tau_r * randn())
         else:
             sigma = sigma * exp(self.tau_r * randn() + self.tau_p_r * randn(self.N_r))
-        
+
         # Gaussian mutation
         R = randn(self.N_r)
         x = np.asarray(individual[self.id_r], dtype='float')
         x_ = x + sigma * R
-        
+
         # Interval Bounds Treatment
         x_ = handle_box_constraint(x_, self.bounds_r[:, 0], self.bounds_r[:, 1])
-        
+
         # TODO: check if this interval boundary handling works with penalty functions
         # the constraint handling method will (by chance) turn really bad cadidates
         # (the one with huge sigmas) to good ones and hence making the step size explode
@@ -232,7 +232,7 @@ class MIES(object):
         else:
             individual[self._id_sigma] = sigma
         individual[self.id_r] = x_
-        
+
     def _mutate_i(self, individual):
         eta = np.asarray(individual[self._id_eta].tolist(), dtype='float')
         x = np.asarray(individual[self.id_i], dtype='int')
@@ -268,19 +268,19 @@ class MIES(object):
 
         if self.eval_count != 0 and self.iter_count != 0:
             fitness = self.f_offspring
-            # sigma = np.atleast_2d([__[self._id_sigma] for __ in self.pop]) 
+            # sigma = np.atleast_2d([__[self._id_sigma] for __ in self.pop])
             # sigma_mean = np.mean(sigma, axis=0)
-            
+
             # tolerance on fitness in history
             self.histfunval[int(mod(self.eval_count / self.lambda_ - 1, self.nbin))] = fitness[0]
             if mod(self.eval_count / self.lambda_, self.nbin) == 0 and \
                 (max(self.histfunval) - min(self.histfunval)) < self.tolfun:
                     self.stop_dict['tolfun'] = True
-            
+
             # flat fitness within the population
             if fitness[0] == fitness[int(min(ceil(.1 + self.lambda_ / 4.), self.mu_ - 1))]:
                 self.stop_dict['flatfitness'] = True
-            
+
             # TODO: implement more stop criteria
             # if any(sigma_mean < 1e-10) or any(sigma_mean > 1e10):
             #     self.stop_dict['sigma'] = True
@@ -297,7 +297,7 @@ class MIES(object):
             #         self.stop_dict['TolUPX'] = True
             #     else:
             #         self.flg_warning = True
-            
+
         return any(self.stop_dict.values())
 
     def _better(self, f1, f2):
@@ -310,7 +310,7 @@ class MIES(object):
                 p1, p2 = randint(0, self.mu_), randint(0, self.mu_)
                 individual = self.recombine(p1, p2)
                 self.offspring[i] = self.mutate(individual)
-            
+
             # NOTE: `self.fitness` and `self.f_offspring` are penalized function values
             self.f_offspring[:] = self.evaluate(self.offspring)
             self.select()

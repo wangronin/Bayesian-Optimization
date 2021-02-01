@@ -8,14 +8,14 @@ from typing import Callable, Any, Tuple
 import os, sys, dill, functools, logging, time
 
 import numpy as np
-import json, copy, re 
+import json, copy, re
 from copy import copy
 from joblib import Parallel, delayed
 
 from . import AcquisitionFunction
 from .base import baseBO
 from .Solution import Solution
-from .SearchSpace import SearchSpace
+from .search_space import SearchSpace
 
 class BO(baseBO):
     def _create_acquisition(self, fun=None, par={}, return_dx=False):
@@ -23,7 +23,7 @@ class BO(baseBO):
         if hasattr(getattr(AcquisitionFunction, fun), 'plugin'):
             if 'plugin' not in par:
                 par.update({'plugin': self.fmin})
-        
+
         return super()._create_acquisition(fun, par, return_dx)
 
     def pre_eval_check(self, X):
@@ -31,7 +31,7 @@ class BO(baseBO):
         """
         if not isinstance(X, Solution):
             X = Solution(X, var_name=self.var_names)
-        
+
         N = X.N
         if hasattr(self, 'data'):
             X = X + self.data
@@ -66,17 +66,17 @@ class ParallelBO(BO):
             self._par_name = 'alpha'
             # Logit-normal distribution for `alpha` supported on [0, 1]
             self._sampler = lambda x: 1 / (1 + np.exp((x['alpha'] * 4 - 2) \
-                + 0.6 * np.random.randn())) 
+                + 0.6 * np.random.randn()))
         elif self._acquisition_fun == 'EpsilonPI':
             self._par_name = 'epsilon'
             self._sampler = None # TODO: implement this!
         else:
             raise NotImplementedError
-        
+
         _criterion = getattr(AcquisitionFunction, self._acquisition_fun)()
         if self._par_name not in self._acquisition_par:
             self._acquisition_par[self._par_name] = getattr(_criterion, self._par_name)
-        
+
     def _batch_arg_max_acquisition(self, n_point, return_dx):
         criteria = []
         for _ in range(n_point):
@@ -86,14 +86,14 @@ class ParallelBO(BO):
             criteria.append(
                 self._create_acquisition(par=_acquisition_par, return_dx=return_dx)
             )
-        
+
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(
                 delayed(self._argmax_restart)(c, logger=self._logger) for c in criteria
             )
         else:
             __ = [list(self._argmax_restart(_, logger=self._logger)) for _ in criteria]
-        
+
         return tuple(zip(*__))
 
 class AnnealingBO(ParallelBO):
@@ -103,25 +103,25 @@ class AnnealingBO(ParallelBO):
         self.tf = tf
         self.schedule = schedule
         self._acquisition_par['t'] = t0
-        
+
         # TODO: add supports for UCB and epsilon-PI
         max_iter = (self.max_FEs - self._DoE_size) / self.n_point
         if self.schedule == 'exp':                          # exponential
-            self.alpha = (self.tf / t0) ** (1. / max_iter) 
+            self.alpha = (self.tf / t0) ** (1. / max_iter)
             self._anealer = lambda t: t * self.alpha
         elif self.schedule == 'linear':
             self.eta = (t0 - self.tf) / max_iter            # linear
             self._anealer = lambda t: t - self.eta
         elif self.schedule == 'log':
-            self.c = self.tf * np.log(max_iter + 1)         # logarithmic 
+            self.c = self.tf * np.log(max_iter + 1)         # logarithmic
             self._anealer = lambda t: t * self.c / np.log(self.iter_count + 2)
         else:
             raise NotImplementedError
-        
+
         def callback():
             self._acquisition_par['t'] = self._anealer(self._acquisition_par['t'])
         self._acquisition_callbacks += [callback]
-    
+
 class SelfAdaptiveBO(ParallelBO):
     def __init__(self, *argv, **kwargs):
         super.__init__(*argv, **kwargs)
@@ -140,14 +140,14 @@ class SelfAdaptiveBO(ParallelBO):
             criteria.append(
                 self._create_acquisition(par=_acquisition_par, return_dx=return_dx)
             )
-        
+
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(
                 delayed(self._argmax_restart)(c, logger=self._logger) for c in criteria
             )
         else:
             __ = [list(self._argmax_restart(_, logger=self._logger)) for _ in criteria]
-        
+
         # NOTE: this adaptation is different from what I did in the LeGO paper..
         idx = np.argsort(__[1])[::-1][:N]
         self._acquisition_par['t'] = np.mean([_t_list[i] for i in idx])
@@ -166,5 +166,5 @@ class NoisyBO(ParallelBO):
             y_ = self.model.predict(self.data)
             plugin = np.min(y_) if self.minimize else np.max(y_)
             par.update({'plugin' : plugin})
-        
+
         return super()._create_acquisition(par=par, return_dx=return_dx)
