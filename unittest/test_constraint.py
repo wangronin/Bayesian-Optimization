@@ -1,7 +1,6 @@
 import sys
 import pytest
 import numpy as np
-from deap.benchmarks import rastrigin
 sys.path.insert(0, '../')
 
 from bayes_optim import BO, ContinuousSpace, OrdinalSpace, NominalSpace
@@ -26,7 +25,7 @@ def test_BO_equality():
     model = RandomForest(levels=search_space.levels)
     xopt, _, __ = BO(
         search_space=search_space,
-        obj_fun=rastrigin,
+        obj_fun=obj_fun,
         eq_fun=h,
         model=model,
         max_FEs=10,
