@@ -1,17 +1,43 @@
+import sys
+import pytest
 import numpy as np
-import sys, os
+from deap.benchmarks import rastrigin
 sys.path.insert(0, '../')
 
 from bayes_optim import BO, ContinuousSpace, OrdinalSpace, NominalSpace
 from bayes_optim.Surrogate import RandomForest
+from bayes_optim.acquisition_optim import OnePlusOne_Cholesky_CMA
 
-np.random.seed(42)
-
-def obj_func(x):
+def obj_fun2(x):
     return (x['pc'] - 0.2) ** 2 + x['mu'] + x['lambda'] + np.abs(x['p'] - 0.7)
+
+def obj_fun(x):
+    return np.sum(np.array(x) ** 2) +  5 * np.sum(np.array(x)) + 10
+
+def h(x):
+    return np.sum(x) - 1
 
 def g(x):
     return [-x['pc'], x['mu'] - 1.9]
+
+@pytest.mark.skip(reason="OnePlusOne_Cholesky_CMA does not work this constraints yet..")
+def test_BO_equality():
+    search_space = ContinuousSpace([0, 1]) * 2
+    model = RandomForest(levels=search_space.levels)
+    xopt, _, __ = BO(
+        search_space=search_space,
+        obj_fun=rastrigin,
+        eq_fun=h,
+        model=model,
+        max_FEs=10,
+        DoE_size=3,
+        acquisition_fun='MGFI',
+        acquisition_par={'t' : 2},
+        acquisition_optimization={'optimizer': 'MIES'},
+        verbose=True,
+        random_seed=42
+    ).run()
+    assert np.isclose(h(xopt), 0, atol=1e-2)
 
 def test_BO_constraints():
     search_space = OrdinalSpace([1, 10], var_name='mu') + \
@@ -22,10 +48,10 @@ def test_BO_constraints():
     model = RandomForest(levels=search_space.levels)
     xopt, _, __ = BO(
         search_space=search_space,
-        obj_fun=obj_func,
+        obj_fun=obj_fun2,
         ineq_fun=g,
         model=model,
-        max_FEs=30,
+        max_FEs=10,
         DoE_size=3,
         eval_type='dict',
         acquisition_fun='MGFI',
@@ -34,52 +60,5 @@ def test_BO_constraints():
         n_point=1,
         verbose=True
     ).run()
-
     assert isinstance(xopt, dict)
     assert all(np.array(g(xopt)) <= 0)
-
-# LENGTH = 3
-# CACHE = {}
-
-# def obj_func(x):
-#     global LENGTH
-#     global CACHE
-#     x_i, f_d = np.array(x[:LENGTH]), x[LENGTH:LENGTH*2]
-#     cnt = 0
-#     fitness = 0
-#     _id = ""
-#     for n, f in zip(x_i, f_d):
-#         if f == 'Y':
-#             fitness += np.power(n, cnt)
-#             cnt += 1
-#             _id += str(n) if len(_id) == 0 else '-' + str(n)
-#     print(x, fitness)
-#     CACHE[_id] = fitness
-#     return fitness
-
-# def eq_func(x):
-#     global LENGTH
-#     global CACHE
-#     x_i, f_d = np.array(x[:LENGTH]), x[LENGTH:LENGTH*2]
-#     last_y = -1
-#     penalty = 0
-#     _id = ""
-#     for ix, p in enumerate(zip(x_i, f_d)):
-#        n, f = p
-#        if f == 'Y':
-#           penalty += ix - last_y - 1
-#           last_y = last_y + 1
-#           _id += str(n) if len(_id) == 0 else '-' + str(n)
-
-#     penalty = (len(f_d) * (len(f_d) + 1)) / 2 if last_y == -1 else penalty
-#     penalty = (len(f_d) * (len(f_d) + 1)) / 2 if _id in CACHE else penalty
-#     return int(penalty)
-
-
-# space = (OrdinalSpace([1, 3]) * LENGTH) + (NominalSpace(['Y', 'N']) * LENGTH)
-
-# model = RandomForest(levels=space.levels)
-# opt = BO(space, obj_func, model, eq_fun=eq_func, ineq_fun=None, minimize=True,
-#          n_init_sample=3, max_eval=50, verbose=True, optimizer='MIES')
-# xopt, fopt, stop_dict = opt.run()
-# print(xopt, fopt, stop_dict)

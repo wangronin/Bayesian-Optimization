@@ -1,5 +1,3 @@
-from pdb import set_trace
-
 import numpy as np
 import sys, os
 sys.path.insert(0, '../')
@@ -30,12 +28,14 @@ model = GaussianProcess(
 )
 
 opt = BO(
-    search_space=space, 
-    obj_fun=fitness, 
-    model=model, 
+    search_space=space,
+    obj_fun=fitness,
+    model=model,
     DoE_size=5,
-    max_FEs=50, 
-    verbose=True, 
-    n_point=1
+    max_FEs=50,
+    verbose=True,
+    n_point=1,
+    acquisition_optimization={'optimizer': 'OnePlusOne_Cholesky_CMA'}
 )
 print(opt.run())
+# assert np.isclose(opt.fopt, 0.002111536359751477)

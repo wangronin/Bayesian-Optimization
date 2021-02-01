@@ -1,16 +1,9 @@
-"""
-Created on Mon Apr 23 17:16:39 2018
-
-@author: Hao Wang
-@email: wangronin@gmail.com
-
-"""
+from typing import Sequence, Optional, Union, List
 import numpy as np
-import pandas as pd
 from tabulate import tabulate
-from typing import Callable, Any, Tuple
 
-# TODO: test the performance against Pandas dataframe
+__authors__ = ['Hao Wang']
+
 # TODO: maybe set var_name as a constant attribute
 # TODO: register the objective function the class and implement an eval function
 # TODO: fix the maximum recursion problem when debugging
@@ -25,25 +18,42 @@ class Solution(np.ndarray):
     # TODO: get rid of self.__dict__ for speed concern
     # But __slots__ does NOT work with dill yet...
     # __slots__ = 'N', 'dim', 'var_name', 'index', 'fitness', 'n_eval', 'verbose', 'n_obj'
-    def __new__(cls, x, fitness=None, n_eval=0, index=None, var_name=None,
-                fitness_name=None, n_obj=1, verbose=True):
+    def __new__(
+        cls,
+        x: Sequence,
+        fitness: Optional[Sequence] = None,
+        n_eval: Union[int, List[int]] = 0,
+        index: Union[int, List[int]] = None,
+        var_name: Union[str, List[str]] = None,
+        fitness_name: Union[str, List[str]] = None,
+        n_obj: int = 1,
+        verbose: bool = True
+    ):
         """
         Parameters
         ----------
-            x : array-like,
-            fitness : float (array),
-                objective values of solutions
-            n_eval : int (array),
-                number of evaluations per each solution
-            index : int (array),
-                indices of solutions
-            var_name : str (array),
-                column names of variables
-            fitness_name : str (array),
-                column names of fitness values
-            verbose : bool,
-                controls if additional information are printed when calling __str__
-                and to_dict
+        x : Sequence
+            The parameters of a solution
+        fitness : Optional[Sequence], optional
+            objective values of solutions, by default None
+        n_eval : Union[int, List[int]], optional
+            number of evaluations per each solution, by default 0
+        index : Union[int, List[int]], optional
+            indices of solutions, by default None
+        var_name : Union[str, List[str]], optional
+            names of the variables, by default None
+        fitness_name : Union[str, List[str]], optional
+            names of the fitness values, by default None
+        n_obj : int, optional
+            the number of objective functions, by default 1
+        verbose : bool, optional
+            controls if additional information are printed when calling ``__str__``
+                and to_dict, by default True
+
+        Returns
+        -------
+        ``Solution``
+
         Note
         ----
             Instead of using `__init__`, the `__new__` function is used here because
@@ -114,7 +124,6 @@ class Solution(np.ndarray):
         obj.var_name = np.asarray(var_name)
         obj.fitness_name = fitness_name
         obj.verbose = verbose
-
         return obj
 
     def _check_attr(self):
@@ -164,9 +173,9 @@ class Solution(np.ndarray):
         else:
             super(Solution, self).__setattr__(name, value)
 
-    def __setitem__(self, index, value):
-        # TODO: maybe add variable type checker here...
-        super(Solution, self).__setitem__(index, value)
+    # def __setitem__(self, index, value):
+    #     # TODO: maybe add variable type checker here...
+    #     super(Solution, self).__setitem__(index, value)
 
     def __getitem__(self, index):
         _, __ = index, slice(None, None)
@@ -216,17 +225,23 @@ class Solution(np.ndarray):
         `__array_finalize__` is called after new `Solution` instance is created: from calling
         1) `__new__`, 2) view casting (`ndarray`.`view()`) or 3) slicing (`__getitem__`)
         """
-        if obj is None: return
+        if obj is None:
+            return
         # Needed for array slicing (__getitem__)
         super(Solution, self).__setattr__('fitness', getattr(obj, 'fitness', None))
         super(Solution, self).__setattr__('n_eval', getattr(obj, 'n_eval', None))
         super(Solution, self).__setattr__('index', getattr(obj, 'index', None))
-        self.var_name = getattr(obj, 'var_name', None)
-        self.fitness_name = getattr(obj, 'fitness_name', None)
-        self.verbose = getattr(obj, 'verbose', None)
-        self.dim = getattr(obj, 'dim', None)
-        self.N = getattr(obj, 'N', None)
-        self.n_obj = getattr(obj, 'n_obj', None)
+
+        # NOTE: to get rid of pylint errors..
+        self.index: np.ndarray = getattr(obj, 'index', None)
+        self.var_name: np.ndarray = getattr(obj, 'var_name', None)
+        self.fitness: np.ndarray = getattr(obj, 'fitness', None)
+        self.fitness_name: List[str] = getattr(obj, 'fitness_name', None)
+        self.n_eval: np.ndarray = getattr(obj, 'n_eval', None)
+        self.verbose: bool = getattr(obj, 'verbose', None)
+        self.dim: int = getattr(obj, 'dim', None)
+        self.N: int = getattr(obj, 'N', None)
+        self.n_obj: int = getattr(obj, 'n_obj', None)
 
     @classmethod
     def from_dict(cls, x, space=None):
@@ -256,9 +271,9 @@ class Solution(np.ndarray):
                         self.var_name[k] : obj[i, k] for k in range(self.dim)
                     } for i, _index in enumerate(self.index)
                 ]
+                # TODO: perhaps we need this..
                 # if len(res) == 1:
                 #     res = res[0]
-
         elif orient == 'var':
             if with_index:
                 res = {
@@ -271,27 +286,6 @@ class Solution(np.ndarray):
                     _name : list(obj[:, k]) for k, _name in enumerate(self.var_name)
                 }
         return res
-
-    @classmethod
-    def from_dataframe(cls, x, space=None):
-        if isinstance(x, pd.DataFrame):
-            #Remove columns containing the n_evals and funtion values
-            x = x.drop(["f","n_eval"], 1, errors='ignore')
-            var_name = list(x.columns.values)
-            res = cls.__new__(cls, x=list(x.values), var_name=var_name)
-        else:
-            raise ValueError("x must be a dataframe")
-        return res
-
-    def to_dataframe(self, space=None):
-        var_name = self.var_name.tolist()
-        dt = pd.DataFrame(np.atleast_2d(self.tolist()), columns = var_name)
-        dt['n_eval'] = self.n_eval.tolist()
-        fname = self.fitness_name
-        if isinstance(fname, list):
-            fname = fname[0]
-        dt[fname] = self.fitness.tolist()
-        return dt
 
     def __str__(self):
         var_name = self.var_name.tolist()
@@ -318,7 +312,7 @@ class Solution(np.ndarray):
             if show_attr:
                 attr_name = ['n_eval'] + self.fitness_name
                 _header += attr_name
-            _header = ','.join(_header) + '\n'
+            _header = delimiter.join(_header) + '\n'
 
         data = self.reshape(1, -1) if len(self.shape) == 1 else self
         if index:
@@ -326,7 +320,7 @@ class Solution(np.ndarray):
         if show_attr:
             data = np.c_[data, self.n_eval, self.fitness]
 
-        out = [','.join(map(str, row)) + '\n' for row in data.tolist()]
+        out = [delimiter.join(map(str, row)) + '\n' for row in data.tolist()]
         mode = 'a' if append else 'w'
         with open(fname, mode) as f:
             if header:

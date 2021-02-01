@@ -1,5 +1,7 @@
-import logging, sys
-from typing import Callable, Any, Tuple, List, Union, Dict
+from typing import Callable, List, Union, Dict
+import sys
+import logging
+from copy import copy
 
 import numpy as np
 from scipy.linalg import solve_triangular
@@ -10,12 +12,17 @@ from ..misc import handle_box_constraint, LoggerFormatter
 Vector = List[float]
 Matrix = List[Vector]
 
+__authors__ = ['Hao Wang']
+
+# TODO: get rid of all ``eval`` calls
 class OnePlusOne_CMA(object):
+    """(1+1)-CMA-ES
+    """
     def __init__(
         self,
         dim: int,
         obj_fun: Callable,
-        args: Tuple = (),
+        args: Dict = {},
         h: Callable = None,
         g: Callable = None,
         x0: Union[str, Vector, np.ndarray] = None,
@@ -31,10 +38,11 @@ class OnePlusOne_CMA(object):
         ftol: float = 1e-4,
         verbose: bool = False,
         logger: str = None,
+        random_seed: int = 42,
         **kwargs
-        ):
-        """ (1+1)-CMA-ES and (1+1)-Cholesky-CMA-ES
-        Hereafter, we use the following customized types to describe the usage:
+    ):
+        """Hereafter, we use the following customized
+        types to describe the usage:
 
         - Vector = List[float]
         - Matrix = List[Vector]
@@ -46,7 +54,7 @@ class OnePlusOne_CMA(object):
         obj_fun : Callable
             The objective function to be minimized.
         args: Tuple
-            The extra parameters passed to function `obj_fun.`
+            The extra parameters passed to function `obj_fun`.
         h : Callable, optional
             The equality constraint function, by default None.
         g : Callable, optional
@@ -88,42 +96,52 @@ class OnePlusOne_CMA(object):
         logger : str, optional
             Name of the logger file, by default None, which turns off the
             logging behaviour.
+        random_seed : int, optional
+            The seed for pseudo-random number generators, by default None.
         """
-        self.dim = dim
-        self.obj_fun = obj_fun
-        self.h = h
-        self.g = g
-        self.minimize = minimize
-        self.ftarget = ftarget
-        self.lb = set_bounds(lb, self.dim)
-        self.ub = set_bounds(ub, self.dim)
+        self.dim: int = dim
+        self.obj_fun: Callable = obj_fun
+        self.h: Callable = h
+        self.g: Callable = g
+        self.minimize: bool = minimize
+        self.ftarget: float = ftarget
+        self.lb: np.ndarray = set_bounds(lb, self.dim)
+        self.ub: np.ndarray = set_bounds(ub, self.dim)
         self.sigma0 = self.sigma = sigma0
-        self.args = args
-        self.n_restart = max(0, int(n_restart))
+        self.args: Dict = args
+        self.n_restart: int = max(0, int(n_restart))
+        self._restart: bool = False
 
-        self.eval_count = 0
-        self.iter_count = 0
-        self.max_FEs = int(eval(max_FEs)) if isinstance(max_FEs, str) else max_FEs
+        self.xopt: np.ndarray = None
+        self.fopt: float = None
+        self.fopt_penalized: float = None
+        self.eval_count: int = 0
+        self.iter_count: int = 0
+        self.max_FEs: int = int(eval(max_FEs)) if isinstance(max_FEs, str) else max_FEs
         self._better = (lambda a, b: a <= b) if self.minimize else (lambda a, b: a >= b)
         self._init_aux_var(kwargs)
         self._init_covariance(C0)
         self._init_logging_var()
 
-        self.x = x0
         self.stop_dict: Dict = {}
-        self._exception = False
-        self.verbose = verbose
+        self._exception: bool = False
+        self.verbose: bool = verbose
         self.logger = logger
+        self.random_seed = random_seed
 
         # parameters for stopping criteria
-        # NOTE: `self.xtol * 200` and `self._w = 0.9` lead to a tolerance of
-        # ~50 iterations of stagnation.
-        self.xtol = xtol
-        self.ftol = ftol
-        self._delta_x = self.xtol * 200
-        self._delta_f = self.ftol * 200
-        self._w = 0.9
-        self._stop = False
+        # NOTE: `self._delta_f = self.ftol / self._w ** (5 * self.dim)`
+        # and `self._w = 0.9` lead to a tolerance of
+        # ~`5 * self.dim` iterations of stagnation.
+        self.xtol: float = xtol
+        self.ftol: float = ftol
+        self._w: float = 0.9
+        self._delta_x: float  = self.xtol / self._w ** (5 * self.dim)
+        self._delta_f: float = self.ftol / self._w ** (5 * self.dim)
+        self._stop: bool = False
+
+        # set the initial search point
+        self.x = x0
 
     def _init_aux_var(self, opts):
         self.prob_target = opts['p_succ_target'] if 'p_succ_target' in opts else 2 / 11
@@ -133,9 +151,9 @@ class OnePlusOne_CMA(object):
         self.cp = opts['cp'] if 'cp' in opts else 1 / 12
         self.cc = opts['cc'] if 'cc' in opts else 2 / (self.dim + 2)
 
-        self.success_rate = self.prob_target
-        self.pc = np.zeros(self.dim)
-        self._coeff = self.cc * (2 - self.cc)
+        self.success_rate: float = self.prob_target
+        self.pc: np.ndarray = np.zeros(self.dim)
+        self._coeff: float = self.cc * (2 - self.cc)
 
     def _init_covariance(self, C):
         if C is None:
@@ -151,6 +169,17 @@ class OnePlusOne_CMA(object):
         self.hist_xopt: List = []
         self._hist_delta_x: List = []
         self._hist_delta_f: List = []
+
+    @property
+    def random_seed(self):
+        return self._random_seed
+
+    @random_seed.setter
+    def random_seed(self, seed):
+        if seed:
+            self._random_seed = int(seed)
+            if self._random_seed:
+                np.random.seed(self._random_seed)
 
     @property
     def logger(self):
@@ -212,22 +241,14 @@ class OnePlusOne_CMA(object):
             assert np.all(x - self.lb >= 0)
             assert np.all(x - self.ub <= 0)
         else:
+            # sample `x` u.a.r. in `[lb, ub]`
             assert all(~np.isinf(self.lb)) & all(~np.isinf(self.ub))
             x = (self.ub - self.lb) * np.random.rand(self.dim) + self.lb
+
         self._x = x
-
         y = self.evaluate(x)
-        _y = y + dynamic_penalty(
-            x, self.iter_count + 1,
-            self.h, self.g,
-            minimize=self.minimize
-        )
-
-        if not hasattr(self, 'fopt_penalized') \
-            or self._better(_y, self.fopt_penalized):
-            self.fopt = y
-            self.fopt_penalized = _y
-            self.xopt = self._x
+        penalty = self.penalize(x)
+        self.tell(x, y, penalty)
 
     @property
     def sigma(self):
@@ -249,14 +270,31 @@ class OnePlusOne_CMA(object):
     def step(self):
         x = self.ask()
         y = self.evaluate(x)
-        self.tell(x, y)
-
+        self.tell(x, y, self.penalize(x))
         self.logging()
         self.check_stop()
         self.restart()
 
+    def penalize(self, x: np.ndarray):
+        """Calculate the dynamic penalty once the constraint functions are provided
+
+        Parameters
+        ----------
+        x : np.ndarray
+            the trial point to check against the constraints
+        """
+        return dynamic_penalty(
+            x, self.iter_count + 1,
+            self.h, self.g,
+            minimize=self.minimize
+        )
+
     def evaluate(self, x):
-        return self.obj_fun(x, *self.args)
+        self.eval_count += 1
+        if isinstance(self.args, (list, tuple)):
+            return self.obj_fun(x, *self.args)
+        elif isinstance(self.args, dict):
+            return self.obj_fun(x, **self.args)
 
     def restart(self):
         if self._restart:
@@ -266,13 +304,13 @@ class OnePlusOne_CMA(object):
             self.pc = np.zeros(self.dim)
             self._C = np.eye(self.dim)
             self._A = np.eye(self.dim)
-            self._delta_x = np.ones(10) * self.xtol * 10
-            self._delta_f = np.ones(10) * self.ftol * 10
+            self._delta_x = self.xtol * 200
+            self._delta_f = self.ftol * 200
             self.stop_dict = {}
             self.n_restart -= 1
 
-    def ask(self, n_point=1) -> np.ndarray:
-        """The mutation function
+    def ask(self) -> np.ndarray:
+        """The mutation operator
 
         Parameters
         ----------
@@ -290,55 +328,55 @@ class OnePlusOne_CMA(object):
         x = handle_box_constraint(x, self.lb, self.ub)
         return x
 
-    def tell(self, x, y):
-        # NOTE: should the `tell` function also respect the stopping criteria?
+    def tell(self, x: np.ndarray, y: np.ndarray, penalty: float = 0):
         if self._stop:
-            self._logger(
-                'The optimizer is stopped and `tell` should not be called.'
-            )
+            self._logger.info('The optimizer is stopped and `tell` should not be called.')
+            return
 
+        # TODO: this might not be uncessary
         if hasattr(y, '__iter__'):
             y = y[0]
+        if hasattr(penalty, '__iter__'):
+            penalty = penalty[0]
+        y_penalized = y + penalty
 
-        # TODO: decide whether the constraint handling should be part of
-        # the tell function
-        _y = y + dynamic_penalty(
-            x, self.iter_count + 1,
-            self.h, self.g,
-            minimize=self.minimize
-        )
+        if self.xopt is None:
+            self.fopt = y
+            self.fopt_penalized = y_penalized
+            self.xopt = x
+            return
 
-        success = self._better(_y, self.fopt_penalized)
+        success = self._better(y_penalized, self.fopt_penalized)
         z = (x - self._x) / self._sigma
         self._update_step_size(success)
-
         self._delta_f *= self._w
         self._delta_x *= self._w
+
         if success:
-            self._delta_f += (1 - self._w) * (self.fopt_penalized - _y)
-            self._delta_x += (1 - self._w) * np.sqrt(np.sum((self.xopt - x) ** 2))
+            self._delta_f += (1 - self._w) * abs(self.fopt_penalized - y_penalized)
+            self._delta_x += (1 - self._w) * np.sqrt(sum((self.xopt - x) ** 2))
             self.fopt = y
-            self.fopt_penalized = _y
-            self._x = self.xopt = x
+            self.fopt_penalized = y_penalized
+            self._x = self.xopt = copy(x)
             self._update_covariance(z)
 
         self._handle_exception()
-        self.eval_count += 1
         self.iter_count += 1
 
+        # TODO: should this be part of the logging function?
         if self.verbose:
-            self._logger.info('iteration {}'.format(self.eval_count))
-            self._logger.info('fopt: {}'.format(self.fopt))
-            self._logger.info('sigma: {}'.format(self._sigma))
-            self._logger.info('xopt: {}\n'.format(self.xopt.tolist()))
+            self._logger.info(f'iteration {self.iter_count}')
+            self._logger.info(f'fopt: {self.fopt}')
+            if self.h is not None or self.g is not None:
+                _penalty = (self.fopt - self.fopt_penalized) * (-1) ** self.minimize
+                self._logger.info(f'penalty: {_penalty:.4e}')
+            self._logger.info(f'xopt: {self.xopt.tolist()}')
+            self._logger.info(f'sigma: {self._sigma}\n')
 
     def logging(self):
-        # TODO: the function name is a bit off.. since we have self._logger
         self.hist_fopt += [self.fopt]
         self.hist_xopt += [self.xopt.tolist()]
         self.hist_fopt_penalized += [self.fopt_penalized]
-        self._hist_delta_x += [self._delta_x]
-        self._hist_delta_f += [self._delta_f]
 
     def check_stop(self):
         if self.ftarget is not None and self._better(self.fopt, self.ftarget):
@@ -360,10 +398,10 @@ class OnePlusOne_CMA(object):
         if 'ftarget' in self.stop_dict or 'FEs' in self.stop_dict:
             self._stop = True
         else:
-            self._stop = bool(self.stop_dict) and self.n_restart == 0
-            self._restart = False
-            # TODO: fix the restaring criteria and turn this on
-            # self._restart = bool(self.stop_dict) and self.n_restart > 0
+            if self.n_restart > 0:
+                self._restart = bool(self.stop_dict)
+            else:
+                self._stop = bool(self.stop_dict)
 
     def _update_covariance(self, z):
         if self.success_rate < self.threshold:
@@ -403,7 +441,6 @@ class OnePlusOne_CMA(object):
         if self._sigma < 1e-8 or self._sigma > 1e8:
             self._exception = 1
 
-        # TODO: maybe ad-hoc fix here can be improved?
         if self._exception:
             self._C = np.eye(self.dim)
             self.pc = np.zeros(self.dim)
@@ -412,6 +449,10 @@ class OnePlusOne_CMA(object):
             self._exception = False
 
 class OnePlusOne_Cholesky_CMA(OnePlusOne_CMA):
+    """(1+1)-Cholesky-CMA-ES improves its base class algorithm by taking advantage of
+    Cholesky's decomposition to update the covariance, which is computationally cheaper
+
+    """
     def _init_covariance(self, C):
         reset = False
         if C is not None:

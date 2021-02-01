@@ -65,10 +65,10 @@ def test_warm_data_with_RF():
         model=model,
         minimize=True,
         eval_type='list',
-        max_FEs=10,
+        max_FEs=5,
         verbose=True,
         acquisition_fun='EI',
         warm_data=(X, y)
     )
     opt.run()
-    assert opt.data.shape[0] == 20
+    assert opt.data.shape[0] == 15

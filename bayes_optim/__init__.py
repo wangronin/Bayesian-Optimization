@@ -34,8 +34,6 @@ def fmin(
     func: Callable, 
     lower: Union[float, Vector],
     upper: Union[float, Vector],
-    h: Callable = None,
-    g: Callable = None,
     x0: Union[int, Matrix, np.ndarray, None] = None, 
     y0: Union[Vector, None] = None, 
     n_point: int = 1,
@@ -66,10 +64,6 @@ def fmin(
     upper : Union[float, Vector]
         The upper bound of search variables, from which the search dimension is inferred. 
         When it is not a `float`, it must have the same length as `lower`.
-    h : Callable, optional
-            The equality constraint function, by default None.
-    g : Callable, optional
-        The inequality constraint function, by default None.
     x0 : Union[int, Matrix, None], optional
         When it takes integer values, it specifies the number of initial sample points to 
         take; When it is a 2d numpy array (or a nested list that contains the same data), 
@@ -165,8 +159,6 @@ def fmin(
     opt = _BO(
         search_space=space, 
         obj_fun=obj_func, 
-        eq_fun=h,
-        ineq_fun=g,
         model=model, 
         DoE_size=DoE_size,
         warm_data=warm_data,

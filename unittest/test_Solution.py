@@ -1,6 +1,7 @@
-from pdb import set_trace
-import sys, os
+import sys
+import os
 import numpy as np
+import dill
 
 sys.path.insert(0, '../')
 from bayes_optim import Solution
@@ -11,7 +12,7 @@ def test_1D():
         index=1
     )
     assert isinstance(s[0], int)
-    s.fitness = 3 
+    s.fitness = 3
     assert s.ndim == 1
     assert s.fitness == 3
 
@@ -19,8 +20,8 @@ def test_2D():
     # test for 2D solution
     A, B = np.random.randn(5, 3).tolist(), ['simida', 'niubia', 'bang', 'GG', 'blyat']
     s = Solution(
-        [A[i] + [B[i]] for i in range(5)], 
-        verbose=True, fitness=0, 
+        [A[i] + [B[i]] for i in range(5)],
+        verbose=True, fitness=0,
         fitness_name='f'
     )
     assert s.ndim == 2
@@ -51,7 +52,6 @@ def test_to_dict():
     print(s.to_dict(orient='index'))
 
 def test_pickling():
-    import dill
     s = Solution(np.random.randn(10, 5))
     a = dill.dumps(s)
     s2 = dill.loads(a)
@@ -70,13 +70,3 @@ def test_from_dict():
     assert np.all(s == s2)
     assert isinstance(s.to_dict(orient='index', with_index=True), dict)
     assert isinstance(s.to_dict(orient='var', with_index=True), dict)
-    
-def test_to_dataframe():
-    s = Solution(np.random.randn(10, 5))
-    print(s.to_dataframe())
-    
-def test_from_dataframe():
-    s = Solution(np.random.randn(10, 5))
-    dt = s.to_dataframe()
-    s2 = Solution.from_dataframe(dt)
-    assert np.all(s == s2)

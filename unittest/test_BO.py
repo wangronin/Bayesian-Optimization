@@ -1,53 +1,15 @@
-import numpy as np
-import sys, os
+import sys
+import os
 import pytest
-sys.path.insert(0, '../')
+import numpy as np
 
+sys.path.insert(0, '../')
 from bayes_optim import ParallelBO, BO, ContinuousSpace, OrdinalSpace, NominalSpace
 from bayes_optim.Surrogate import trend, GaussianProcess, RandomForest
 
 np.random.seed(123)
 
 def test_pickling():
-    dim = 5
-    lb, ub = -1, 5
-
-    def fitness(x):
-        x = np.asarray(x)
-        return np.sum(x ** 2)
-
-    space = ContinuousSpace([lb, ub]) * dim
-
-    mean = trend.constant_trend(dim, beta=None)
-    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-    thetaU = 10 * (ub - lb) * np.ones(dim)
-    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
-    model = GaussianProcess(
-        mean=mean, corr='squared_exponential',
-        theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-        nugget=0, noise_estim=False,
-        optimizer='BFGS', wait_iter=3, random_start=dim,
-        likelihood='concentrated', eval_budget=100 * dim
-    )
-    opt = BO(
-        search_space=space,
-        obj_fun=fitness,
-        model=model,
-        DoE_size=5,
-        max_FEs=10,
-        verbose=True,
-        n_point=1
-    )
-    opt.step()
-
-    opt.save('test')
-    opt = BO.load('test')
-
-    print(opt.run())
-    os.remove('test')
-
-def test_pickling2():
     dim = 5
     lb, ub = -1, 5
 
@@ -121,10 +83,10 @@ def test_continuous():
     )
     print(opt.run())
 
-@pytest.mark.parametrize("eval_type", ['list', 'dict', 'dataframe'])  # type: ignore
+@pytest.mark.parametrize("eval_type", ['list', 'dict'])  # type: ignore
 def test_mix_space(eval_type):
     dim_r = 2  # dimension of the real values
-    if eval_type == 'dict' or eval_type == 'dataframe':
+    if eval_type == 'dict':
         def obj_fun(x):
             #Do explicit type-casting since dataframe rows might be strings otherwise
             x_r = np.array([float(x['continuous_%d'%i]) for i in range(dim_r)])
@@ -140,7 +102,8 @@ def test_mix_space(eval_type):
             _ = 0 if x_d == 'OK' else 1
             return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + _ * 2
     else:
-        raise NotImplemented
+        raise NotImplementedError
+
     search_space = ContinuousSpace([-5, 5], var_name='continuous') * dim_r + \
         OrdinalSpace([5, 15], var_name='ordinal') + \
         NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'], var_name='nominal')

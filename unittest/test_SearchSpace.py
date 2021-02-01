@@ -1,9 +1,6 @@
-import pytest, sys, re
-
-from pdb import set_trace
-from copy import deepcopy
-import numpy as np 
-import pickle
+import sys
+import re
+import numpy as np
 
 sys.path.insert(0, '../')
 from bayes_optim import ContinuousSpace, OrdinalSpace, NominalSpace, Solution, SearchSpace
@@ -25,7 +22,7 @@ def test_NominalSpace():
     assert set(S.levels[0]) == set(['x', 'y', 'z'])
 
 def test_precision():
-    C = ContinuousSpace([-5, 5], precision=2) * 3 
+    C = ContinuousSpace([-5, 5], precision=2) * 3
     X = C.round(C.sampling(1, method='LHS'))
     X = [re.sub(r'^-?\d+\.(\d+)$', r'\1', str(_)) for _ in X[0]]
     assert all([len(x) <= 2 for x in X])
@@ -43,13 +40,13 @@ def test_precision():
     assert np.all(np.array(X_) == C.round(X))
 
 def test_scale():
-    C = ContinuousSpace([1, 5], scale='log') 
+    C = ContinuousSpace([1, 5], scale='log')
     assert C.bounds[0][0] == 0
 
-    C = ContinuousSpace([0.5, 0.8], scale='logit') 
+    C = ContinuousSpace([0.5, 0.8], scale='logit')
     assert C.bounds[0][0] == 0
 
-    C = ContinuousSpace([-1, 1], scale='bilog') 
+    C = ContinuousSpace([-1, 1], scale='bilog')
     assert C.bounds[0][0] == -np.log(2)
     assert C.bounds[0][1] == np.log(2)
 
@@ -59,7 +56,7 @@ def test_scale():
     assert all(a == np.array([-1, 1]))
 
 def test_sampling():
-    C = ContinuousSpace([-5, 5]) * 3 
+    C = ContinuousSpace([-5, 5]) * 3
     I = OrdinalSpace([[-100, 100], [-5, 5]], 'heihei')
     N = NominalSpace([['OK', 'A', 'B', 'C', 'D', 'E', 'A']] * 2, ['x', 'y'])
 
@@ -76,7 +73,7 @@ def test_ProductSpace():
     print(space.sampling(2))
 
     # cartesian product of heterogeneous spaces
-    space = C + I + N 
+    space = C + I + N
     print(space.sampling(10))
     print(space.bounds)
     print(space.var_name)
@@ -91,26 +88,20 @@ def test_ProductSpace():
 def test_from_dict():
     a = SearchSpace.from_dict(
         {
-            "activation" : 
+            "activation" :
             {
                 "type" : "c",
                 "range" : [
-                    "elu", "selu", "softplus", "softsign", "relu", "tanh", 
+                    "elu", "selu", "softplus", "softsign", "relu", "tanh",
                     "sigmoid", "hard_sigmoid", "linear"
                 ],
                 "N" : 3
             }
         }
     )
-              
+
     print(a.var_name)
     print(a.sampling(1))
 
     a = NominalSpace(['aaa'], name='test')
     print(a.sampling(3))
-    
-def test_irace_dict():
-    with open(f"ccmaes_params.pkl", "rb") as f:
-        params = pickle.load(f)
-    a = SearchSpace.from_dict(params, source = "irace")
-    assert(a.var_name == params["names"])

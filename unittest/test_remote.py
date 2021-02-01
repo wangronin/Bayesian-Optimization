@@ -1,5 +1,6 @@
 import requests, json, os, subprocess, shutil, sys, time
 import numpy as np
+import pytest
 
 payload = {
     "search_param" : {
@@ -50,7 +51,7 @@ def obj_func_dict_eval2(par):
             np.sum(x_r2 ** 2.) + \
                 np.random.randn() * np.sqrt(.5)
 
-def test_remote():
+def aaa_test_remote():
     env = os.environ.copy()
     if not 'PYTHONPATH' in env:
         env['PYTHONPATH'] = ''
@@ -83,4 +84,4 @@ def test_remote():
     # proc.kill()
     # shutil.rmtree('7200')
 
-test_remote()
+# test_remote()

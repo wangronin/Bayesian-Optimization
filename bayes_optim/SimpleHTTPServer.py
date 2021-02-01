@@ -76,8 +76,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
         # NOTE: this is an ad-hoc solution for MOTI
         def eq_fun(x):
-            _x = x.tolist()
-            return np.abs(np.sum(_x) - 1)
+            return np.sum(x) - 1
 
         # TODO: turn this off until the feature importance of GPR is implemented
         if len(search_space.id_N) == 0 and len(search_space.id_O) == 0 and 11 < 2:
@@ -96,7 +95,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 optimizer='BFGS', wait_iter=5, random_start=30 * dim,
                 likelihood='concentrated', eval_budget=200 * dim
             )
-            optimizer = 'BFGS'
+            optimizer = 'MIES'
         else :
             model = RandomForest(levels=search_space.levels)
             optimizer = 'MIES'
@@ -110,8 +109,8 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 eval_type='dict',
                 acquisition_fun='MGFI',
                 max_FEs=max_FEs,
-                acquisition_par={'t' : 2},
-                acquisition_optimization={'optimizer' : optimizer},
+                acquisition_par={'t': 2},
+                acquisition_optimization={'optimizer': optimizer},
                 logger=log_file,
                 data_file=data_file,
                 **bo_param

@@ -8,7 +8,6 @@ from deap import benchmarks
 from bayes_optim import OptimizerPipeline, BO, Solution, ContinuousSpace
 from bayes_optim.acquisition_optim import OnePlusOne_Cholesky_CMA
 from bayes_optim.Surrogate import GaussianProcess, trend
-from bayes_optim.Extension import warm_start_pycma
 
 class _BO(BO):
     def __init__(self, **kwargs):
@@ -34,18 +33,18 @@ class _BO(BO):
         return super().check_stop()
 
 
-np.random.seed(666)
+np.random.seed(42)
 dim = 2
-max_FEs = 40
-obj_fun = lambda x: benchmarks.himmelblau(x)[0]
-lb, ub = -6, 6
+max_FEs = 80
+obj_fun = lambda x: benchmarks.griewank(x)[0]
+lb, ub = -600, 600
 
 search_space = ContinuousSpace([lb, ub]) * dim
 mean = trend.constant_trend(dim, beta=None)    
 
 # autocorrelation parameters of GPR
-thetaL = 1e-10 * (ub - lb) * np.ones(dim) / (ub - lb) ** 2
-thetaU = 10 * np.ones(dim) / (ub - lb) ** 2
+thetaL = 1e-10 * (ub - lb) * np.ones(dim)
+thetaU = 10 * (ub - lb) * np.ones(dim)
 theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
 model = GaussianProcess(
@@ -69,9 +68,35 @@ bo = _BO(
 )
 cma = OnePlusOne_Cholesky_CMA(dim=dim, obj_fun=obj_fun, lb=lb, ub=ub)
 
+def post_BO(BO):
+    xopt = BO.xopt
+    dim = BO.dim
+
+    H = BO.model.Hessian(xopt)
+    g = BO.model.gradient(xopt)[0]
+
+    w, B = np.linalg.eigh(H)
+    M = np.diag(1 / np.sqrt(w)).dot(B.T)
+    H_inv = B.dot(np.diag(1 / w)).dot(B.T)
+    sigma0 = np.linalg.norm(M.dot(g)) / np.sqrt(dim - 0.5)
+    if sigma0 == 0:
+        sigma0 = 1 / 5
+
+    if np.isnan(sigma0):
+        sigma0 = 1 / 5
+        H_inv = np.eye(dim)
+
+    kwargs = {
+        'x' : xopt,
+        'fopt': BO.fopt,
+        'sigma' : sigma0,
+        'C' : H_inv,
+    }
+    return kwargs
+
 pipe = OptimizerPipeline(
     obj_fun=obj_fun, minimize=True, max_FEs=max_FEs, verbose=True
 )
-pipe.add(bo, transfer=warm_start_pycma)
+pipe.add(bo, transfer=post_BO)
 pipe.add(cma)
 pipe.run()

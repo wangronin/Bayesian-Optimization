@@ -1,9 +1,8 @@
-from pdb import set_trace
-import numpy as np
 from typing import Callable, Any, Tuple, List, Union
+
+import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 
-from ..Solution import Solution
 from .OnePlusOne_CMA import OnePlusOne_CMA, OnePlusOne_Cholesky_CMA
 from .mies import MIES
 
@@ -27,15 +26,6 @@ def argmax_restart(
     best = -np.inf
     wait_count = 0
 
-    # TODO: this part should be re-designed
-    h_, g_ = h, g
-    if eval_type == 'dict':
-        var = search_space.var_name
-        if h is not None:
-            h_ = lambda x: h({k: x[i] for i, k in enumerate(var)})
-        if g is not None:
-            g_ = lambda x: g({k: x[i] for i, k in enumerate(var)})
-
     if (h is not None or g is not None) and optimizer == 'BFGS':
         optimizer = 'OnePlusOne_Cholesky_CMA'
 
@@ -50,7 +40,7 @@ def argmax_restart(
             if not all([isinstance(_, float) for _ in x0]):
                 raise ValueError('BFGS is not supported with mixed variable types.')
 
-            func = lambda x: tuple(map(lambda x: -1. * x, obj_fun(x)))
+            func = lambda x: tuple(map(lambda x: -1. * x, obj_func(x)))
             xopt_, fopt_, stop_dict = fmin_l_bfgs_b(
                 func, x0, pgtol=1e-8, factr=1e6,
                 bounds=bounds, maxfun=eval_budget
@@ -69,21 +59,17 @@ def argmax_restart(
         elif optimizer == 'OnePlusOne_Cholesky_CMA':
             lb, ub = list(zip(*search_space.bounds))
             opt = OnePlusOne_Cholesky_CMA(
-                dim=search_space.dim, obj_fun=obj_fun,
-                h=h_, g=g_, lb=lb, ub=ub, max_FEs=eval_budget,
+                dim=search_space.dim, obj_fun=obj_func,
+                h=h, g=g, lb=lb, ub=ub, max_FEs=eval_budget,
                 ftol=1e-4, xtol=1e-4, n_restart=0,
                 minimize=False, verbose=False
             )
             xopt_, fopt_, stop_dict = opt.run()
-
-            if 'FEs' in stop_dict:
-                stop_dict['funcalls'] = stop_dict['FEs']
-            else:
-                stop_dict['funcalls'] = opt.eval_count
+            stop_dict['funcalls']  = stop_dict['FEs'] if 'FEs' in stop_dict else opt.eval_count
 
         elif optimizer == 'MIES':
             xopt_, fopt_, stop_dict = MIES(
-                search_space, obj_fun, eq_func=h_, ineq_func=g_,
+                search_space, obj_func, eq_func=h, ineq_func=g,
                 max_eval=eval_budget, minimize=False,
                 verbose=False, eval_type='list'
             ).optimize()

@@ -1,5 +1,20 @@
+from typing import Callable, Sequence
+import atexit
+import signal
+import errno
+import os
+import sys
+import time
 import numpy as np
-import atexit, signal, errno, os, sys, time
+
+def arg_to_int(arg):
+    if isinstance(arg, str):
+        x = int(eval(arg))
+    elif isinstance(arg, (int, float)):
+        x = int(arg)
+    else:
+        raise ValueError
+    return x
 
 def set_bounds(bound, dim):
     if isinstance(bound, str):
@@ -13,17 +28,51 @@ def set_bounds(bound, dim):
     assert len(bound) == dim
     return np.asarray(bound)
 
-def arg_to_int(arg):
-    if isinstance(arg, str):
-        x = int(eval(arg))
-    elif isinstance(arg, (int, float)):
-        x = int(arg)
-    else:
-        raise ValueError
-    return x
+def dynamic_penalty(
+    X: Sequence,
+    t: int = 1,
+    equality: Callable = None,
+    inequality: Callable = None,
+    C: float = 0.5,
+    alpha: float = 1,
+    beta: float = 2,
+    epsilon: float = 1e-2,
+    minimize: bool = True
+) -> float:
+    """Dynamic Penalty calculated as follows:
 
-def dynamic_penalty(X, t, equality=None, inequality=None, C=0.5, alpha=1, beta=2,
-                    epsilon=0.01, minimize=True):
+    $$(tC)^{\alpha} * [\sum_i max(|h(x_i)|, \epsilon) + \sum_i max(0, g(x_i))^{\beta}],$$
+
+    where $x_i$ -> each row of ``X``, h -> ``equality``, and g -> ``inequality``.
+
+    TODO: give a reference here
+
+    Parameters
+    ----------
+    X : Sequence
+        Input candidate solutions
+    t : int, optional
+        The iteration number of the optimization algorithm employing this method, by default 1
+    equality : Callable, optional
+        Equality function, by default None
+    inequality : Callable, optional
+        Inequality function, by default None
+    C : float, optional
+        coefficient of the iteration term, by default 0.5
+    alpha : float, optional
+        exponent to the iteration term, by default 1
+    beta : float, optional
+        coefficient to the inequality terms, by default 2
+    epsilon : float, optional
+        threshold to determine whether the equality constraint is met, by default 1e-4
+    minimize : bool, optional
+        minimize or maximize? by default True
+
+    Returns
+    -------
+    ``p``
+        the dynamic penalty value
+    """
     X = np.atleast_2d(X)
     N = X.shape[0]
     p = np.zeros(N)
@@ -36,12 +85,12 @@ def dynamic_penalty(X, t, equality=None, inequality=None, C=0.5, alpha=1, beta=2
     if inequality is not None:
         v = np.atleast_2d(list(map(inequality, X))).reshape(N, -1)
         v[v <= 0] = 0
-        p += np.sum(v ** beta, axis=1)
+        p += np.sum(np.abs(v) ** beta, axis=1)
 
     p = (-1) ** (not minimize) * (C * t) ** alpha * p
     return p
 
-# TODO: get this done and test it
+# TODO: get this done and test it and add docstrings..
 def stochastic_ranking(X, fitness, equality=None, inquality=None, P=0.4, gamma=1,
                        beta=1, epsilon=0):
     N = len(X) if isinstance(X, list) else X.shape[0]
