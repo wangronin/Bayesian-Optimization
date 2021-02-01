@@ -4,8 +4,9 @@ from typing import List, Dict, Union, Callable, Tuple
 from abc import ABC
 
 import json
+import functools
 from copy import copy, deepcopy
-from collections import Counter, OrderedDict
+from collections import Counter
 from itertools import chain
 
 import numpy as np
@@ -13,6 +14,7 @@ from numpy.random import randint, rand
 
 from pyDOE import lhs
 from scipy.special import logit
+
 from .Solution import Solution
 
 __authors__ = ['Hao Wang']
@@ -36,6 +38,47 @@ INV_TRANS = {
     'logit': lambda x: 1 / (1 + np.exp(-x)),
     'bilog': lambda x: np.sign(x) * (np.exp(np.abs(x)) - 1)
 }
+
+def rdirichlet(dim: int, n: int = 1) -> np.ndarray:
+    """Sample from the standard Dirichlet distribution
+
+    Parameters
+    ----------
+    dim : int
+        dimension of the sampling space
+    n : int, optional
+        the number of i.i.d. random sample to draw, by default 1
+
+    Returns
+    -------
+    np.ndarray
+        the random samples
+    """
+    X = -np.log(np.random.rand(n, dim))
+    X /= np.sum(X, axis=1).reshape(n, -1)
+    return X
+
+def convert_inout(func):
+    """Take care of the input/output of ``to_linear_scale`` and ``round`` functions
+    """
+    @functools.wraps(func)
+    def wrapper(self, X):
+        if isinstance(X, (float, int)):
+            X_ = np.array([[X]])
+        elif isinstance(X, (list, tuple)):
+            if all([isinstance(x, (int, float)) for x in X]):
+                X_ = np.array(X)
+            else:
+                X_ = np.array(X, dtype=object)
+        elif isinstance(X, (Solution, np.ndarray)):
+            X_ = X
+
+        if len(X_.shape) == 1:
+            X_ =  X_.reshape(1, -1)
+
+        out = func(self, X_)
+        return out.tolist() if isinstance(X, list) else out
+    return wrapper
 
 
 class SearchSpace(object):
@@ -400,33 +443,32 @@ class SearchSpace(object):
         self._set_data(self.data)
         return self.__set_type(self)
 
-    def sample(self, N: int = 1, method: str = 'uniform'):
+    def sample(
+        self,
+        N: int = 1,
+        method: str = 'uniform',
+        h: Callable = None,
+        g: Callable = None
+    ) -> List:
         # TODO: to support dictionary return value
         if self.dim == 0: # in case this space is empty after slicing
             return []
 
         N = max(int(N), 1)
         X = np.empty((N, self.dim), dtype=object)
-        X[:, self.id_r] = self.__getitem__(self.id_r).sample(N, method)
-        X[:, self.id_i] = self.__getitem__(self.id_i).sample(N, method)
-        X[:, self.id_d] = self.__getitem__(self.id_d).sample(N, method)
+        X[:, self.id_r] = self.__getitem__(self.id_r).sample(N, method, h, g)
+        X[:, self.id_i] = self.__getitem__(self.id_i).sample(N, method, h, g)
+        X[:, self.id_d] = self.__getitem__(self.id_d).sample(N, method, h, g)
         return X.tolist()
 
-    # TODO: we need regulate and handle the input of ``round`` and ``to_linear_scale``
-    def round(self, X):
-        if not isinstance(X, (np.ndarray, Solution)):
-            X = np.asarray(X, dtype='object')
-            X = np.atleast_2d(X)
-
+    @convert_inout
+    def round(self, X: Union[Solution, np.ndarray]):
         r_subspace = self.__getitem__(self.id_r)
         X[:, self.id_r] = r_subspace.round(X[:, self.id_r])
         return X
 
-    def to_linear_scale(self, X):
-        if not isinstance(X, (np.ndarray, Solution)):
-            X = np.asarray(X, dtype='object')
-            X = np.atleast_2d(X)
-
+    @convert_inout
+    def to_linear_scale(self, X: Union[Solution, np.ndarray]):
         r_subspace = self.__getitem__(self.id_r)
         X[:, self.id_r] = r_subspace.to_linear_scale(X[:, self.id_r])
         return X
@@ -515,31 +557,40 @@ class RealSpace(SearchSpace):
         data = [Real(**_) for _ in out]
         super().__init__(data, **kwargs)
 
-    def sample(self, N: int = 1, method: str = 'uniform'):
+    def sample(self,
+        N: int = 1,
+        method: str = 'uniform',
+        h: Callable = None,
+        g: Callable = None
+    ):
         bounds = np.array([var._bounds_transformed for var in self.data])
         lb, ub = bounds[:, 0], bounds[:, 1]
 
-        if method == 'uniform':   # uniform random samples
-            X = ((ub - lb) * rand(N, self.dim) + lb)
-        elif method == 'LHS':     # Latin hypercube sampling
-            if N == 1:
+        # FIXME: this is the ad-hoc solution for simplex constraints
+        if h is not None:
+            X = rdirichlet(self.dim, N)
+        else:
+            if method == 'uniform':   # uniform random samples
                 X = ((ub - lb) * rand(N, self.dim) + lb)
-            else:
-                X = ((ub - lb) * lhs(self.dim, samples=N, criterion='maximin') + lb)
+            elif method == 'LHS':     # Latin hypercube sampling
+                if N == 1:
+                    X = ((ub - lb) * rand(N, self.dim) + lb)
+                else:
+                    X = ((ub - lb) * lhs(self.dim, samples=N, criterion='maximin') + lb)
 
         X = self.round(self.to_linear_scale(X))
         return X.tolist()
 
-    def round(self, X):
-        X = np.atleast_2d(X)
+    @convert_inout
+    def round(self, X: Union[Solution, np.ndarray]):
         assert X.shape[1] == self.dim
         for i, var in enumerate(self.data):
             X[:, i] = var.round(X[:, i])
         return X
 
-    def to_linear_scale(self, X):
-        X = np.atleast_2d(X)
-
+    @convert_inout
+    def to_linear_scale(self, X: Union[Solution, np.ndarray]):
+        X = np.array(X, dtype='float')
         assert X.shape[1] == self.dim
         for i, var in enumerate(self.data):
             X[:, i] = var.to_linear_scale(X[:, i])
@@ -557,7 +608,12 @@ class IntegerSpace(SearchSpace):
         data = [Integer(**_) for _ in out]
         super().__init__(data, **kwargs)
 
-    def sample(self, N: int = 1, method: str = 'uniform'):
+    def sample(
+        self,
+        N: int = 1, method: str = 'uniform',
+        h: Callable = None,
+        g: Callable = None
+    ):
         _bounds = np.atleast_2d(self._bounds)
         lb, ub = _bounds[:, 0], _bounds[:, 1]
         X = np.empty((N, self.dim), dtype=int)
@@ -577,29 +633,18 @@ class DiscreteSpace(SearchSpace):
         data = [Discrete(**_) for _ in out]
         super().__init__(data, **kwargs)
 
-    def sample(self, N: int = 1, method: str = 'uniform'):
+    def sample(
+        self,
+        N: int = 1,
+        method: str = 'uniform',
+        h: Callable = None,
+        g: Callable = None
+    ):
         X = np.empty((N, self.dim), dtype=object)
         for i in range(self.dim):
             idx = randint(0, self._n_levels[i], N)
             X[:, i] = [self._levels[i][_] for _ in idx]
         return X.tolist()
-
-# class BoolSpace(SearchSpace):
-#     def __init__(
-#         self,
-#         var_name: Union[str, List[str]] = 'b',
-#         **kwargs
-#     ):
-#         out = self._check_input((True, False), var_name)
-#         data = [Bool(**_) for _ in out]
-#         super().__init__(data, **kwargs)
-
-#     def sample(self, N: int = 1, method: str = 'uniform'):
-#         X = np.empty((N, self.dim), dtype=object)
-#         for i in range(self.dim):
-#             idx = randint(0, self._n_levels[i], N)
-#             X[:, i] = [self._levels[i][_] for _ in idx]
-#         return X
 
 
 class Variable(ABC):

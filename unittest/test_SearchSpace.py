@@ -107,13 +107,16 @@ def test_sample():
     X = cs.sample(10)
     assert np.asarray(X).shape == (10, 3)
     cs.sample(5, method='LHS')
-    cs.sample(5, method='uniform')
+    X = cs.sample(5, method='uniform')
+    cs.to_linear_scale(X)
 
 def test_scale():
     cs = RealSpace([1e-10, 1e-1], 'x', scale='log', random_seed=42)
     x = cs.sample(1)
     assert np.isclose(x, 2.3488813e-07)
     assert np.isclose(cs.to_linear_scale(-15.812834391811666), 1.35697948e-07)
+    assert np.isclose(cs.to_linear_scale([-15.812834391811666]), 1.35697948e-07)
+    assert np.isclose(cs.to_linear_scale((-15.812834391811666)), 1.35697948e-07)
 
     C = RealSpace([1, 5], scale='log')
     assert C.data[0]._bounds_transformed[0] == 0

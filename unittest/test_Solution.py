@@ -16,6 +16,8 @@ def test_1D():
     assert s.ndim == 1
     assert s.fitness == 3
 
+    s = s.reshape(1, -1)
+
 def test_2D():
     # test for 2D solution
     A, B = np.random.randn(5, 3).tolist(), ['simida', 'niubia', 'bang', 'GG', 'blyat']
