@@ -5,6 +5,7 @@ import numpy as np
 import pickle
 
 sys.path.insert(0, '../')
+from bayes_optim.Solution import Solution
 from bayes_optim.search_space import (
     Variable, Real, Integer, Discrete,
     RealSpace, IntegerSpace, DiscreteSpace, SearchSpace
@@ -144,6 +145,9 @@ def test_precision():
 
     X = np.random.rand(2, 3)
     assert isinstance(cs.round(X), np.ndarray)
+
+    X = Solution(cs.sample(10, method='LHS'))
+    cs.round(X)
 
 def test_iter():
     cs = RealSpace([1e-10, 1e-1], 'x', 7, 'log') + \

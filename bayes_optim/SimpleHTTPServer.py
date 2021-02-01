@@ -76,7 +76,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
         # NOTE: this is an ad-hoc solution for MOTI
         def eq_fun(x):
-            return np.sum(x) - 1
+            return np.sum(list(x.values())) - 1
 
         # TODO: turn this off until the feature importance of GPR is implemented
         if len(search_space.id_d) == 0 and len(search_space.id_i) == 0 and 11 < 2:

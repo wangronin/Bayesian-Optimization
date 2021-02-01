@@ -77,7 +77,15 @@ def convert_inout(func):
             X_ =  X_.reshape(1, -1)
 
         out = func(self, X_)
-        return out.tolist() if isinstance(X, list) else out
+
+        # NOTE: keep the out the same type as the input
+        if isinstance(X, Solution):
+            X_[:, :] = out
+            return X_
+        elif isinstance(X, list):
+            return out.tolist()
+        else:
+            return out
     return wrapper
 
 
@@ -584,14 +592,17 @@ class RealSpace(SearchSpace):
     @convert_inout
     def round(self, X: Union[Solution, np.ndarray]):
         assert X.shape[1] == self.dim
+        # NOTE: just in case ``dtype`` is object sometimes
+        X = np.array(X, dtype=float)
         for i, var in enumerate(self.data):
             X[:, i] = var.round(X[:, i])
         return X
 
     @convert_inout
     def to_linear_scale(self, X: Union[Solution, np.ndarray]):
-        X = np.array(X, dtype='float')
         assert X.shape[1] == self.dim
+        # NOTE: just in case ``dtype`` is object sometimes
+        X = np.array(X, dtype=float)
         for i, var in enumerate(self.data):
             X[:, i] = var.to_linear_scale(X[:, i])
         return X

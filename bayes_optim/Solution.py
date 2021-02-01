@@ -7,6 +7,7 @@ __authors__ = ['Hao Wang']
 # TODO: maybe set var_name as a constant attribute
 # TODO: register the objective function the class and implement an eval function
 # TODO: fix the maximum recursion problem when debugging
+# TODO: make this class work with numpy's ufunc, e.g., ``np.round``
 
 class Solution(np.ndarray):
     """Subclassing numpy array to represent set of solutions in the optimization

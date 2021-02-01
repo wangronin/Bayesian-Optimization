@@ -1,21 +1,19 @@
-"""
+from typing import List
 
-@author: Hao Wang
-@email: wangronin@gmail.com
-
-"""
-from typing import Callable, Any, Tuple
-import os, sys, dill, functools, logging, time
+import copy
+from copy import copy
 
 import numpy as np
-import json, copy, re
-from copy import copy
 from joblib import Parallel, delayed
 
 from . import AcquisitionFunction
 from .base import baseBO
 from .Solution import Solution
 from .search_space import SearchSpace
+
+__authors__ = ['Hao Wang']
+
+# TODO: annotate this file..
 
 class BO(baseBO):
     def _create_acquisition(self, fun=None, par={}, return_dx=False):
@@ -26,7 +24,7 @@ class BO(baseBO):
 
         return super()._create_acquisition(fun, par, return_dx)
 
-    def pre_eval_check(self, X):
+    def pre_eval_check(self, X: List) -> List:
         """Check for the duplicated solutions as it is not allowed in noiseless cases
         """
         if not isinstance(X, Solution):
@@ -51,7 +49,7 @@ class BO(baseBO):
             if not any(CON & INT & CAT):
                 _ += [i]
 
-        return X[_]
+        return X[_].tolist()
 
 class ParallelBO(BO):
     def __init__(self, **kwargs):

@@ -1,4 +1,4 @@
-from typing import Callable, Any, Tuple, Optional
+from typing import Callable, Any, Tuple, Optional, List
 
 import sys
 import functools
@@ -439,14 +439,8 @@ class baseBO(ABC):
             n_point = self.n_point if n_point is None else self.n_point
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
+            X = self.pre_eval_check(X)       # validate the new candidate solutions
 
-            X = Solution(
-                X, index=len(self.data) + np.arange(len(X)),
-                var_name=self.var_names
-            )
-            X = self.pre_eval_check(X)
-
-            # TODO: handle the constraints when performing the random sampling
             if len(X) < n_point:
                 self._logger.warning(
                     f"iteration {self.iter_count}: duplicated solution found "
@@ -454,20 +448,20 @@ class baseBO(ABC):
                 )
                 N = n_point - len(X)
                 method = 'LHS' if N > 1 else 'uniform'
-                s = self._search_space.sample(N=N, method=method)
-                X = X.tolist() + s
-                X = Solution(
-                    X, index=len(self.data) + np.arange(len(X)),
-                    var_name=self.var_names
+                s = self._search_space.sample(
+                    N=N, method=method, h=self._h, g=self._g
                 )
-                X = self._search_space.round(X)
+                X = self._search_space.round(X + s)
         else:   # initial DoE
             if not n_point:
                 n_point = self._DoE_size
+            X = self._search_space.round(self.create_DoE(n_point))
 
-            X = self._search_space.round(
-                self.create_DoE(n_point)
-            )
+        index = np.arange(len(X))
+        if hasattr(self, 'data'):
+            index += len(self.data)
+
+        X = Solution(X, index=index,var_name=self.var_names)
         return self._to_pheno(X)
 
     def tell(self, X, func_vals, warm_start=False):
@@ -518,7 +512,7 @@ class baseBO(ABC):
         self._logger.info(f'fopt: {self.fopt}')
         if self.h is not None or self.g is not None:
             _penalty = dynamic_penalty(
-                X, 1,
+                _xopt, 1,
                 self._h, self._g,
                 minimize=self.minimize
             )
@@ -533,13 +527,14 @@ class baseBO(ABC):
             self.iter_count += 1
             self.hist_f.append(self.fopt)
 
-    def create_DoE(self, n_point=None):
+    def create_DoE(self, n_point: int) -> List:
         DoE = []
         while len(DoE) < n_point:
-            DoE += self._search_space.sample(n_point - len(DoE), method='LHS')
-            DoE = self.pre_eval_check(DoE).tolist()
-
-        return Solution(DoE, var_name=self.var_names)
+            DoE += self._search_space.sample(
+                n_point - len(DoE), method='LHS', h=self._h, g=self._g
+            )
+            DoE = self.pre_eval_check(DoE)
+        return DoE
 
     @abstractmethod
     def pre_eval_check(self, X: Solution):

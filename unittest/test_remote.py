@@ -1,6 +1,10 @@
-import requests, json, os, subprocess, shutil, sys, time
+import os
+import subprocess
+import shutil
+import time
 import numpy as np
 import pytest
+import requests
 
 payload = {
     "search_param" : {
@@ -51,23 +55,23 @@ def obj_func_dict_eval2(par):
             np.sum(x_r2 ** 2.) + \
                 np.random.randn() * np.sqrt(.5)
 
-def aaa_test_remote():
+def test_remote():
     env = os.environ.copy()
-    if not 'PYTHONPATH' in env:
+    if 'PYTHONPATH' not in env:
         env['PYTHONPATH'] = ''
 
-    env['PYTHONPATH'] = "../" +  env['PYTHONPATH']
+    env['PYTHONPATH'] = "../:" + env['PYTHONPATH']
 
-    # proc = subprocess.Popen([
-    #     'python3', '-m', 'bayes_optim.SimpleHTTPServer', '-w', '7200', '-v'
-    # ], env=env)
-    # time.sleep(3)
+    proc = subprocess.Popen([
+        'python3', '-m', 'bayes_optim.SimpleHTTPServer', '-w', '7200', '-v'
+    ], env=env)
+    time.sleep(3)
 
     r = requests.post(address, json=payload)
     job_id = r.json()['job_id']
     print('Job id is %s'%(job_id))
 
-    for i in range(3):
+    for i in range(2):
         print('iteration %d'%(i))
 
         r = requests.get(address, params={'ask' : 'null', 'job_id' : job_id})
@@ -81,7 +85,5 @@ def aaa_test_remote():
 
     r = requests.get(address, params={'finalize' : 'null', 'job_id' : job_id})
 
-    # proc.kill()
-    # shutil.rmtree('7200')
-
-# test_remote()
+    proc.kill()
+    shutil.rmtree('7200')

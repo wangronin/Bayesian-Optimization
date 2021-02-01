@@ -28,8 +28,9 @@ def set_bounds(bound, dim):
     assert len(bound) == dim
     return np.asarray(bound)
 
+# TODO: move this to a '_penalty.py' file
 def dynamic_penalty(
-    X: Sequence,
+    X: np.ndarray,
     t: int = 1,
     equality: Callable = None,
     inequality: Callable = None,
@@ -38,7 +39,7 @@ def dynamic_penalty(
     beta: float = 2,
     epsilon: float = 1e-2,
     minimize: bool = True
-) -> float:
+) -> np.ndarray:
     """Dynamic Penalty calculated as follows:
 
     $$(tC)^{\alpha} * [\sum_i max(|h(x_i)|, \epsilon) + \sum_i max(0, g(x_i))^{\beta}],$$
@@ -49,7 +50,7 @@ def dynamic_penalty(
 
     Parameters
     ----------
-    X : Sequence
+    X : np.ndarray
         Input candidate solutions
     t : int, optional
         The iteration number of the optimization algorithm employing this method, by default 1
@@ -73,7 +74,9 @@ def dynamic_penalty(
     ``p``
         the dynamic penalty value
     """
-    X = np.atleast_2d(X)
+    if len(X.shape) == 1:
+        X = X.reshape(1, -1)
+
     N = X.shape[0]
     p = np.zeros(N)
 
