@@ -281,7 +281,7 @@ class RemoteBODaemon(Daemon):
         self.logger.propagate = False
 
     def run(self, host, port, verbose, work_dir, log_file):
-        # print('initialize the remote BO server...')
+        print('initialize the BO server...')
 
         work_dir = os.path.join(os.path.expanduser('~'), 'BO-' + str(port)) \
             if work_dir is None else work_dir
@@ -297,7 +297,7 @@ class RemoteBODaemon(Daemon):
         RemoteBO.work_dir = work_dir
         httpd = HTTPServer((host, port), RemoteBO)
 
-        # print('runnning...')
+        print('runnning...')
         httpd.serve_forever()
 
 if __name__ == '__main__':

@@ -149,6 +149,14 @@ def test_precision():
     X = Solution(cs.sample(10, method='LHS'))
     cs.round(X)
 
+    cs = RealSpace([0, 1], 'x', 2) + \
+        IntegerSpace([-10, 10], 'y') + \
+        DiscreteSpace(['A', 'B', 'C', 'D', 'E'], 'z')
+
+    X = cs.sample(1, method='LHS')[0][0]
+    X = re.sub(r'^-?\d+\.(\d+)$', r'\1', str(X))
+    assert len(X) <= 2
+
 def test_iter():
     cs = RealSpace([1e-10, 1e-1], 'x', 7, 'log') + \
         IntegerSpace([-10, 10], 'y') + \
@@ -175,6 +183,12 @@ def test_from_dict():
 
     assert cs.dim == 3
     assert cs.var_name[0] == 'activation0'
+
+    import json
+    with open('../shiny/example.json') as f:
+        data = json.load(f)
+
+    cs = SearchSpace.from_dict(data['search_param'])
 
 def test_update():
     cs = RealSpace([0, 5], 'x') * 3

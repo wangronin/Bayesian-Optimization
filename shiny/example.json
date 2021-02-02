@@ -4,7 +4,7 @@
             "type" : "r",
             "range" : [-5, 5],
             "N" : 2,
-            "precison" : 2
+            "precision" : 2
         },
 
         "ordinal" : {

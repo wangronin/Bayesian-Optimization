@@ -511,6 +511,7 @@ class SearchSpace(object):
                 bounds = [bounds]
 
             N = v['N'] if 'N' in v else int(1)
+            assert isinstance(N, int)
             bounds *= N
             name = k if space_name else None
 

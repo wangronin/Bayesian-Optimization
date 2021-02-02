@@ -71,7 +71,7 @@ def test_remote():
     job_id = r.json()['job_id']
     print('Job id is %s'%(job_id))
 
-    for i in range(2):
+    for i in range(3):
         print('iteration %d'%(i))
 
         r = requests.get(address, params={'ask' : 'null', 'job_id' : job_id})

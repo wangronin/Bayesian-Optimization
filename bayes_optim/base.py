@@ -461,7 +461,7 @@ class baseBO(ABC):
         if hasattr(self, 'data'):
             index += len(self.data)
 
-        X = Solution(X, index=index,var_name=self.var_names)
+        X = Solution(X, index=index, var_name=self.var_names)
         return self._to_pheno(X)
 
     def tell(self, X, func_vals, warm_start=False):

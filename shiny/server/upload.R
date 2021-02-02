@@ -16,10 +16,13 @@ job_table <- reactive({
 
 output$upload_box.download <- downloadHandler(
   filename = function() {
-    'configuration.json'
+    'example.json'
   },
   content = function(.file) {
-    data <- jsonlite::toJSON(jsonlite::read_json('test.json'), pretty = TRUE)
+    data <- toJSON(
+      read_json('example_continuous.json'), 
+      pretty = TRUE, auto_unbox = TRUE
+    )
     con <- file(.file)
     writeLines(data, con)
     close (con)
