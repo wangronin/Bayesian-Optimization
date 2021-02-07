@@ -14,8 +14,7 @@ from numpy.random import randint, rand
 
 from pyDOE import lhs
 from scipy.special import logit
-
-from .Solution import Solution
+from .solution import Solution
 
 __authors__ = ['Hao Wang']
 

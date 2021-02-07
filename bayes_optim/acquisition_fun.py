@@ -1,33 +1,53 @@
-"""
-@author: Hao Wang
-@email: wangronin@gmail.com
-"""
 import warnings
-import numpy as np
-
-from numpy import sqrt, exp, pi
-from scipy.stats import norm
 from abc import ABC, abstractmethod
 
+import numpy as np
+from numpy import sqrt, exp
+from scipy.stats import norm
+
+__authors__ = ['Hao Wang']
+
+# TODO: add annotations
 # TODO: implement noisy handling infill criteria, e.g., EQI (expected quantile improvement)
 # TODO: perphaps also enable acquisition function engineering here?
 # TODO: multi-objective extension
+
+
+def penalized_acquisition(x, acquisition_func, X_mean, pca, bounds, return_dx):
+    x_ = pca.inverse_transform(x) + X_mean
+    bounds = np.asarray(bounds)
+    idx_lower = x_ < bounds[:, 0]
+    idx_upper = x_ > bounds[:, 1]
+    penalty = np.sum([bounds[i, 0] - x_[i] for i in idx_lower]) + \
+        np.sum([x_[i] - bounds[i, 1] for i in idx_upper])
+    penalty *= -1
+
+    if penalty == 0:
+        return acquisition_func(x)
+    else:
+        if return_dx:
+            g = np.zeros((len(x), 1))
+            g[idx_lower, :] = 1
+            g[idx_upper, :] = -1
+            return penalty, g
+        else:
+            return penalty
 
 class AcquisitionFunction(ABC):
     def __init__(self, model=None, minimize=True):
         self.model = model
         self.minimize = minimize
-    
+
     @property
     def model(self):
         return self._model
-    
+
     @model.setter
     def model(self, model):
         if model is not None:
             self._model = model
             assert hasattr(self._model, 'predict')
-        else: 
+        else:
             self._model = None
 
     @abstractmethod
@@ -48,7 +68,7 @@ class AcquisitionFunction(ABC):
         return y_dx, sd2_dx
 
     def check_X(self, X):
-        """Keep input as '2D' object 
+        """Keep input as '2D' object
         """
         return np.atleast_2d(X)
 
@@ -60,7 +80,7 @@ class ImprovementBased(AcquisitionFunction):
     @property
     def plugin(self):
         return self._plugin
-    
+
     @plugin.setter
     def plugin(self, plugin):
         if plugin is None:
@@ -74,7 +94,7 @@ class ImprovementBased(AcquisitionFunction):
 
 class UCB(AcquisitionFunction):
     def __init__(self, alpha=0.5, **kwargs):
-        """Upper Confidence Bound 
+        """Upper Confidence Bound
         """
         super().__init__(**kwargs)
         self.alpha = alpha
@@ -107,7 +127,7 @@ class UCB(AcquisitionFunction):
                 f_dx = y_dx + self.alpha * sd_dx
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
-            return f_value, f_dx 
+            return f_value, f_dx
         return f_value
 
 class EI(ImprovementBased):
@@ -121,10 +141,10 @@ class EI(ImprovementBased):
         if hasattr(self._model, 'sigma2'):
             if sd / np.sqrt(self._model.sigma2) < 1e-6:
                 return (0, np.zeros((len(X[0]), 1))) if return_dx else 0
-        else: 
+        else:
             # TODO: implement a counterpart of 'sigma2' for randomforest
             # or simply put a try...except around the code below
-            if sd < 1e-10: 
+            if sd < 1e-10:
                 return (0, np.zeros((len(X[0]), 1))) if return_dx else 0
         try:
             xcr_ = self._plugin - y_hat
@@ -144,7 +164,7 @@ class EI(ImprovementBased):
                 f_dx = -y_dx * xcr_prob + sd_dx * xcr_dens
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
-            return f_value, f_dx 
+            return f_value, f_dx
         return f_value
 
 class EpsilonPI(ImprovementBased):
@@ -154,7 +174,7 @@ class EpsilonPI(ImprovementBased):
         """
         super(EpsilonPI, self).__init__(**kwargs)
         self.epsilon = epsilon
-    
+
     @property
     def epsilon(self):
         return self._epsilon
@@ -170,7 +190,7 @@ class EpsilonPI(ImprovementBased):
 
         coef = 1 - self._epsilon if y_hat > 0 else (1 + self._epsilon)
         try:
-            xcr_ = self._plugin - coef * y_hat 
+            xcr_ = self._plugin - coef * y_hat
             xcr = xcr_ / sd
             f_value = norm.cdf(xcr)
         except Exception:
@@ -183,7 +203,7 @@ class EpsilonPI(ImprovementBased):
                 f_dx = -(coef * y_dx + xcr * sd_dx) * norm.pdf(xcr) / sd
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
-            return f_value, f_dx 
+            return f_value, f_dx
         return f_value
 
 class PI(EpsilonPI):
@@ -234,7 +254,7 @@ class MGFI(ImprovementBased):
 
         if np.isinf(f_):
             f_ = 0.
-            
+
         if return_dx:
             y_dx, sd2_dx = self._gradient(X)
             sd_dx = sd2_dx / (2. * sd)
@@ -243,25 +263,25 @@ class MGFI(ImprovementBased):
                 term = exp(self._t * (self._plugin + self._t * sd ** 2. / 2 - y_hat - 1))
                 m_prime_dx = y_dx - 2. * self._t * sd * sd_dx
                 beta_p_dx = -(m_prime_dx + beta_p * sd_dx) / sd
-        
+
                 f_dx = term * (norm.pdf(beta_p) * beta_p_dx + \
                     norm.cdf(beta_p) * ((self._t ** 2) * sd * sd_dx - self._t * y_dx))
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
             return f_, f_dx
         return f_
-        
+
 class GEI(ImprovementBased):
     def __init__(self, g=1, **kwargs):
-        """Generalized Expected Improvement 
+        """Generalized Expected Improvement
         """
         super().__init__(**kwargs)
         self.g = g
 
     @property
     def g(self):
-        return self._g 
-    
+        return self._g
+
     @g.setter
     def g(self, g):
         g = int(g)

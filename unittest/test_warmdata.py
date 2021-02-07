@@ -3,7 +3,7 @@ import sys, os
 sys.path.insert(0, '../')
 
 from bayes_optim import ParallelBO, BO, RealSpace, IntegerSpace, DiscreteSpace
-from bayes_optim.Surrogate import trend, GaussianProcess, RandomForest
+from bayes_optim.surrogate import trend, GaussianProcess, RandomForest
 
 np.random.seed(42)
 

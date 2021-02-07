@@ -13,8 +13,8 @@ import numpy as np
 from joblib import Parallel, delayed
 from sklearn.metrics import r2_score, mean_absolute_percentage_error
 
-from . import AcquisitionFunction
-from .Solution import Solution
+from . import acquisition_fun as AcquisitionFunction
+from .solution import Solution
 from .search_space import SearchSpace
 from .utils import arg_to_int, dynamic_penalty
 from .misc import LoggerFormatter
@@ -40,7 +40,10 @@ def wrap_func(func, kind, var_names):
     return wrapper
 
 
-class baseOptimizer(ABC):
+class BaseOptimizer(ABC):
+    """The Base Optimizer class
+
+    """
     def __init__(self, verbose):
         self.verbose = verbose
         self.xopt = None
@@ -48,7 +51,7 @@ class baseOptimizer(ABC):
         self.stop_dict = {}
 
     @abstractmethod
-    def ask(self, n_point=None):
+    def ask(self, n_point: int = None):
         """Get suggestions from the optimizer.
 
         Parameters
@@ -66,7 +69,7 @@ class baseOptimizer(ABC):
         return
 
     @abstractmethod
-    def tell(self, X, y):
+    def tell(self, X: List, y: List):
         """Feed an observation back.
 
         Parameters
@@ -81,7 +84,7 @@ class baseOptimizer(ABC):
         return
 
     @abstractmethod
-    def evaluate(self, X):
+    def evaluate(self, X: List):
         return
 
     @abstractmethod
@@ -126,8 +129,11 @@ class baseOptimizer(ABC):
             self._logger.propagate = False
 
 
-# TODO: adding typing annotations to most interface functions
-class baseBO(ABC):
+# TODO: inherit from `BaseOptimizer`
+class BaseBO(ABC):
+    """Bayesian Optimization Base Class, which implements the Ask-Evaluate-Tell interface
+
+    """
     def __init__(
         self,
         search_space: SearchSpace,
@@ -434,7 +440,7 @@ class baseBO(ABC):
 
         self.tell(X, func_vals)
 
-    def ask(self, n_point=None):
+    def ask(self, n_point: int = None):
         if self.model.is_fitted:
             n_point = self.n_point if n_point is None else self.n_point
             X = self.arg_max_acquisition(n_point=n_point)
@@ -461,10 +467,11 @@ class baseBO(ABC):
         if hasattr(self, 'data'):
             index += len(self.data)
 
+        # make a `Solution` object
         X = Solution(X, index=index, var_name=self.var_names)
         return self._to_pheno(X)
 
-    def tell(self, X, func_vals, warm_start=False):
+    def tell(self, X: List, func_vals: List, warm_start: bool = False):
         """Tell the BO about the function values of proposed candidate solutions
 
         Parameters
@@ -536,6 +543,19 @@ class baseBO(ABC):
             DoE = self.pre_eval_check(DoE)
         return DoE
 
+    def evaluate(self, X):
+        """Evaluate the candidate points and update evaluation info in the dataframe
+        """
+        # Parallelization is handled by the objective function itself
+        if self.parallel_obj_fun is not None:
+            func_vals = self.parallel_obj_fun(X)
+        else:
+            if self.n_job > 1: # or by ourselves..
+                func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for x in X)
+            else:              # or sequential execution
+                func_vals = [self.obj_fun(x) for x in X]
+        return func_vals
+
     @abstractmethod
     def pre_eval_check(self, X: Solution):
         """This function is meant for checking validaty of the solutions prior to the evaluation
@@ -557,19 +577,6 @@ class baseBO(ABC):
             )
             X = X[~_, :]
         return X
-
-    def evaluate(self, X):
-        """Evaluate the candidate points and update evaluation info in the dataframe
-        """
-        # Parallelization is handled by the objective function itself
-        if self.parallel_obj_fun is not None:
-            func_vals = self.parallel_obj_fun(X)
-        else:
-            if self.n_job > 1: # or by ourselves..
-                func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for x in X)
-            else:              # or sequential execution
-                func_vals = [self.obj_fun(x) for x in X]
-        return func_vals
 
     def update_model(self):
         # TODO: implement a proper model selection here

@@ -1,8 +1,3 @@
-"""
-@author: Hao Wang
-@email: wangronin@gmail.com
-"""
-
 import os, sys, json, logging, dill
 import numpy as np
 
@@ -10,11 +5,14 @@ import urllib.parse as urlparse
 from optparse import OptionParser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from .BayesOpt import ParallelBO, BO
+from .bayes_opt import ParallelBO, BO
 from .search_space import SearchSpace, RealSpace
 from .Surrogate import RandomForest, GaussianProcess, trend
 from .misc import random_string
 from .utils import Daemon
+
+
+__authors__ = ['Hao Wang']
 
 # Configuration request Handler
 class RemoteBO(BaseHTTPRequestHandler, object):

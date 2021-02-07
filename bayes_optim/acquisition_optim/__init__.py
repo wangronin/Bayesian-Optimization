@@ -3,7 +3,7 @@ from typing import Callable, Any, Tuple, List, Union
 import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 
-from .OnePlusOne_CMA import OnePlusOne_CMA, OnePlusOne_Cholesky_CMA
+from .one_plus_one_cma_es import OnePlusOne_CMA, OnePlusOne_Cholesky_CMA
 from .mies import MIES
 
 __all__ = [

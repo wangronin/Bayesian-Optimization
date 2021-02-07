@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Callable, Dict
 
 import copy
 from copy import copy
@@ -6,17 +6,17 @@ from copy import copy
 import numpy as np
 from joblib import Parallel, delayed
 
-from . import AcquisitionFunction
-from .base import baseBO
-from .Solution import Solution
-from .search_space import SearchSpace
+from . import acquisition_fun as AcquisitionFunction
+from .base import BaseBO
+from .solution import Solution
 
 __authors__ = ['Hao Wang']
 
-# TODO: annotate this file..
+class BO(BaseBO):
+    """The sequential Bayesian Optimization class
 
-class BO(baseBO):
-    def _create_acquisition(self, fun=None, par={}, return_dx=False):
+    """
+    def _create_acquisition(self, fun: Callable = None, par: Dict = {}, return_dx: bool = False):
         fun = fun if fun is not None else self._acquisition_fun
         if hasattr(getattr(AcquisitionFunction, fun), 'plugin'):
             if 'plugin' not in par:
@@ -52,6 +52,12 @@ class BO(baseBO):
         return X[_].tolist()
 
 class ParallelBO(BO):
+    """Batch-sequential Bayesian Optimization, which proposes multiple points in each iteration
+
+    This class implements the multi-acquisition function approach, which samples multiple
+    hyperparameter values for the acquisition function.
+
+    """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         assert self.n_point > 1
@@ -75,7 +81,7 @@ class ParallelBO(BO):
         if self._par_name not in self._acquisition_par:
             self._acquisition_par[self._par_name] = getattr(_criterion, self._par_name)
 
-    def _batch_arg_max_acquisition(self, n_point, return_dx):
+    def _batch_arg_max_acquisition(self, n_point: int, return_dx: bool):
         criteria = []
         for _ in range(n_point):
             _par = self._sampler(self._acquisition_par)
@@ -95,7 +101,14 @@ class ParallelBO(BO):
         return tuple(zip(*__))
 
 class AnnealingBO(ParallelBO):
-    def __init__(self, t0=2, tf=1e-1, schedule='exp', *argv, **kwargs):
+    def __init__(
+        self,
+        t0: float = 2,
+        tf: float = 1e-1,
+        schedule: str = 'exp',
+        *argv,
+        **kwargs
+    ):
         super().__init__(*argv, **kwargs)
         self.t0 = t0
         self.tf = tf
@@ -120,12 +133,13 @@ class AnnealingBO(ParallelBO):
             self._acquisition_par['t'] = self._anealer(self._acquisition_par['t'])
         self._acquisition_callbacks += [callback]
 
+# TODO: write test file for this class
 class SelfAdaptiveBO(ParallelBO):
     def __init__(self, *argv, **kwargs):
-        super.__init__(*argv, **kwargs)
+        super().__init__(*argv, **kwargs)
         assert self.n_point > 1
 
-    def _batch_arg_max_acquisition(self, n_point, return_dx):
+    def _batch_arg_max_acquisition(self, n_point: int, return_dx: bool):
         criteria = []
         _t_list = []
         N = int(n_point / 2)
@@ -152,12 +166,15 @@ class SelfAdaptiveBO(ParallelBO):
         return tuple(zip(*__))
 
 class NoisyBO(ParallelBO):
-    def pre_eval_check(self, X):
+    """Bayesian Optimization for Noisy Scenarios
+
+    """
+    def pre_eval_check(self, X: List):
         if not isinstance(X, Solution):
             X = Solution(X, var_name=self.var_names)
         return X
 
-    def _create_acquisition(self, fun=None, par={}, return_dx=False):
+    def _create_acquisition(self, fun: Callable = None, par: Dict = {}, return_dx: bool = False):
         if hasattr(getattr(AcquisitionFunction, self._acquisition_fun), 'plugin'):
             # use the model prediction to determine the plugin under noisy scenarios
             # TODO: add more options for determining the plugin value

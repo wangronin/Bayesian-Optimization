@@ -1,20 +1,22 @@
 from typing import Callable, Any, Tuple, List, Union, Optional
+
 import os
 import logging
 import numpy as np
 
-from . import AcquisitionFunction, Surrogate
-from .BayesOpt import BO, ParallelBO, NoisyBO, AnnealingBO
-from .Solution import Solution
-from .Surrogate import RandomForest, GaussianProcess, trend
+from .bayes_opt import BO, ParallelBO, NoisyBO, AnnealingBO
+from .solution import Solution
+from .surrogate import RandomForest, GaussianProcess, trend
 from .search_space import SearchSpace, IntegerSpace, RealSpace, DiscreteSpace
-from .Extension import OptimizerPipeline
+from .acquisition_fun import EI, UCB, PI, MGFI
+from .extension import OptimizerPipeline
 
 __all__ = [
-    'BO', 'ParallelBO', 'NoisyBO', 'AnnealingBO', 'Solution', 'AcquisitionFunction',
+    'BO', 'ParallelBO', 'NoisyBO', 'AnnealingBO', 'Solution',
     'Surrogate', 'RandomForest', 'GaussianProcess', 'trend',
-    'SearchSpace', 'IntegerSpace', 'RealSpace',
-    'DiscreteSpace', 'RandomForest', 'OptimizerPipeline', 'fmin'
+    'SearchSpace', 'IntegerSpace', 'RealSpace', 'DiscreteSpace',
+    'EI', 'UCB', 'PI', 'MGFI',
+    'RandomForest', 'OptimizerPipeline', 'fmin'
 ]
 
 # To use `dill` for the pickling, which works for
@@ -46,7 +48,7 @@ def fmin(
     callback: Optional[Callable] = None,
     seed: Optional[int] = None,
     **kwargs
-    ) -> Tuple[Vector, float, int, int, List[np.ndarray]]:
+) -> Tuple[Vector, float, int, int, List[np.ndarray]]:
     """ Minimize a function using the Bayesian Optimization algorithm, which only uses
     function values, not derivatives or second derivatives. This function maintains an
     interface similar to `scipy.optimize.fmin`. Hereafter, we use the following customized

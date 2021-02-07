@@ -3,8 +3,8 @@ import sys, os
 sys.path.insert(0, '../')
 
 from bayes_optim import fmin, RealSpace, IntegerSpace, DiscreteSpace
-from bayes_optim.Extension import MultiAcquisitionBO
-from bayes_optim.Surrogate import RandomForest
+from bayes_optim.extension import MultiAcquisitionBO
+from bayes_optim.surrogate import RandomForest
 
 np.random.seed(42)
 

@@ -1,37 +1,18 @@
-import logging, sys, functools
-import numpy as np
-
 from typing import Callable, Union
+
+import functools
 from copy import copy
+
+import numpy as np
 from joblib import Parallel, delayed
 from scipy.stats import rankdata, norm
-from sklearn.decomposition import PCA, KernelPCA
 
-from . import AcquisitionFunction
-from .base import baseOptimizer
+from . import acquisition_fun as AcquisitionFunction
+from .acquisition_fun import penalized_acquisition
+from .base import BaseOptimizer
 from .search_space import RealSpace
-from .BayesOpt import BO, ParallelBO
-from .misc import LoggerFormatter
+from .bayes_opt import BO, ParallelBO
 
-def penalized_acquisition(x, acquisition_func, X_mean, pca, bounds, return_dx):
-    x_ = pca.inverse_transform(x) + X_mean
-    bounds = np.asarray(bounds)
-    idx_lower = x_ < bounds[:, 0]
-    idx_upper = x_ > bounds[:, 1]
-    penalty = np.sum([bounds[i, 0] - x_[i] for i in idx_lower]) + \
-        np.sum([x_[i] - bounds[i, 1] for i in idx_upper])
-    penalty *= -1
-
-    if penalty == 0:
-        return acquisition_func(x)
-    else:
-        if return_dx:
-            g = np.zeros((len(x), 1))
-            g[idx_lower, :] = 1
-            g[idx_upper, :] = -1
-            return penalty, g
-        else:
-            return penalty
 
 class PCABO(ParallelBO):
     def __init__(
@@ -39,7 +20,7 @@ class PCABO(ParallelBO):
         kernel_pca: bool = False,
         n_components: Union[float, int] = None,
         **kwargs
-        ):
+    ):
         super().__init__(**kwargs)
         assert isinstance(self._search_space, RealSpace)
 
@@ -102,7 +83,7 @@ class PCABO(ParallelBO):
         super().tell(X_, func_vals)
 
 
-class OptimizerPipeline(baseOptimizer):
+class OptimizerPipeline(BaseOptimizer):
     def __init__(
         self,
         obj_fun: Callable,

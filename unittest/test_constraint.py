@@ -4,7 +4,7 @@ import numpy as np
 sys.path.insert(0, '../')
 
 from bayes_optim import BO, RealSpace, IntegerSpace, DiscreteSpace
-from bayes_optim.Surrogate import RandomForest
+from bayes_optim.surrogate import RandomForest
 from bayes_optim.acquisition_optim import OnePlusOne_Cholesky_CMA
 
 def obj_fun2(x):

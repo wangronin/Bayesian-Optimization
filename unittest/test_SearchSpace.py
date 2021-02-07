@@ -5,7 +5,7 @@ import numpy as np
 import pickle
 
 sys.path.insert(0, '../')
-from bayes_optim.Solution import Solution
+from bayes_optim.solution import Solution
 from bayes_optim.search_space import (
     Variable, Real, Integer, Discrete,
     RealSpace, IntegerSpace, DiscreteSpace, SearchSpace
