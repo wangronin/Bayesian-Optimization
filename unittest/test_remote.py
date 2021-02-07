@@ -32,7 +32,6 @@ payload = {
     "bo_param" : {
         "n_job" : 1,         # 服务器上并行进程数
         "n_point" : 1,       # 每次迭代返回参数值个数
-        "max_iter" : 20,     # 最大迭代次数
         "DoE_size" : 3,      # 初始（第一代）采样点个数，其一般与`n_point`相等
         "minimize" : True,   # 最大化/最小化
         "n_obj": 1

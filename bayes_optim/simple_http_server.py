@@ -76,6 +76,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
         if 'max_iter' in bo_param:
             max_FEs = bo_param['max_iter'] * bo_param['n_point'] + bo_param['DoE_size']
+            del bo_param['max_iter']
         else:
             max_FEs = int(search_space.dim * 200)
 
