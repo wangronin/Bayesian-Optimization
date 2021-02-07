@@ -1,6 +1,5 @@
 # TODO: reactiveValues is not necessary here; a global var. should suffice
-ask_lock <- reactiveValues(value = 0)  # to ensure the last `ask` request is finished
-tell_lock <- reactiveValues(value = 0) # to ensure the last `tell` request is finished
+tell_lock <- reactiveValues(value = NULL) # to ensure the last `tell` request is finished
 
 # NOTE: `dataTableProxy` is used to update a `DT` table partly without regenerating the full table
 proxy <- dataTableProxy('ask_tell_box.data_table')
@@ -10,42 +9,12 @@ data_table <- reactiveVal(NULL)
 # re-rendering the table when the user is editing the table
 trigger_renderDT <- reactiveVal(NULL)
 
-# check if the ask/tell function is locked
-enter_lock <- function() {
-  if (ask_lock$value != 0) {
-    print_html2(
-      paste0(
-        '<p style="color:red;">',
-        '请等待前序`Ask`请求完成</p>'
-      )
-    )
-    return(T)
-  } else if (tell_lock$value != 0) {
-    print_html2(
-      paste0(
-        '<p style="color:red;">',
-        '请等待前序`Tell`请求完成</p>'
-      )
-    )
-    return(T)
-  }
-  return(F)
-}
-
+# TODO: add the progress bar to the ask/tell request
 # send the `ask` request
 observeEvent(input$ask_tell_box.ask, {
   job_id <- input$ask_tell_box.job_id
-
-  if (enter_lock())
-    return()
-
-  # hold the ask lock
-  ask_lock$value <- 1
-  print_html2(
-    paste0(
-      '<p style="color:red;">请求被处理中，请等待</p>'
-    )
-  )
+  shinyjs::disable('ask_tell_box.ask')
+  shinyjs::disable('ask_tell_box.tell')
 
   r <- GET(
     address,
@@ -74,16 +43,15 @@ observeEvent(input$ask_tell_box.ask, {
       )
     )
   }
-  # release the ask lock
-  ask_lock$value <- 0
+  shinyjs::enable('ask_tell_box.ask')
+  shinyjs::enable('ask_tell_box.tell')
 })
 
 # send the `tell` request
 observeEvent(input$ask_tell_box.tell, {
   job_id <- input$ask_tell_box.job_id
-
-  if (enter_lock())
-    return()
+  shinyjs::disable('ask_tell_box.ask')
+  shinyjs::disable('ask_tell_box.tell')
 
   # hold the tell lock
   tell_lock$value <- 1
@@ -117,8 +85,10 @@ observeEvent(input$ask_tell_box.tell, {
       )
     )
   }
-  # release the tell lock
+  # hold the tell lock
   tell_lock$value <- 0
+  shinyjs::enable('ask_tell_box.ask')
+  shinyjs::enable('ask_tell_box.tell')
 })
 
 # add a json file containing the tell data

@@ -170,21 +170,20 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
             if hasattr(model, 'feature_importances_'):
                 imp = model.feature_importances_
-            else:
-                imp = None
+                if levels is not None:
+                    imp_ = np.zeros(len(feature_name))
+                    cat_idx = model._cat_idx
+                    _idx = list(set(range(len(imp_))) - set(cat_idx))
+                    _n = len(feature_name) - len(levels)
+                    idx = np.cumsum([0] + [len(_) for _ in levels.values()]) + _n
+                    _imp = [np.sum(imp[idx[i]:idx[i + 1]]) for i in range(len(idx) - 1)]
 
-            if levels is not None:
-                imp_ = np.zeros(len(feature_name))
-                cat_idx = model._cat_idx
-                _idx = list(set(range(len(imp_))) - set(cat_idx))
-                _n = len(feature_name) - len(levels)
-                idx = np.cumsum([0] + [len(_) for _ in levels.values()]) + _n
-                _imp = [np.sum(imp[idx[i]:idx[i + 1]]) for i in range(len(idx) - 1)]
-
-                imp_[cat_idx] = _imp
-                imp_[_idx] = imp[0:_n]
+                    imp_[cat_idx] = _imp
+                    imp_[_idx] = imp[0:_n]
+                else:
+                    imp_ = imp
             else:
-                imp_ = imp
+                imp_ = []
 
             rsp_data[job_id] = {
                 'feature' : feature_name,
