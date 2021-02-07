@@ -19,7 +19,7 @@ output$feature_importance_box.bar_chart <- renderPlotly({
 })
 
 imp_data <- reactive({
-  if (tell_done$value == 0) return(NULL)
+  if (tell_lock$value != 0) return(NULL)
   job_id <- input$feature_importance_box.job_id
   .json <- list(
     get_feature_importance = as.list(job_id)

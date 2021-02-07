@@ -1,9 +1,8 @@
 import os
 import subprocess
-import shutil
 import time
+import shutil
 import numpy as np
-import pytest
 import requests
 
 payload = {
@@ -63,7 +62,7 @@ def test_remote():
     env['PYTHONPATH'] = "../:" + env['PYTHONPATH']
 
     proc = subprocess.Popen([
-        'python3', '-m', 'bayes_optim.SimpleHTTPServer', '-w', '7200', '-v'
+        'python3', '-m', 'bayes_optim.simple_http_server', '-w', '7200', '-v'
     ], env=env)
     time.sleep(3)
 

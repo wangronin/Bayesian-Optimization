@@ -1,22 +1,25 @@
-import os, sys, json, logging, dill
-import numpy as np
+import os
+import sys
+import json
+import logging
 
 import urllib.parse as urlparse
-from optparse import OptionParser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from .bayes_opt import ParallelBO, BO
-from .search_space import SearchSpace, RealSpace
-from .Surrogate import RandomForest, GaussianProcess, trend
-from .misc import random_string
-from .utils import Daemon
+from optparse import OptionParser
+import numpy as np
 
+from .bayes_opt import ParallelBO, BO
+from .search_space import SearchSpace
+from .surrogate import RandomForest, GaussianProcess, trend
+from .misc import random_string
+from ._daemon import Daemon
 
 __authors__ = ['Hao Wang']
 
-# Configuration request Handler
+
 class RemoteBO(BaseHTTPRequestHandler, object):
-    """
+    """ BO Configuration request Handler
     Note
     ----
         This class is instantiated for every incoming HTTP request and it is terminated
@@ -37,11 +40,15 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             job_id = job_id[0]
         return job_id
 
+    def _scan_jobs(self):
+        dump_files = [_ for _ in os.listdir(self.work_dir) if _.endswith('.dump')]
+        job_ids = [os.path.splitext(os.path.basename(_))[0] for _ in dump_files]
+        return job_ids, dump_files
+
     def _get_dump_file(self, job_id, check=True):
         dump_file = os.path.join(self.work_dir, job_id + '.dump')
         if check and not os.path.exists(dump_file):
             raise Exception('The dump file of job %s is not found!'%(job_id))
-
         return dump_file
 
     def _send_response(self, rsp_data):
@@ -66,9 +73,12 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
         search_space = SearchSpace.from_dict(search_param, space_name=False)
         n_obj = bo_param['n_obj']
-        max_FEs = bo_param['max_iter'] * bo_param['n_point'] + bo_param['DoE_size']
 
-        del bo_param['max_iter']
+        if 'max_iter' in bo_param:
+            max_FEs = bo_param['max_iter'] * bo_param['n_point'] + bo_param['DoE_size']
+        else:
+            max_FEs = int(search_space.dim * 200)
+
         del bo_param['n_obj']
         _BO = ParallelBO if bo_param['n_point'] > 1 else BO
 
@@ -123,9 +133,8 @@ class RemoteBO(BaseHTTPRequestHandler, object):
         rsp_data['job_id'] = job_id
         self.logger.info('create job %s'%job_id)
 
-    def _check_job(self, data, rsp_data):
-        job_ids = data['check_job']
-        for job_id in job_ids:
+    def _check_job(self, rsp_data):
+        for job_id in self._scan_jobs()[0]:
             dump_file = self._get_dump_file(job_id)
             opt = ParallelBO.load(dump_file)
 
@@ -138,6 +147,9 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
     def _get_history(self, data, rsp_data):
         job_ids = data['get_history']
+        if isinstance(job_ids, str):
+            job_ids = [job_ids]
+
         for job_id in job_ids:
             dump_file = self._get_dump_file(job_id)
             opt = ParallelBO.load(dump_file)
@@ -181,13 +193,13 @@ class RemoteBO(BaseHTTPRequestHandler, object):
     def _ask(self, data, rsp_data):
         try:
             n_point = int(data['ask'])
-        except:
+        except Exception:
             n_point = None
 
         job_id = self._get_job_id(data)
         dump_file = self._get_dump_file(job_id)
 
-        self.logger.info('ask request from job %s'%job_id)
+        self.logger.info(f'ask request from job {job_id}')
         opt = ParallelBO.load(dump_file)
         X = opt.ask(n_point)
 
@@ -225,6 +237,8 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             data = urlparse.parse_qs(parsed.query)
             if 'ask' in data:
                 self._ask(data, rsp_data)
+            elif 'check_job' in data:
+                self._check_job(rsp_data)
             elif 'finalize' in data:
                 self._finalize(data, rsp_data)
         except Exception as ex:
@@ -242,8 +256,6 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             data = json.loads(post_body)
             if 'search_param' in data:
                 self._create_optimizer(data, rsp_data)
-            elif 'check_job' in data:
-                self._check_job(data, rsp_data)
             elif 'get_history' in data:
                 self._get_history(data, rsp_data)
             elif 'get_feature_importance' in data:
@@ -317,10 +329,9 @@ if __name__ == '__main__':
                           help='foreground/background mode', default=False)
 
     options, args = opt_parser.parse_args()
-    host, port = options.host, options.port
 
     # start the server in the daemon mode
-    dm = RemoteBODaemon('.bo.pid')
+    dm = RemoteBODaemon('.bo-server.pid')
     if options.verbose:
         dm.run(**options.__dict__)
     else:

@@ -11,7 +11,6 @@
     "bo_param" : {
         "n_job" : 3,
         "n_point" : 3,
-        "max_iter" : 20,
         "DoE_size" : 3,
         "minimize" : true,
         "n_obj": 1

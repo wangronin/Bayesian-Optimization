@@ -1,11 +1,52 @@
-tell_done <- reactiveValues(value = 0)
+# TODO: reactiveValues is not necessary here; a global var. should suffice
+ask_lock <- reactiveValues(value = 0)  # to ensure the last `ask` request is finished
+tell_lock <- reactiveValues(value = 0) # to ensure the last `tell` request is finished
 
+# NOTE: `dataTableProxy` is used to update a `DT` table partly without regenerating the full table
 proxy <- dataTableProxy('ask_tell_box.data_table')
+# TODO: reactiveVal might not be necessary here..
 data_table <- reactiveVal(NULL)
+# NOTE: to trigger re-rendering of `data_table`, which is needed since we do not trigger
+# re-rendering the table when the user is editing the table
 trigger_renderDT <- reactiveVal(NULL)
 
+# check if the ask/tell function is locked
+enter_lock <- function() {
+  if (ask_lock$value != 0) {
+    print_html2(
+      paste0(
+        '<p style="color:red;">',
+        '请等待前序`Ask`请求完成</p>'
+      )
+    )
+    return(T)
+  } else if (tell_lock$value != 0) {
+    print_html2(
+      paste0(
+        '<p style="color:red;">',
+        '请等待前序`Tell`请求完成</p>'
+      )
+    )
+    return(T)
+  }
+  return(F)
+}
+
+# send the `ask` request
 observeEvent(input$ask_tell_box.ask, {
   job_id <- input$ask_tell_box.job_id
+
+  if (enter_lock())
+    return()
+
+  # hold the ask lock
+  ask_lock$value <- 1
+  print_html2(
+    paste0(
+      '<p style="color:red;">请求被处理中，请等待</p>'
+    )
+  )
+
   r <- GET(
     address,
     query = list(ask = 'null', job_id = job_id)
@@ -33,8 +74,54 @@ observeEvent(input$ask_tell_box.ask, {
       )
     )
   }
+  # release the ask lock
+  ask_lock$value <- 0
 })
 
+# send the `tell` request
+observeEvent(input$ask_tell_box.tell, {
+  job_id <- input$ask_tell_box.job_id
+
+  if (enter_lock())
+    return()
+
+  # hold the tell lock
+  tell_lock$value <- 1
+
+  dt <- data_table()
+  X <- dt[, -c('y')]
+  y <- dt$y
+  json_data <- jsonlite::toJSON(list(X = X, y = y, job_id = job_id), auto_unbox = T)
+
+  r <- POST(
+    address,
+    body = json_data, encode = 'json'
+  )
+
+  if (status_code(r) == 200) {
+    print_html2(
+      paste(
+        '<p style="color:red;">成功添加目标值',
+        paste(y, collapse = ', '),
+        '至任务',
+        job_id,
+        '</p>'
+      )
+    )
+  } else if (status_code(r) == 500) {
+    print_html2(
+      paste0(
+        '<p style="color:red;">添加目标值失败!',
+        content(r)$error,
+        '</p>'
+      )
+    )
+  }
+  # release the tell lock
+  tell_lock$value <- 0
+})
+
+# add a json file containing the tell data
 observeEvent(input$ask_tell_box.add_json, {
   path <- input$ask_tell_box.add_json$datapath
   req(path)
@@ -59,6 +146,7 @@ observeEvent(input$ask_tell_box.add_json, {
   }
 })
 
+# handle users' editing events on the table cells
 observeEvent(input$ask_tell_box.data_table_cell_edit, {
   info <- input$ask_tell_box.data_table_cell_edit
   i <- info$row
@@ -77,41 +165,8 @@ observeEvent(input$ask_tell_box.data_table_cell_edit, {
   )
 })
 
-observeEvent(input$ask_tell_box.tell, {
-  job_id <- input$ask_tell_box.job_id
-
-  dt <- data_table()
-  X <- dt[, -c('y')]
-  y <- dt$y
-  json_data <- jsonlite::toJSON(list(X = X, y = y, job_id = job_id), auto_unbox = T)
-
-  r <- POST(
-    address,
-    body = json_data, encode = 'json'
-  )
-
-  if (status_code(r) == 200) {
-    print_html2(
-      paste(
-        '<p style="color:red;">成功添加目标值',
-        paste(y, collapse = ', '),
-        '至任务',
-        job_id,
-        '</p>'
-      )
-    )
-    tell_done$value <- rnorm(1)
-  } else if (status_code(r) == 500) {
-    print_html2(
-      paste0(
-        '<p style="color:red;">添加目标值失败!',
-        content(r)$error,
-        '</p>'
-      )
-    )
-  }
-})
-
+# TODO: test the appearence of the table when the dimensionality is high
+# (re-)rendering of the data table
 output$ask_tell_box.data_table <- DT::renderDataTable({
     trigger_renderDT()
     isolate({data_table()})
@@ -130,6 +185,7 @@ output$ask_tell_box.data_table <- DT::renderDataTable({
   )
 )
 
+# handle the download request of the data table
 output$ask_tell_box.download <- downloadHandler(
   filename = function() {
     'solutions.json'

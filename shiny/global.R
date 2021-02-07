@@ -8,7 +8,7 @@ suppressMessages(library(DT))
 suppressMessages(library(httr))
 suppressMessages(library(jsonlite))
 
-ip <- "207.246.97.250"
+ip <- "106.14.217.207"
 # ip <- '127.0.0.1'
 port <- 7200
 address <- paste0('http://', ip, ':', port)

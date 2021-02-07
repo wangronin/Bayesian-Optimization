@@ -18,14 +18,13 @@ output$progress_box.line_chart <- renderPlotly({
 })
 
 progress_data <- reactive({
-  tell_done$value
+  req(tell_lock$value == 0)
   isolate({
-    if (length(job_list$list) == 0) return(list())
+    job_list <- rownames(job_table())
     .json <- list(
-      get_history = as.vector(job_list$list)
+      get_history = as.vector(job_list)
     )
   })
-
   r <- POST(address, body = .json, encode = 'json')
   content(r)
 })

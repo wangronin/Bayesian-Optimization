@@ -57,7 +57,8 @@ def test_BO_constraints():
         acquisition_par={'t' : 2},
         n_job=1,
         n_point=1,
-        verbose=True
+        verbose=True,
+        random_seed=42
     ).run()
     assert isinstance(xopt, dict)
     assert all(np.array(g(xopt)) <= 0)
