@@ -1,26 +1,36 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Sep  7 11:10:18 2017
-
-@author: wangronin
-"""
 import numpy as np
-from numpy import exp, nonzero, argsort, ceil, zeros, mod
+from numpy import exp, argsort, ceil, zeros, mod
 from numpy.random import randint, rand, randn, geometric
 
 from ..misc import handle_box_constraint
 from ..base import Solution
 from ..utils import dynamic_penalty
-from ..search_space import RealSpace, IntegerSpace, DiscreteSpace
 
-# TODO: test more contraint handling methods
+__author__ = 'Hao Wang'
+
 # TODO: improve efficiency, e.g. compile it with cython
-# TODO: try to use advanced python default parameter
-class MIES(object):
-    def __init__(self, search_space, obj_func, eq_func=None, ineq_func=None, x0=None,
-                 ftarget=None, max_eval=np.inf, minimize=True, elitism=False, mu_=4,
-                 lambda_=10, sigma0=None, eta0=None, P0=None, verbose=False,
-                 eval_type='list'):
+class MIES:
+    def __init__(
+        self,
+        search_space,
+        obj_func,
+        eq_func=None,
+        ineq_func=None,
+        x0=None,
+        ftarget=None,
+        max_eval=np.inf,
+        minimize=True,
+        elitism=False,
+        mu_=4,
+        lambda_=10,
+        sigma0=None,
+        eta0=None,
+        P0=None,
+        verbose=False,
+        eval_type='list'
+    ):
+        # TODO: constructor is too long...
         self.mu_ = mu_
         self.lambda_ = lambda_
         self.eval_count = 0
@@ -186,17 +196,16 @@ class MIES(object):
     def evaluate(self, pop, return_penalized=True):
         X = self._to_pheno(pop[:, self._id_var])
         if len(pop.shape) == 1:  # one solution
-            pop.fitness = np.asarray(self.obj_func(X))
-        else:                    # a population
-            pop.fitness = np.array(list(map(self.obj_func, X)))
+            X = [X]
 
+        pop.fitness = np.array(list(map(self.obj_func, X)))
         self.eval_count += pop.N
         _penalized_fitness = self._penalty_func(
             X, self.iter_count + 1,
             self.eq_func, self.ineq_func,
             minimize=self.minimize
         ) + pop.fitness
-        return (_penalized_fitness if return_penalized else pop.fitness)
+        return _penalized_fitness if return_penalized else pop.fitness
 
     def mutate(self, individual):
         if self.N_r:
@@ -304,6 +313,7 @@ class MIES(object):
     def _better(self, f1, f2):
         return f1 < f2 if self.minimize else f1 > f2
 
+    # TODO: optimize -> run
     def optimize(self):
         while not self.stop():
             # TODO: vectorize this part

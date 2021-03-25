@@ -87,7 +87,7 @@ def dynamic_penalty(
     p = (-1) ** (not minimize) * (C * t) ** alpha * p
     return p
 
-# TODO: get this done and test it and add docstrings..
+# TODO: implement this...
 def stochastic_ranking(X, fitness, equality=None, inquality=None, P=0.4, gamma=1,
                        beta=1, epsilon=0):
     N = len(X) if isinstance(X, list) else X.shape[0]
