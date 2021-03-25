@@ -43,9 +43,9 @@ class MIES(object):
         self.param_type = self._space.var_type
 
         # index of each type of variables in the dataframe
-        self.id_r = self._space.id_r       # index of continuous variable
-        self.id_i = self._space.id_i       # index of integer variable
-        self.id_d = self._space.id_d       # index of categorical variable
+        self.id_r = self._space.real_id       # index of continuous variable
+        self.id_i = self._space.integer_id       # index of integer variable
+        self.id_d = self._space.categorical_id       # index of categorical variable
 
         # the number of variables per each type
         self.N_r = len(self.id_r)

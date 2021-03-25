@@ -293,9 +293,9 @@ class BaseBO(ABC):
         self._search_space = search_space
         self.dim = len(self._search_space)
         self.var_names = self._search_space.var_name
-        self.r_index = self._search_space.id_r       # indices of continuous variable
-        self.i_index = self._search_space.id_i       # indices of integer variable
-        self.d_index = self._search_space.id_d       # indices of categorical variable
+        self.r_index = self._search_space.real_id      # indices of continuous variable
+        self.i_index = self._search_space.integer_id   # indices of integer variable
+        self.d_index = self._search_space.categorical_id   # indices of categorical variable
 
         self.param_type = self._search_space.var_type
         self.N_r = len(self.r_index)
@@ -538,8 +538,9 @@ class BaseBO(ABC):
         DoE = []
         while len(DoE) < n_point:
             DoE += self._search_space.sample(
-                n_point - len(DoE), method='LHS', h=self._h, g=self._g
-            )
+                n_point - len(DoE), method='LHS'
+                # h=self._h, g=self._g
+            ).tolist()
             DoE = self.pre_eval_check(DoE)
         return DoE
 
