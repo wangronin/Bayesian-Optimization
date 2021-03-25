@@ -168,6 +168,9 @@ class Real(Variable):
 
     @scale.setter
     def scale(self, scale):
+        if scale is None:
+            scale = 'linear'
+
         assert scale in TRANS.keys()
         self._scale: str = scale
         self._trans: Callable = TRANS[scale][0]
@@ -644,7 +647,7 @@ class SearchSpace(object):
             X = X.reshape(1, -1)
 
         r_subspace = self.__getitem__(self.real_id)
-        X[:, self.real_id] = r_subspace.round(X[:, self.real_id])
+        X[:, self.real_id] = r_subspace.round(X[:, self.real_id].astype(float))
         return X
 
     def to_linear_scale(self, X):
@@ -654,7 +657,7 @@ class SearchSpace(object):
             X = X.reshape(1, -1)
 
         r_subspace = self.__getitem__(self.real_id)
-        X[:, self.real_id] = r_subspace.to_linear_scale(X[:, self.real_id])
+        X[:, self.real_id] = r_subspace.to_linear_scale(X[:, self.real_id].astype(float))
         return X
 
     def to_dict(self):
@@ -714,12 +717,12 @@ class SearchSpace(object):
             N = range(int(v['N'])) if 'N' in v else range(1)
             if v['type'] in ['r', 'real']:                  # real-valued parameter
                 precision = v['precision'] if 'precision' in v else None
-                scale = v['scale'] if 'scale' in v else None
+                scale = v['scale'] if 'scale' in v else 'linear'
                 _vars = [
                     Real(bounds, name=k, precision=precision, scale=scale) for _ in N
                 ]
             elif v['type'] in ['i', 'int', 'integer']:      # integer-valued parameter
-                _vars = [Integer(bounds, name=k, step=v['step'] or 1) for _ in N]
+                _vars = [Integer(bounds, name=k, step=v.pop('step', 1)) for _ in N]
             elif v['type'] in ['o', 'ordinal']:             # ordinal parameter
                 _vars = [Ordinal(bounds, name=k) for _ in N]
             elif v['type'] in ['c', 'cat']:                 # category-valued parameter
@@ -780,14 +783,14 @@ class RealSpace(SearchSpace):
         return self.round(self.to_linear_scale(X))
 
     def round(self, X):
-        X = np.atleast_2d(X)
+        X = np.atleast_2d(X).astype(float)
         assert X.shape[1] == self.dim
         for i, var in enumerate(self.data):
             X[:, i] = var.round(X[:, i])
         return X
 
     def to_linear_scale(self, X):
-        X = np.atleast_2d(X)
+        X = np.atleast_2d(X).astype(float)
         assert X.shape[1] == self.dim
         for i, var in enumerate(self.data):
             X[:, i] = var.to_linear_scale(X[:, i])

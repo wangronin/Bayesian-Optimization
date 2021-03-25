@@ -9,9 +9,19 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from optparse import OptionParser
 import numpy as np
 
-from .bayes_opt import ParallelBO, BO
-from .search_space import SearchSpace
-from .surrogate import RandomForest, GaussianProcess, trend
+from .bayes_opt import (
+    ParallelBO,
+    BO
+)
+from .search_space import (
+    SearchSpace,
+    RealSpace
+)
+from .surrogate import (
+    RandomForest,
+    GaussianProcess,
+    trend
+)
 from .misc import random_string
 from ._daemon import Daemon
 
@@ -28,7 +38,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
     """
     work_dir, verbose = '', False
     def log_message(self, format, *args):
-        msg = "%s - - %s" % (self.address_string(), format%args)
+        msg = f"%s - - %s" % (self.address_string(), format%args)
         self.logger.info(msg)
 
     def _get_job_id(self, info):
@@ -71,7 +81,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
         search_param = data['search_param']
         bo_param = data['bo_param']
 
-        search_space = SearchSpace.from_dict(search_param, space_name=False)
+        search_space = SearchSpace.from_dict(search_param)
         n_obj = bo_param['n_obj']
 
         if 'max_iter' in bo_param:
@@ -88,7 +98,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             return np.sum(list(x.values())) - 1
 
         # TODO: turn this off until the feature importance of GPR is implemented
-        if len(search_space.id_d) == 0 and len(search_space.id_i) == 0 and 11 < 2:
+        if isinstance(search_space, RealSpace) and 11 < 2:
             dim = search_space.dim
             lb, ub = np.atleast_2d(search_space.bounds).T
             # autocorrelation parameters of GPR
@@ -132,7 +142,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
         opt.save(dump_file)
         rsp_data['job_id'] = job_id
-        self.logger.info('create job %s'%job_id)
+        self.logger.info(f'create job {job_id}')
 
     def _check_job(self, rsp_data):
         for job_id in self._scan_jobs()[0]:
@@ -172,7 +182,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 imp = model.feature_importances_
                 if levels is not None:
                     imp_ = np.zeros(len(feature_name))
-                    cat_idx = model._cat_idx
+                    cat_idx = getattr(model, '_cat_idx')
                     _idx = list(set(range(len(imp_))) - set(cat_idx))
                     _n = len(feature_name) - len(levels)
                     idx = np.cumsum([0] + [len(_) for _ in levels.values()]) + _n
@@ -210,7 +220,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
         job_id = self._get_job_id(data)
         dump_file = self._get_dump_file(job_id)
 
-        self.logger.info('tell request from job %s'%job_id)
+        self.logger.info(f'tell request from job {job_id}')
         opt = ParallelBO.load(dump_file)
 
         opt.tell(data['X'], data['y'])
@@ -219,9 +229,9 @@ class RemoteBO(BaseHTTPRequestHandler, object):
         rsp_data['xopt'] = opt.xopt
         rsp_data['fopt'] = opt.fopt
 
-    def _finalize(self, data, rsp_data):
+    def _finalize(self, data):
         job_id = self._get_job_id(data)
-        self.logger.info('finalize request from job %s'%job_id)
+        self.logger.info(f'finalize request from job {job_id}')
         dump_file = self._get_dump_file(job_id)
         os.remove(dump_file)
 

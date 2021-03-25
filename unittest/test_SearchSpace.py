@@ -1,8 +1,8 @@
-import pytest, sys, re
-
-from copy import deepcopy
+import sys
+import re
+import json
+import pytest
 import numpy as np
-import pickle
 
 sys.path.insert(0, '../')
 from bayes_optim.solution import Solution
@@ -184,8 +184,7 @@ def test_from_dict():
     assert cs.dim == 3
     assert cs.var_name[0] == 'activation0'
 
-    import json
-    with open('../shiny/example.json') as f:
+    with open('./shiny/example.json') as f:
         data = json.load(f)
 
     cs = SearchSpace.from_dict(data['search_param'])

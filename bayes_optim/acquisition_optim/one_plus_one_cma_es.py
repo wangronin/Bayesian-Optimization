@@ -284,7 +284,7 @@ class OnePlusOne_CMA(object):
             the trial point to check against the constraints
         """
         return dynamic_penalty(
-            x, self.iter_count + 1,
+            x.tolist(), self.iter_count + 1,
             self.h, self.g,
             minimize=self.minimize
         )

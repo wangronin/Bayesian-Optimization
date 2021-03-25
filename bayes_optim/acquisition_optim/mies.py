@@ -21,7 +21,6 @@ class MIES(object):
                  ftarget=None, max_eval=np.inf, minimize=True, elitism=False, mu_=4,
                  lambda_=10, sigma0=None, eta0=None, P0=None, verbose=False,
                  eval_type='list'):
-
         self.mu_ = mu_
         self.lambda_ = lambda_
         self.eval_count = 0
@@ -34,7 +33,7 @@ class MIES(object):
         self.verbose = verbose
         self.max_eval = max_eval
         self.ftarget = ftarget
-        self.elitism = False
+        self.elitism = elitism
         self._penalty_func = dynamic_penalty
         self._eval_type = eval_type
 
@@ -42,10 +41,15 @@ class MIES(object):
         self.var_names = self._space.var_name
         self.param_type = self._space.var_type
 
+        if self._eval_type == 'list':
+            self._to_pheno = lambda x: x
+        elif self._eval_type == 'dict':
+            self._to_pheno = lambda x: x.to_dict(space=self._space)
+
         # index of each type of variables in the dataframe
-        self.id_r = self._space.real_id       # index of continuous variable
+        self.id_r = self._space.real_id          # index of continuous variable
         self.id_i = self._space.integer_id       # index of integer variable
-        self.id_d = self._space.categorical_id       # index of categorical variable
+        self.id_d = self._space.categorical_id   # index of categorical variable
 
         # the number of variables per each type
         self.N_r = len(self.id_r)
@@ -63,7 +67,8 @@ class MIES(object):
         # unpack interval bounds
         self.bounds_r = np.asarray([self._space.bounds[_] for _ in self.id_r])
         self.bounds_i = np.asarray([self._space.bounds[_] for _ in self.id_i])
-        self.bounds_d = np.asarray([self._space.bounds[_] for _ in self.id_d])
+        # NOTE: bounds might be ragged
+        self.bounds_d = [self._space.bounds[_] for _ in self.id_d]
         self._check_bounds(self.bounds_r)
         self._check_bounds(self.bounds_i)
 
@@ -179,23 +184,18 @@ class MIES(object):
         self.fitness = fitness[_]
 
     def evaluate(self, pop, return_penalized=True):
+        X = self._to_pheno(pop[:, self._id_var])
         if len(pop.shape) == 1:  # one solution
-            pop.fitness = np.asarray(self.obj_func(pop[self._id_var]))
+            pop.fitness = np.asarray(self.obj_func(X))
         else:                    # a population
-            pop.fitness = np.array(list(map(self.obj_func, pop[:, self._id_var])))
+            pop.fitness = np.array(list(map(self.obj_func, X)))
 
         self.eval_count += pop.N
-        if self._eval_type == 'list':
-            X = pop
-        elif self._eval_type == 'dict':
-            X = [self._space.to_dict(x) for x in pop]
-
-        _penalized_fitness = pop.fitness + \
-            self._penalty_func(
-                X, self.iter_count + 1,
-                self.eq_func, self.ineq_func,
-                minimize=self.minimize
-            )
+        _penalized_fitness = self._penalty_func(
+            X, self.iter_count + 1,
+            self.eq_func, self.ineq_func,
+            minimize=self.minimize
+        ) + pop.fitness
         return (_penalized_fitness if return_penalized else pop.fitness)
 
     def mutate(self, individual):
@@ -258,6 +258,7 @@ class MIES(object):
         individual[self._id_p] = handle_box_constraint(P, 1. / (3. * self.N_d), 0.5)
 
         idx, = np.nonzero(rand(self.N_d) < P)
+        # TODO: this can be accelerated
         for i in idx:
             levels = self.bounds_d[i]
             individual[self.id_d[i]] = levels[randint(0, len(levels))]

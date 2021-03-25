@@ -519,7 +519,7 @@ class BaseBO(ABC):
         self._logger.info(f'fopt: {self.fopt}')
         if self.h is not None or self.g is not None:
             _penalty = dynamic_penalty(
-                _xopt, 1,
+                _xopt.tolist(), 1,
                 self._h, self._g,
                 minimize=self.minimize
             )

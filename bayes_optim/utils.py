@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, List
 import numpy as np
 
 def arg_to_int(arg):
@@ -24,7 +24,7 @@ def set_bounds(bound, dim):
 
 # TODO: move this to a '_penalty.py' file
 def dynamic_penalty(
-    X: np.ndarray,
+    X: List,
     t: int = 1,
     equality: Callable = None,
     inequality: Callable = None,
@@ -68,10 +68,10 @@ def dynamic_penalty(
     ``p``
         the dynamic penalty value
     """
-    if len(X.shape) == 1:
-        X = X.reshape(1, -1)
+    if not hasattr(X[0], '__iter__') or isinstance(X[0], str):
+        X = [X]
 
-    N = X.shape[0]
+    N = len(X)
     p = np.zeros(N)
 
     if equality is not None:

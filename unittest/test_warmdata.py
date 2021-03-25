@@ -1,9 +1,19 @@
-import numpy as np
-import sys, os
+import sys
 sys.path.insert(0, '../')
 
-from bayes_optim import ParallelBO, BO, RealSpace, IntegerSpace, DiscreteSpace
-from bayes_optim.surrogate import trend, GaussianProcess, RandomForest
+import numpy as np
+from bayes_optim import (
+    ParallelBO,
+    BO,
+    RealSpace,
+    IntegerSpace,
+     DiscreteSpace
+)
+from bayes_optim.surrogate import (
+    trend,
+    GaussianProcess,
+    RandomForest
+)
 
 np.random.seed(42)
 

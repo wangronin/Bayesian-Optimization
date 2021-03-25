@@ -1,13 +1,20 @@
 from typing import Callable, Any, Tuple, List, Union
-
+import logging
 import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 
-from .one_plus_one_cma_es import OnePlusOne_CMA, OnePlusOne_Cholesky_CMA
+from ..search_space import RealSpace
+from .one_plus_one_cma_es import (
+    OnePlusOne_CMA,
+    OnePlusOne_Cholesky_CMA
+)
 from .mies import MIES
 
 __all__ = [
-    'OnePlusOne_CMA', 'OnePlusOne_Cholesky_CMA', 'MIES', 'argmax_restart'
+    'argmax_restart',
+    'OnePlusOne_CMA',
+    'OnePlusOne_Cholesky_CMA',
+    'MIES'
 ]
 
 def argmax_restart(
@@ -19,23 +26,31 @@ def argmax_restart(
         n_restart: int = 10,
         wait_iter: int = 3,
         optimizer: str = 'BFGS',
-        logger = None
+        logger: logging.Logger = None
     ):
     # lists of the best solutions and acquisition values from each restart
     xopt, fopt = [], []
     best = -np.inf
     wait_count = 0
 
+    if not isinstance(search_space, RealSpace) and optimizer == 'BFGS':
+        optimizer = 'MIES'
+        logger.warn(
+            'L-BFGS-B cannot be applied on continuous search space'
+        )
+
     if (h is not None or g is not None) and optimizer == 'BFGS':
         optimizer = 'OnePlusOne_Cholesky_CMA'
+        # TODO: add constraint handling for BFGS
+        logger.warn(
+            'L-BFGS-B cannot be applied with constraints at this moment'
+        )
 
     for iteration in range(n_restart):
         x0 = search_space.sample(N=1, method='uniform')[0]
 
-        # TODO: add constraint handling for BFGS
         if optimizer == 'BFGS':
-            mask = np.nonzero(search_space.r_mask | search_space.i_mask)[0]
-            bounds = np.array([search_space.bounds[i] for i in mask])
+            bounds = np.array(search_space.bounds)
 
             if not all([isinstance(_, float) for _ in x0]):
                 raise ValueError('BFGS is not supported with mixed variable types.')
@@ -55,7 +70,6 @@ def argmax_restart(
                 logger.debug(
                     'L-BFGS-B terminated abnormally with the state: %s'%stop_dict
                 )
-
         elif optimizer == 'OnePlusOne_Cholesky_CMA':
             lb, ub = list(zip(*search_space.bounds))
             opt = OnePlusOne_Cholesky_CMA(
