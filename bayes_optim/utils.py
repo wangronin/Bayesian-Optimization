@@ -34,7 +34,7 @@ def dynamic_penalty(
     epsilon: float = 1e-2,
     minimize: bool = True
 ) -> np.ndarray:
-    """Dynamic Penalty calculated as follows:
+    r"""Dynamic Penalty calculated as follows:
 
     $$(tC)^{\alpha} * [\sum_i max(|h(x_i)|, \epsilon) + \sum_i max(0, g(x_i))^{\beta}],$$
 
