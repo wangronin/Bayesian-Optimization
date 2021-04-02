@@ -589,8 +589,8 @@ class BaseBO(ABC):
         # appear in the MGF-based acquisition function.
         # Standardization should make it easier to specify the GP prior, compared to
         # rescaling values to the unit interval.
-        fitness_ = (fitness - np.mean(fitness)) / np.std(fitness) \
-            if self._acquisition_fun == 'MGFI' else fitness
+        _std = np.std(fitness)
+        fitness_ = fitness if np.isclose(_std, 0) else (fitness - np.mean(fitness)) / np.std(fitness)
 
         self.fmin, self.fmax = np.min(fitness_), np.max(fitness_)
         self.frange = self.fmax - self.fmin
