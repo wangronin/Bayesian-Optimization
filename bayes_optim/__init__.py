@@ -13,7 +13,7 @@ from .extension import OptimizerPipeline
 
 __all__ = [
     'BO', 'ParallelBO', 'NoisyBO', 'AnnealingBO', 'Solution',
-    'Surrogate', 'RandomForest', 'GaussianProcess', 'trend',
+    'RandomForest', 'GaussianProcess', 'trend',
     'SearchSpace', 'IntegerSpace', 'RealSpace', 'DiscreteSpace',
     'EI', 'UCB', 'PI', 'MGFI',
     'RandomForest', 'OptimizerPipeline', 'fmin'

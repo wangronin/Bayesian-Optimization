@@ -603,8 +603,8 @@ class BaseBO(ABC):
         self._logger.info(f'model r2: {r2}, MAPE: {MAPE}')
 
     def arg_max_acquisition(self, n_point=None, return_value=False):
-        """
-        Global Optimization of the acqusition function / Infill criterion
+        """Global Optimization of the acqusition function / Infill criterion
+
         Returns
         -------
             candidates: tuple of list,
@@ -615,7 +615,7 @@ class BaseBO(ABC):
         self._logger.debug('acquisition optimziation...')
         t0 = time.time()
         n_point = self.n_point if n_point is None else int(n_point)
-        return_dx = True if self._optimizer == 'BFGS' else False
+        return_dx = self._optimizer == 'BFGS'
 
         if n_point > 1:  # multi-point/batch sequential strategy
             candidates, values = self._batch_arg_max_acquisition(
