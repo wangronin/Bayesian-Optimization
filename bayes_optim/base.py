@@ -442,7 +442,7 @@ class BaseBO(ABC):
 
     def ask(self, n_point: int = None):
         if self.model.is_fitted:
-            n_point = self.n_point if n_point is None else self.n_point
+            n_point = self.n_point if n_point is None else n_point
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
             X = self.pre_eval_check(X)       # validate the new candidate solutions

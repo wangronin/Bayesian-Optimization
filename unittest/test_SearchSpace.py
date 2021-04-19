@@ -33,6 +33,12 @@ def test_SearchSpace_var_name():
     with pytest.raises(AssertionError):
         cs.var_name = ['y0', 'y1']
 
+def test_contains():
+    cs = RealSpace([1e-10, 1e-1], 'x', 0.01, 'log') + \
+        IntegerSpace([-10, 10], 'y') + \
+        DiscreteSpace(['A', 'B', 'C', 'D', 'E'], 'z')
+    # TODO: finish this!
+
 def test_SearchSpace_remove():
     cs = RealSpace([1e-10, 1e-1], 'x', 7, 'log') + \
         IntegerSpace([-10, 10], 'y') + \

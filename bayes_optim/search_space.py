@@ -91,15 +91,16 @@ class Variable(ABC):
 
     def __str__(self):
         msg = f'{self.name} -> {type(self).__name__} | range: {self.bounds}'
-        if hasattr(self, 'step'):
-            msg += f' | step: {self.step}'
-        if hasattr(self, 'precision') and self.precision:
-            msg += f' | precision: .{self.precision}f'
-        if hasattr(self, 'scale'):
-            msg += f' | scale: {self.scale}'
         if self.default_value is not None:
             msg += f' | default: {self.default_value}'
         return msg
+
+    def __eq__(self, var: Variable) -> bool:
+        return self.__class__ == type(var) and \
+            self.bounds == var.bounds and \
+                self.default_value == var.default_value and \
+                    self.name == var.name and \
+                        self._conditions == var._conditions # TODO: verify this!
 
     def add_conditions(
         self, conditions: str,
@@ -162,6 +163,13 @@ class Real(Variable):
         self.precision: int = precision
         self.scale = scale
 
+    def __str__(self):
+        msg = super().__str__()
+        if self.precision:
+            msg += f' | precision: .{self.precision}f'
+        msg += f' | scale: {self.scale}'
+        return msg
+
     @property
     def scale(self):
         return self._scale
@@ -207,6 +215,8 @@ class _Discrete(Variable):
     """Represents Integer, Ordinal, Bool, and Discrete"""
     def __init__(self, bounds, *args, **kwargs):
         bounds = list(dict.fromkeys(bounds))
+        self._map_func: callable = None  # map the discrete value in bounds to integers
+        self._size: int = None
         super().__init__(bounds, *args, **kwargs)
 
     def sample(self, N: int = 1, **kwargs) -> List:
@@ -260,6 +270,11 @@ class Integer(_Discrete):
         self.step = step
         self._map_func = lambda i: self.bounds[0] + i * self.step
         self._size = int(np.floor((self.bounds[1] - self.bounds[0]) / self.step) + 1)
+
+    def __str__(self):
+        msg = super().__str__()
+        msg += f' | step: {self.step}'
+        return msg
 
 
 class Bool(_Discrete):
@@ -491,9 +506,11 @@ class SearchSpace(object):
                 self.data[i] = v
         self._set_data(self.data)
 
-    def __contains__(self, item):
+    def __contains__(self, item) -> bool:
         if isinstance(item, str):
             return item in self.var_name
+        if isinstance(item, Variable):
+            return item in self.data
 
     def __len__(self):
         return self.dim
