@@ -4,7 +4,7 @@ import json
 import pytest
 import numpy as np
 
-sys.path.insert(0, '../')
+sys.path.insert(0, './')
 from bayes_optim.solution import Solution
 from bayes_optim.search_space import (
     Variable, Real, Integer, Discrete,
@@ -21,7 +21,7 @@ def test_Variable():
     assert all(np.asarray(x.var_type) == np.asarray(['Integer'] * 3))
 
 def test_SearchSpace_var_name():
-    cs = RealSpace([1e-10, 1e-1], 'x', 7, 'log') + \
+    cs = RealSpace([1e-10, 1e-1], 'x', 7, scale='log') + \
         IntegerSpace([-10, 10], 'y') + \
         DiscreteSpace(['A', 'B', 'C', 'D', 'E'], 'z')
     cs.var_name = 'x'
@@ -33,14 +33,21 @@ def test_SearchSpace_var_name():
     with pytest.raises(AssertionError):
         cs.var_name = ['y0', 'y1']
 
+def test_eq_ne():
+    cs = RealSpace([[1e-10, 1e-1]] * 2, 'x', 0.01, scale='log')
+    cs2 = RealSpace([1e-10, 1e-1], 'x', 0.01, scale='log') * 2
+    assert cs.data[0] == cs2.data[0]
+    assert cs.data[0] in cs2.data
+    assert cs == cs2
+
 def test_contains():
-    cs = RealSpace([1e-10, 1e-1], 'x', 0.01, 'log') + \
-        IntegerSpace([-10, 10], 'y') + \
-        DiscreteSpace(['A', 'B', 'C', 'D', 'E'], 'z')
-    # TODO: finish this!
+    cs = IntegerSpace([-10, 10], 'y') + \
+        DiscreteSpace(['A', 'B', 'C', 'D', 'E'], 'z') + \
+        RealSpace([1e-10, 1e-1], 'x', 0.01, scale='log')
+    assert RealSpace([1e-10, 1e-1], 'x', 0.01, scale='log') in cs
 
 def test_SearchSpace_remove():
-    cs = RealSpace([1e-10, 1e-1], 'x', 7, 'log') + \
+    cs = RealSpace([1e-10, 1e-1], 'x', 7, scale='log') + \
         IntegerSpace([-10, 10], 'y') + \
         DiscreteSpace(['A', 'B', 'C', 'D', 'E'], 'z')
 
@@ -100,7 +107,7 @@ def test_SearchSpace_iadd():
     assert isinstance(cs, SearchSpace)
 
 def test_SearchSpace_slice():
-    cs = RealSpace([1, 5], 'x', 2, 'log') + \
+    cs = RealSpace([1, 5], 'x', 2, scale='log') + \
         IntegerSpace([-10, 10], 'y') + \
         DiscreteSpace(['A', 'B', 'C'], 'z')
     assert isinstance(cs[0], RealSpace)
@@ -108,7 +115,7 @@ def test_SearchSpace_slice():
     assert isinstance(cs[2], DiscreteSpace)
 
 def test_sample():
-    cs = RealSpace([1e-10, 1e-1], 'x', 7, 'log') + \
+    cs = RealSpace([1e-10, 1e-1], 'x', 7, scale='log') + \
         IntegerSpace([-10, 10], 'y') + \
         DiscreteSpace(['A', 'B', 'C', 'D', 'E'], 'z')
     X = cs.sample(10)
@@ -155,7 +162,7 @@ def test_precision():
     X = Solution(cs.sample(10, method='LHS'))
     cs.round(X)
 
-    cs = RealSpace([0, 1], 'x', 2) + \
+    cs = RealSpace([0, 1], 'x', precision=2) + \
         IntegerSpace([-10, 10], 'y') + \
         DiscreteSpace(['A', 'B', 'C', 'D', 'E'], 'z')
 
@@ -164,7 +171,7 @@ def test_precision():
     assert len(X) <= 2
 
 def test_iter():
-    cs = RealSpace([1e-10, 1e-1], 'x', 7, 'log') + \
+    cs = RealSpace([1e-10, 1e-1], 'x', 7, scale='log') + \
         IntegerSpace([-10, 10], 'y') + \
         DiscreteSpace(['A', 'B', 'C', 'D', 'E'], 'z')
     cs *= 2

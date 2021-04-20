@@ -102,6 +102,9 @@ class Variable(ABC):
                     self.name == var.name and \
                         self._conditions == var._conditions # TODO: verify this!
 
+    def __ne__(self, var: Variable) -> bool:
+        return not self.__eq__(var)
+
     def add_conditions(
         self, conditions: str,
         action: Union[callable, int, float, str]
@@ -159,9 +162,14 @@ class Real(Variable):
             the scale on which uniform sampling is performed, by default 'linear'
         """
         assert bounds[0] < bounds[1]
+        assert scale in TRANS.keys()
+        assert precision is None or isinstance(precision, int)
         super().__init__(bounds, name, default_value, **kwargs)
         self.precision: int = precision
         self.scale = scale
+
+    def __hash__(self):
+        return hash((self.name, self.bounds, self.default_value, self.precision, self.scale))
 
     def __str__(self):
         msg = super().__str__()
@@ -214,10 +222,13 @@ class Real(Variable):
 class _Discrete(Variable):
     """Represents Integer, Ordinal, Bool, and Discrete"""
     def __init__(self, bounds, *args, **kwargs):
-        bounds = list(dict.fromkeys(bounds))
-        self._map_func: callable = None  # map the discrete value in bounds to integers
+        bounds = list(dict.fromkeys(bounds)) # get rid of duplicated levelss
+        self._map_func: callable = None      # map discrete values (bounds) to integers for sampling
         self._size: int = None
         super().__init__(bounds, *args, **kwargs)
+
+    def __hash__(self):
+        return hash((self.name, self.bounds, self.default_value))
 
     def sample(self, N: int = 1, **kwargs) -> List:
         return list(map(self._map_func, randint(0, self._size, N)))
@@ -271,6 +282,9 @@ class Integer(_Discrete):
         self._map_func = lambda i: self.bounds[0] + i * self.step
         self._size = int(np.floor((self.bounds[1] - self.bounds[0]) / self.step) + 1)
 
+    def __hash__(self):
+        return hash((self.name, self.bounds, self.default_value, self.step))
+
     def __str__(self):
         msg = super().__str__()
         msg += f' | step: {self.step}'
@@ -285,7 +299,8 @@ class Bool(_Discrete):
         default_value: int = True,
         **kwargs
     ):
-        kwargs.pop('bounds', None)  # NOTE: remove `bounds` if presenting in the input
+        kwargs.pop('bounds', None)  # NOTE: remove `bounds` if it presents in the input
+        assert isinstance(default_value, bool)
         super().__init__((False, True), name, default_value, **kwargs)
         self._map_func = bool
         self._size = 2
@@ -407,7 +422,8 @@ class SearchSpace(object):
 
         for key, value in kwargs.items():
             if value is not None:
-                value = [value] * dim if dim > 1 else [value]
+                if not isinstance(value, (tuple, list)):
+                    value = [value] * dim
                 assert len(value) == dim
                 for i in range(dim):
                     out[i][key] = value[i]
@@ -506,11 +522,13 @@ class SearchSpace(object):
                 self.data[i] = v
         self._set_data(self.data)
 
-    def __contains__(self, item) -> bool:
+    def __contains__(self, item: Union[str, Variable, SearchSpace]) -> bool:
         if isinstance(item, str):
             return item in self.var_name
         if isinstance(item, Variable):
             return item in self.data
+        if isinstance(item, SearchSpace):
+            return all(map(lambda x: x in self.data, item.data))
 
     def __len__(self):
         return self.dim
@@ -520,6 +538,12 @@ class SearchSpace(object):
         while i < self.dim:
             yield self.__getitem__(i)
             i += 1
+
+    def __eq__(self, cs: SearchSpace) -> bool:
+        return self.dim == cs.dim and set(self.data) == set(cs.data)
+
+    def __ne__(self, cs: SearchSpace) -> bool:
+        return not self.__eq__(cs)
 
     def __add__(self, space) -> SearchSpace:
         """Direct Sum of two `SearchSpace` instances
@@ -732,20 +756,29 @@ class SearchSpace(object):
                 bounds = tuple(bounds)
 
             N = range(int(v['N'])) if 'N' in v else range(1)
+            default_value = v['defualt'] if 'default' in v else None
             if v['type'] in ['r', 'real']:                  # real-valued parameter
                 precision = v['precision'] if 'precision' in v else None
                 scale = v['scale'] if 'scale' in v else 'linear'
                 _vars = [
-                    Real(bounds, name=k, precision=precision, scale=scale) for _ in N
+                    Real(
+                        bounds, name=k, default_value=default_value,
+                        precision=precision, scale=scale
+                    ) for _ in N
                 ]
             elif v['type'] in ['i', 'int', 'integer']:      # integer-valued parameter
-                _vars = [Integer(bounds, name=k, step=v.pop('step', 1)) for _ in N]
+                _vars = [
+                    Integer(
+                        bounds, name=k,
+                        default_value=default_value, step=v.pop('step', 1)
+                    ) for _ in N
+                ]
             elif v['type'] in ['o', 'ordinal']:             # ordinal parameter
-                _vars = [Ordinal(bounds, name=k) for _ in N]
+                _vars = [Ordinal(bounds, name=k, default_value=default_value) for _ in N]
             elif v['type'] in ['c', 'cat']:                 # category-valued parameter
-                _vars = [Discrete(bounds, name=k) for _ in N]
+                _vars = [Discrete(bounds, name=k, default_value=default_value) for _ in N]
             elif v['type'] in ['b', 'bool']:                # Boolean-valued
-                _vars = [Bool(var_name=k) for _ in N]
+                _vars = [Bool(name=k, default_value=default_value) for _ in N]
             variables += _vars
         return SearchSpace(variables)
 
@@ -775,12 +808,16 @@ class RealSpace(SearchSpace):
         self,
         bounds: List,
         var_name: Union[str, List[str]] = 'real',
+        default_value: Union[float, List[float]] = None,
         precision: Union[int, List[int]] = None,
         scale: Union[str, List[str]] = None,
         **kwargs
     ):
         out = self._ready_args(
-            bounds, var_name, precision=precision, scale=scale
+            bounds, var_name,
+            default_value=default_value,
+            precision=precision,
+            scale=scale
         )
         data = [Real(**_) for _ in out]
         super().__init__(data, **kwargs)
@@ -836,10 +873,11 @@ class IntegerSpace(_DiscreteSpace):
         self,
         bounds: List,
         var_name: Union[str, List[str]] = 'integer',
+        default_value: Union[int, List[int]] = None,
         step: Optional[int, float] = 1,
         **kwargs
     ):
-        out = self._ready_args(bounds, var_name, step=step)
+        out = self._ready_args(bounds, var_name, default_value=default_value, step=step)
         data = [Integer(**_) for _ in out]
         super().__init__(data, **kwargs)
 
@@ -850,9 +888,10 @@ class OrdinalSpace(_DiscreteSpace):
         self,
         bounds: List[str, int, float],
         var_name: Union[str, List[str]] = 'ordinal',
+        default_value = None,
         **kwargs
     ):
-        out = self._ready_args(bounds, var_name)
+        out = self._ready_args(bounds, var_name, default_value=default_value)
         data = [Ordinal(**_) for _ in out]
         super().__init__(data, **kwargs)
 
@@ -863,9 +902,10 @@ class DiscreteSpace(_DiscreteSpace):
         self,
         bounds: List[str, int, float],
         var_name: Union[str, List[str]] = 'discrete',
+        default_value = None,
         **kwargs
     ):
-        out = self._ready_args(bounds, var_name)
+        out = self._ready_args(bounds, var_name, default_value=default_value)
         data = [Discrete(**_) for _ in out]
         super().__init__(data, **kwargs)
 
@@ -875,8 +915,9 @@ class BoolSpace(_DiscreteSpace):
     def __init__(
         self,
         var_name: Union[str, List[str]] = 'bool',
+        default_value: Union[bool, List[bool]] = None,
         **kwargs
     ):
-        out = self._ready_args((False, True), var_name)
+        out = self._ready_args((False, True), var_name, default_value=default_value)
         data = [Bool(**_) for _ in out]
         super().__init__(data, **kwargs)
