@@ -339,11 +339,13 @@ class BaseBO(ABC):
             self._logger.propagate = False
             return
 
-        self._logger = logging.getLogger(self.__class__.__name__)
+        # NOTE: logging.getLogger create new instance based on `name`
+        # no new instance will be created if the same name is provided
+        self._logger = logging.getLogger(f'{self.__class__.__name__}({id(self)})')
         self._logger.setLevel(logging.DEBUG)
         fmt = LoggerFormatter()
 
-        if self.verbose:
+        if self.verbose and not self._logger.handlers:
             # create console handler and set level to warning
             ch = logging.StreamHandler(sys.stdout)
             ch.setLevel(logging.INFO)
