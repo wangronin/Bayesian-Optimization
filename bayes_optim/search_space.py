@@ -300,7 +300,7 @@ class Bool(_Discrete):
         **kwargs
     ):
         kwargs.pop('bounds', None)  # NOTE: remove `bounds` if it presents in the input
-        assert isinstance(default_value, bool)
+        assert default_value is None or isinstance(default_value, bool)
         super().__init__((False, True), name, default_value, **kwargs)
         self._map_func = bool
         self._size = 2
@@ -751,9 +751,12 @@ class SearchSpace(object):
 
         variables = []
         for k, v in param.items():
-            bounds = v['range']
-            if not hasattr(bounds[0], '__iter__') or isinstance(bounds[0], str):
-                bounds = tuple(bounds)
+            if 'range' in v:
+                bounds = v['range']
+                if not hasattr(bounds[0], '__iter__') or isinstance(bounds[0], str):
+                    bounds = tuple(bounds)
+            else:
+                bounds = ()
 
             N = range(int(v['N'])) if 'N' in v else range(1)
             default_value = v['defualt'] if 'default' in v else None
