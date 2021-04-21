@@ -157,6 +157,7 @@ class BaseBO(ABC):
         verbose: bool = False,
         random_seed: Optional[int] = None,
         logger: Optional[str] = None,
+        instance_name: Optional[str] = None
     ):
         """ The base class for Bayesian Optimization
 
@@ -226,6 +227,7 @@ class BaseBO(ABC):
         self.verbose = verbose
         self.data_file = data_file
         self.max_FEs = int(max_FEs) if max_FEs else np.inf
+        self.instance_name = instance_name
 
         self.search_space = search_space
         self.DoE_size = DoE_size
@@ -341,7 +343,8 @@ class BaseBO(ABC):
 
         # NOTE: logging.getLogger create new instance based on `name`
         # no new instance will be created if the same name is provided
-        self._logger = logging.getLogger(f'{self.__class__.__name__}({id(self)})')
+        name = self.instance_name if self.instance_name else str(id(self))
+        self._logger = logging.getLogger(f'{self.__class__.__name__} ({name})')
         self._logger.setLevel(logging.DEBUG)
         fmt = LoggerFormatter()
 
@@ -444,6 +447,7 @@ class BaseBO(ABC):
 
     def ask(self, n_point: int = None):
         if self.model.is_fitted:
+            msg = f'Ask {n_point} points:'
             n_point = self.n_point if n_point is None else n_point
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
@@ -461,6 +465,7 @@ class BaseBO(ABC):
                 )
                 X = self._search_space.round(X + s)
         else:   # initial DoE
+            msg = f'Ask {n_point} points (DoE):'
             if not n_point:
                 n_point = self._DoE_size
             X = self._search_space.round(self.create_DoE(n_point))
@@ -471,6 +476,9 @@ class BaseBO(ABC):
 
         # make a `Solution` object
         X = Solution(X, index=index, var_name=self.var_names)
+        self._logger.info(msg)
+        for i, _ in enumerate(X):
+            self._logger.info(f'#{i + 1} - {self._to_pheno(X[i])[0]}')
         return self._to_pheno(X)
 
     def tell(self, X: List, func_vals: List, warm_start: bool = False):
@@ -484,15 +492,7 @@ class BaseBO(ABC):
             The corresponding function values
         """
         X = self._to_geno(X)
-
-        if warm_start:
-            msg = f'warm-starting from {len(X)} points:'
-        elif self.iter_count == 0:
-            msg = f'initial DoE of size {len(X)}:'
-        else:
-            msg = f'iteration {self.iter_count}, {len(X)} infill points:'
-        self._logger.info(msg)
-
+        self._logger.info(f'iteration {self.iter_count}, observing {len(X)} points:')
         for i, _ in enumerate(X):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
@@ -500,7 +500,7 @@ class BaseBO(ABC):
                 self.eval_count += 1
 
             self._logger.info(
-                f'#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])}'
+                f'#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])[0]}'
             )
 
         X = self.post_eval_check(X)
