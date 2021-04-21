@@ -228,6 +228,7 @@ class BaseBO(ABC):
         self.data_file = data_file
         self.max_FEs = int(max_FEs) if max_FEs else np.inf
         self.instance_name = instance_name
+        self.metric_meta = None
 
         self.search_space = search_space
         self.DoE_size = DoE_size

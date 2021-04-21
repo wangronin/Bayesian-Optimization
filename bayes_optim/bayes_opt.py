@@ -100,6 +100,7 @@ class ParallelBO(BO):
 
         return tuple(zip(*__))
 
+
 class AnnealingBO(ParallelBO):
     def __init__(
         self,
@@ -133,6 +134,7 @@ class AnnealingBO(ParallelBO):
             self._acquisition_par['t'] = self._anealer(self._acquisition_par['t'])
         self._acquisition_callbacks += [callback]
 
+
 # TODO: write test file for this class
 class SelfAdaptiveBO(ParallelBO):
     def __init__(self, *argv, **kwargs):
@@ -164,6 +166,7 @@ class SelfAdaptiveBO(ParallelBO):
         idx = np.argsort(__[1])[::-1][:N]
         self._acquisition_par['t'] = np.mean([_t_list[i] for i in idx])
         return tuple(zip(*__))
+
 
 class NoisyBO(ParallelBO):
     """Bayesian Optimization for Noisy Scenarios
