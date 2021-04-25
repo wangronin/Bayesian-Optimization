@@ -1,4 +1,4 @@
-from typing import Callable, Any, Tuple, Optional, List
+from typing import Callable, Any, Tuple, Optional, List, Union
 
 import sys
 import functools
@@ -374,10 +374,10 @@ class BaseBO(ABC):
 
         if self._eval_type == 'list':
             self._to_pheno = lambda x: x.tolist()
-            self._to_geno = lambda x: Solution(x, var_name=self.var_names)
+            self._to_geno = lambda x, index=None: Solution(x, var_name=self.var_names, index=index)
         elif self._eval_type == 'dict':
             self._to_pheno = lambda x: x.to_dict(space=self._search_space)
-            self._to_geno = lambda x: Solution.from_dict(x, space=self._search_space)
+            self._to_geno = lambda x, index=None: Solution.from_dict(x, index=index)
 
     def _set_internal_optimization(self, **kwargs):
         if 'optimizer' in kwargs:
@@ -482,7 +482,15 @@ class BaseBO(ABC):
             self._logger.info(f'#{i + 1} - {self._to_pheno(X[i])[0]}')
         return self._to_pheno(X)
 
-    def tell(self, X: List, func_vals: List, warm_start: bool = False):
+    def tell(
+        self,
+        X: List[Union[list, dict]],
+        func_vals: List[Union[float, list]],
+        h_vals: List[Union[float, list]] = None,
+        g_vals: List[Union[float, list]] = None,
+        index: List[str] = None,
+        warm_start: bool = False
+    ):
         """Tell the BO about the function values of proposed candidate solutions
 
         Parameters
@@ -492,7 +500,8 @@ class BaseBO(ABC):
         func_vals : List/np.ndarray of reals
             The corresponding function values
         """
-        X = self._to_geno(X)
+
+        X = self._to_geno(X, index)
         self._logger.info(f'iteration {self.iter_count}, observing {len(X)} points:')
         for i, _ in enumerate(X):
             X[i].fitness = func_vals[i]
@@ -512,17 +521,18 @@ class BaseBO(ABC):
             X.to_csv(self.data_file, header=False, append=True)
 
         self.fopt = self._get_best(self.data.fitness)
-        _xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]
-        self.xopt = self._to_pheno(_xopt)
+        self._xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]
+        self.xopt = self._to_pheno(self._xopt)   # the pheno type
 
         # FIXME: this is an ad-hoc solution
         if self._eval_type == 'dict':
             self.xopt = self.xopt[0]
 
         self._logger.info(f'fopt: {self.fopt}')
+        # TODO: to handle the constraints properly
         if self.h is not None or self.g is not None:
             _penalty = dynamic_penalty(
-                _xopt.tolist(), 1,
+                self._xopt.tolist(), 1,
                 self._h, self._g,
                 minimize=self.minimize
             )

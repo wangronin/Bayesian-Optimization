@@ -24,7 +24,7 @@ class Solution(np.ndarray):
         x: Sequence,
         fitness: Optional[Sequence] = None,
         n_eval: Union[int, List[int]] = 0,
-        index: Union[int, List[int]] = None,
+        index: Union[str, List[str]] = None,
         var_name: Union[str, List[str]] = None,
         fitness_name: Union[str, List[str]] = None,
         n_obj: int = 1,
@@ -95,8 +95,8 @@ class Solution(np.ndarray):
             n_eval = [n_eval] * obj.N
 
         if index is None:
-            index = list(range(obj.N))
-        elif isinstance(index, int):
+            index = list(map(str, range(obj.N)))
+        elif isinstance(index, str):
             index = [index]
         assert len(index) == obj.N
 
@@ -119,9 +119,9 @@ class Solution(np.ndarray):
 
         # a np.ndarray is used for those attributes because slicing it returns references
         # avoid calling self.__setattr__ for attributes fitness, n_eval and index
-        super(Solution, obj).__setattr__('fitness', np.asarray(fitness, dtype='float'))
-        super(Solution, obj).__setattr__('n_eval', np.asarray(n_eval, dtype='int'))
-        super(Solution, obj).__setattr__('index', np.asarray(index, dtype='int'))
+        super(Solution, obj).__setattr__('fitness', np.asarray(fitness, dtype=float))
+        super(Solution, obj).__setattr__('n_eval', np.asarray(n_eval, dtype=int))
+        super(Solution, obj).__setattr__('index', np.asarray(index, dtype=str))
         obj.var_name = np.asarray(var_name)
         obj.fitness_name = fitness_name
         obj.verbose = verbose
@@ -146,11 +146,16 @@ class Solution(np.ndarray):
 
         _ = [self.tolist()] if len(self.shape) == 1 else self.tolist()
         __ = [other.tolist()] if len(other.shape) == 1 else other.tolist()
-        return Solution(_ + __,  self.fitness.tolist() + other.fitness.tolist(),
-                        self.n_eval.tolist() + other.n_eval.tolist(),
-                        var_name=self.var_name, fitness_name=self.fitness_name,
-                        n_obj=self.n_obj,
-                        verbose=self.verbose)
+        return Solution(
+            _ + __,
+            self.fitness.tolist() + other.fitness.tolist(),
+            self.n_eval.tolist() + other.n_eval.tolist(),
+            var_name=self.var_name,
+            fitness_name=self.fitness_name,
+            index=self.index.tolist() + other.index.tolist(),
+            n_obj=self.n_obj,
+            verbose=self.verbose
+        )
 
     def __mul__(self, N):
         """
@@ -189,7 +194,7 @@ class Solution(np.ndarray):
                 else:
                     __ = index[1]
 
-        subarr = super(Solution, self).__getitem__(index)
+        subarr = super().__getitem__(index)
 
         # sub-slicing the attributes
         if isinstance(subarr, Solution):
@@ -245,14 +250,14 @@ class Solution(np.ndarray):
         self.n_obj: int = getattr(obj, 'n_obj', None)
 
     @classmethod
-    def from_dict(cls, x, space=None):
+    def from_dict(cls, x, index=None):
         if isinstance(x, dict):
             var_name = list(x.keys())
-            res = cls.__new__(cls, x=list(x.values()), var_name=var_name)
+            res = cls.__new__(cls, x=list(x.values()), var_name=var_name, index=index)
         elif isinstance(x, list):
             var_name = list(x[0].keys())
             _x = [list(_.values()) for _ in x]
-            res = cls.__new__(cls, x=_x, var_name=var_name)
+            res = cls.__new__(cls, x=_x, var_name=var_name, index=index)
         return res
 
     def to_dict(self, orient='index', with_index=False, space=None):
@@ -303,8 +308,10 @@ class Solution(np.ndarray):
     def __repr__(self):
         return self.__str__()
 
-    def to_csv(self, fname, delimiter=',', append=False, header=True, index=True,
-               show_attr=True):
+    def to_csv(
+        self, fname, delimiter=',', append=False, header=True, index=True,
+        show_attr=True
+    ):
         var_name = self.var_name.tolist()
         if header:
             _header = var_name
