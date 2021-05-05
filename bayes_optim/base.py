@@ -132,7 +132,6 @@ class BaseOptimizer(ABC):
 # TODO: inherit from `BaseOptimizer`
 class BaseBO(ABC):
     """Bayesian Optimization Base Class, which implements the Ask-Evaluate-Tell interface
-
     """
     def __init__(
         self,
@@ -463,7 +462,7 @@ class BaseBO(ABC):
                 method = 'LHS' if N > 1 else 'uniform'
                 s = self._search_space.sample(
                     N=N, method=method, h=self._h, g=self._g
-                )
+                ).tolist()
                 X = self._search_space.round(X + s)
         else:   # initial DoE
             msg = f'Ask {n_point} points (DoE):'

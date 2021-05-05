@@ -363,7 +363,7 @@ class SearchSpace(object):
 
         self.random_seed : int = random_seed
         self._set_data(data)
-        self.__set_type(self)
+        SearchSpace.__set_type(self)
         self.__set_conditions()
 
     @property
@@ -439,8 +439,8 @@ class SearchSpace(object):
                 for i, k in enumerate(idx):
                     data[k].name = _names[i]
 
-    @classmethod
-    def __set_type(cls, obj):
+    @staticmethod
+    def __set_type(obj: SearchSpace) -> SearchSpace:
         _type = np.unique(obj.var_type)
         if len(_type) == 1:
             obj.__class__ = eval(_type[0] + 'Space')
@@ -561,7 +561,7 @@ class SearchSpace(object):
         assert isinstance(space, SearchSpace)
         self.data += space.data
         self._set_data(self.data)
-        self.__set_type(self)
+        SearchSpace.__set_type(self)
         return self
 
     def __sub__(self, space) -> SearchSpace:
@@ -583,7 +583,7 @@ class SearchSpace(object):
         _index = [self.var_name.index(_) for _ in _res]
         self.data = [self.data[i] for i in range(self.dim) if i in _index]
         self._set_data(self.data)
-        self.__set_type(self)
+        SearchSpace.__set_type(self)
         return self
 
     def __mul__(self, N) -> SearchSpace:
@@ -622,7 +622,7 @@ class SearchSpace(object):
     def pop(self, index: int = -1) -> Variable:
         value = self.data.pop(index)
         self._set_data(self.data)
-        self.__set_type(self)
+        SearchSpace.__set_type(self)
         self.__set_conditions()
         return value
 
@@ -641,7 +641,7 @@ class SearchSpace(object):
         self.data.pop(_index)
         self._set_data(self.data)
         self.__set_conditions()
-        return self.__set_type(self)
+        return SearchSpace.__set_type(self)
 
     def update(self, space: SearchSpace) -> SearchSpace:
         """Update the search space based on the var_name of the input search space,
@@ -666,8 +666,9 @@ class SearchSpace(object):
         _index_add = np.nonzero(np.array(_var_name) == _add)[0]
         self.data += [space.data[i] for i in _index_add]
         self._set_data(self.data)
-        return self.__set_type(self)
+        return SearchSpace.__set_type(self)
 
+    # TODO: discuss and fix the return value of `sample`, `round`, and `to_linear_scale`
     def sample(self, N: int = 1, method: str = 'uniform') -> np.ndarray:
         # in case this space is empty after slicing
         if self.dim == 0:
@@ -681,7 +682,7 @@ class SearchSpace(object):
             X[:, index] = self.__getitem__(index).sample(N, method)
         return X
 
-    def round(self, X):
+    def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
         if not isinstance(X, np.ndarray):
             X = np.array(X, dtype=object)
         if len(X.shape) == 1:
@@ -691,7 +692,7 @@ class SearchSpace(object):
         X[:, self.real_id] = r_subspace.round(X[:, self.real_id].astype(float))
         return X
 
-    def to_linear_scale(self, X):
+    def to_linear_scale(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
         if not isinstance(X, np.ndarray):
             X = np.array(X, dtype=object)
         if len(X.shape) == 1:
@@ -701,7 +702,7 @@ class SearchSpace(object):
         X[:, self.real_id] = r_subspace.to_linear_scale(X[:, self.real_id].astype(float))
         return X
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         out: dict = {}
         for _, var in enumerate(self.data):
             value = {
@@ -721,12 +722,12 @@ class SearchSpace(object):
             out[var.name] = value
         return out
 
-    def to_json(self, file):
+    def to_json(self, file: str):
         with open(file, 'w') as f:
             json.dump(self.to_dict(), f)
 
     @classmethod
-    def from_dict(cls, param, grouping=None):
+    def from_dict(cls, param: dict, **kwargs) -> SearchSpace:
         """Create a search space object from input dictionary
 
         Parameters
@@ -786,7 +787,7 @@ class SearchSpace(object):
         return SearchSpace(variables)
 
     @classmethod
-    def from_json(cls, file):
+    def from_json(cls, file: str) -> SearchSpace:
         """Create a seach space from a json file
 
         Parameters
@@ -839,14 +840,14 @@ class RealSpace(SearchSpace):
 
         return self.round(self.to_linear_scale(X))
 
-    def round(self, X):
+    def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
         X = np.atleast_2d(X).astype(float)
         assert X.shape[1] == self.dim
         for i, var in enumerate(self.data):
             X[:, i] = var.round(X[:, i])
         return X
 
-    def to_linear_scale(self, X):
+    def to_linear_scale(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
         X = np.atleast_2d(X).astype(float)
         assert X.shape[1] == self.dim
         for i, var in enumerate(self.data):
@@ -856,6 +857,14 @@ class RealSpace(SearchSpace):
 
 class _DiscreteSpace(SearchSpace):
     """Space of discrete values"""
+    def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
+        """do nothing since this method is not valid for this class"""
+        return X
+
+    def to_linear_scale(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
+        """do nothing since this method is not valid for this class"""
+        return X
+
     def sample(self, N: int = 1, method: str = 'uniform', **kwargs) -> np.ndarray:
         if isinstance(self, IntegerSpace):
             dtype = int
