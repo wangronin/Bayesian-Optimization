@@ -1,61 +1,48 @@
 from __future__ import annotations
 
-from typing import (
-    List,
-    Dict,
-    Union,
-    Callable,
-    Tuple,
-    Optional,
-    Any
-)
-from abc import ABC
-
-import re
 import json
-from copy import copy, deepcopy
+import re
+from abc import ABC
 from collections import Counter
+from copy import copy, deepcopy
 from itertools import chain
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from numpy.random import (
-    randint,
-    rand
-)
+from numpy.random import rand, randint
 from pyDOE import lhs
 from scipy.special import logit
 
-__authors__ = 'Hao Wang'
+__authors__ = "Hao Wang"
 
 TRANS = {
-    'linear': [lambda x: x, [-np.inf, np.inf]],
-    'log': [np.log, [0, np.inf]],
-    'log10': [np.log10, [0, np.inf]],
-    'logit': [logit, [0, 1]],
-    'bilog': [
-        lambda x: np.sign(x) * np.log(1 + np.abs(x)),
-        [-np.inf, np.inf]
-    ]
+    "linear": [lambda x: x, [-np.inf, np.inf]],
+    "log": [np.log, [0, np.inf]],
+    "log10": [np.log10, [0, np.inf]],
+    "logit": [logit, [0, 1]],
+    "bilog": [lambda x: np.sign(x) * np.log(1 + np.abs(x)), [-np.inf, np.inf]],
 }
 INV_TRANS = {
-    'linear': lambda x: x,
-    'log': np.exp,
-    'log10': lambda x: np.power(10, x),
-    'logit': lambda x: 1 / (1 + np.exp(-x)),
-    'bilog': lambda x: np.sign(x) * (np.exp(np.abs(x)) - 1)
+    "linear": lambda x: x,
+    "log": np.exp,
+    "log10": lambda x: np.power(10, x),
+    "logit": lambda x: 1 / (1 + np.exp(-x)),
+    "bilog": lambda x: np.sign(x) * (np.exp(np.abs(x)) - 1),
 }
 
 # TODO: discuss and fix the return value of `sample`, `round`, and `to_linear_scale`
 
+
 class Variable(ABC):
     """Base class for decision variables"""
+
     def __init__(
         self,
         bounds: List[int, float, str],
         name: str,
         default_value: Union[int, float, str] = None,
         conditions: str = None,
-        action: Union[callable, int, float, str] = lambda x: x
+        action: Union[callable, int, float, str] = lambda x: x,
     ):
         """Base class for decision variables
 
@@ -91,35 +78,34 @@ class Variable(ABC):
         return self.__str__()
 
     def __str__(self):
-        msg = f'{self.name} -> {type(self).__name__} | range: {self.bounds}'
+        msg = f"{self.name} -> {type(self).__name__} | range: {self.bounds}"
         if self.default_value is not None:
-            msg += f' | default: {self.default_value}'
+            msg += f" | default: {self.default_value}"
         return msg
 
     def __eq__(self, var: Variable) -> bool:
-        return self.__class__ == type(var) and \
-            self.bounds == var.bounds and \
-                self.default_value == var.default_value and \
-                    self.name == var.name and \
-                        self._conditions == var._conditions # TODO: verify this!
+        return (
+            self.__class__ == type(var)
+            and self.bounds == var.bounds
+            and self.default_value == var.default_value
+            and self.name == var.name
+            and self._conditions == var._conditions
+        )  # TODO: verify this!
 
     def __ne__(self, var: Variable) -> bool:
         return not self.__eq__(var)
 
-    def add_conditions(
-        self, conditions: str,
-        action: Union[callable, int, float, str]
-    ):
+    def add_conditions(self, conditions: str, action: Union[callable, int, float, str]):
         self._conditions = None
         if conditions is not None:
-            self.var_in_conditions = re.findall(r'`([^`]*)`', conditions)
+            self.var_in_conditions = re.findall(r"`([^`]*)`", conditions)
             for i, var_name in enumerate(self.var_in_conditions):
-                conditions = conditions.replace(f'`{var_name}`', f'#{i}')
+                conditions = conditions.replace(f"`{var_name}`", f"#{i}")
             self._conditions = conditions
 
         if isinstance(action, (int, float, str)):
             self._action = lambda x: action
-        elif hasattr(action, '__call__'):
+        elif hasattr(action, "__call__"):
             self._action = action
 
     @property
@@ -128,7 +114,7 @@ class Variable(ABC):
             return None
         out = copy(self._conditions)
         for i, var_name in enumerate(self.var_in_conditions):
-            out = out.replace(f'#{i}', f'{var_name}')
+            out = out.replace(f"#{i}", f"{var_name}")
         return out
 
     @property
@@ -138,14 +124,15 @@ class Variable(ABC):
 
 class Real(Variable):
     """Real-valued variable taking its value in a continuum"""
+
     def __init__(
         self,
         bounds: Tuple[float, float],
-        name: str = 'r',
+        name: str = "r",
         default_value: float = None,
         precision: int = None,
-        scale: str = 'linear',
-        **kwargs
+        scale: str = "linear",
+        **kwargs,
     ):
         """Real-valued variable taking its value in a continuum
 
@@ -175,8 +162,8 @@ class Real(Variable):
     def __str__(self):
         msg = super().__str__()
         if self.precision:
-            msg += f' | precision: .{self.precision}f'
-        msg += f' | scale: {self.scale}'
+            msg += f" | precision: .{self.precision}f"
+        msg += f" | scale: {self.scale}"
         return msg
 
     @property
@@ -186,7 +173,7 @@ class Real(Variable):
     @scale.setter
     def scale(self, scale):
         if scale is None:
-            scale = 'linear'
+            scale = "linear"
 
         assert scale in TRANS.keys()
         self._scale: str = scale
@@ -208,7 +195,7 @@ class Real(Variable):
         self._bounds_transformed = self._trans(self.bounds)
 
     def to_linear_scale(self, X):
-        return X if self.scale == 'linear' else self._inv_trans(X)
+        return X if self.scale == "linear" else self._inv_trans(X)
 
     def round(self, X):
         """Round the real-valued components of `X` to the
@@ -222,9 +209,11 @@ class Real(Variable):
 
 class _Discrete(Variable):
     """Represents Integer, Ordinal, Bool, and Discrete"""
+
     def __init__(self, bounds, *args, **kwargs):
-        bounds = list(dict.fromkeys(bounds)) # get rid of duplicated levelss
-        self._map_func: callable = None      # map discrete values (bounds) to integers for sampling
+        bounds = list(dict.fromkeys(bounds))  # get rid of duplicated levelss
+        # map discrete values (bounds) to integers for sampling
+        self._map_func: callable = None
         self._size: int = None
         super().__init__(bounds, *args, **kwargs)
 
@@ -232,11 +221,7 @@ class _Discrete(Variable):
         return hash((self.name, self.bounds, self.default_value))
 
     def sample(
-        self,
-        N: int = 1,
-        method: str = 'uniform',
-        h: Callable = None,
-        g: Callable = None
+        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
     ) -> List:
         # TODO: to handle `h` and `g`...
         # TODO: `method` is not take into account for now..
@@ -244,15 +229,9 @@ class _Discrete(Variable):
 
 
 class Discrete(_Discrete):
-    """Discrete variable, whose values should come with a linear order
-    """
-    def __init__(
-        self,
-        bounds,
-        name: str = 'd',
-        default_value: Union[int, str] = None,
-        **kwargs
-    ):
+    """Discrete variable, whose values should come with a linear order"""
+
+    def __init__(self, bounds, name: str = "d", default_value: Union[int, str] = None, **kwargs):
         super().__init__(bounds, name, default_value, **kwargs)
         self._map_func = lambda i: self.bounds[i]
         self._size = len(self.bounds)
@@ -260,15 +239,9 @@ class Discrete(_Discrete):
 
 # TODO: `bounds` -> `range_`?
 class Ordinal(_Discrete):
-    """A generic ordinal variable, whose values should come with a linear order
-    """
-    def __init__(
-        self,
-        bounds,
-        name: str = 'ordinal',
-        default_value: int = None,
-        **kwargs
-    ):
+    """A generic ordinal variable, whose values should come with a linear order"""
+
+    def __init__(self, bounds, name: str = "ordinal", default_value: int = None, **kwargs):
         super().__init__(bounds, name, default_value, **kwargs)
         self._map_func = lambda i: self.bounds[i]
         self._size = len(self.bounds)
@@ -276,12 +249,9 @@ class Ordinal(_Discrete):
 
 class Integer(_Discrete):
     """Integer variable, whose values are contiguous"""
+
     def __init__(
-        self,
-        bounds,
-        name: str = 'i',
-        default_value: int = None,
-        step: Optional[int, float] = 1
+        self, bounds, name: str = "i", default_value: int = None, step: Optional[int, float] = 1
     ):
         super().__init__(bounds, name, default_value)
         assert len(self.bounds) == 2
@@ -296,19 +266,16 @@ class Integer(_Discrete):
 
     def __str__(self):
         msg = super().__str__()
-        msg += f' | step: {self.step}'
+        msg += f" | step: {self.step}"
         return msg
 
 
 class Bool(_Discrete):
     """Boolean variable"""
-    def __init__(
-        self,
-        name: str = 'bool',
-        default_value: int = True,
-        **kwargs
-    ):
-        kwargs.pop('bounds', None)  # NOTE: remove `bounds` if it presents in the input
+
+    def __init__(self, name: str = "bool", default_value: int = True, **kwargs):
+        # NOTE: remove `bounds` if it presents in the input
+        kwargs.pop("bounds", None)
         assert default_value is None or isinstance(default_value, bool)
         super().__init__((False, True), name, default_value, **kwargs)
         self._map_func = bool
@@ -349,13 +316,10 @@ class SearchSpace(object):
             unique levels for each categorical/discrete variable. The index of
             the corresponding discrete variable serves as the dictionary key.
     """
+
     _supported_types = (Real, Integer, Ordinal, Discrete, Bool)
 
-    def __init__(
-        self,
-        data: List[Variable],
-        random_seed: int = None
-    ):
+    def __init__(self, data: List[Variable], random_seed: int = None):
         """
         Parameters
         ----------
@@ -370,7 +334,7 @@ class SearchSpace(object):
         self._bounds: List[tuple] = []
         self._levels: dict = {}
 
-        self.random_seed : int = random_seed
+        self.random_seed: int = random_seed
         self._set_data(data)
         SearchSpace.__set_type(self)
         self.__set_conditions()
@@ -413,12 +377,12 @@ class SearchSpace(object):
     @staticmethod
     def _ready_args(bounds, var_name, **kwargs):
         """infer the dimension, set the variable name, and ready other arguments"""
-        if hasattr(bounds[0], '__iter__') and not isinstance(bounds[0], str):
+        if hasattr(bounds[0], "__iter__") and not isinstance(bounds[0], str):
             bounds = [tuple(b) for b in bounds]
         else:
             bounds = [tuple(bounds)]
         dim = len(bounds)
-        out: List[Dict] = [{'bounds': bounds[i]} for i in range(dim)]
+        out: List[Dict] = [{"bounds": bounds[i]} for i in range(dim)]
 
         if isinstance(var_name, str):
             if dim > 1:
@@ -427,7 +391,7 @@ class SearchSpace(object):
                 var_name = [var_name]
         assert len(var_name) == dim
         for i in range(dim):
-            out[i]['name'] = var_name[i]
+            out[i]["name"] = var_name[i]
 
         for key, value in kwargs.items():
             if value is not None:
@@ -452,7 +416,7 @@ class SearchSpace(object):
     def __set_type(obj: SearchSpace) -> SearchSpace:
         _type = np.unique(obj.var_type)
         if len(_type) == 1:
-            obj.__class__ = eval(_type[0] + 'Space')
+            obj.__class__ = eval(_type[0] + "Space")
         else:
             obj.__class__ = SearchSpace
         return obj
@@ -463,18 +427,17 @@ class SearchSpace(object):
         # TODO: add conditions when the prefix of some variables appears (conditional parameters)
         for var in self.data:
             if var.conditions is not None:
-                pre, _, __ = var.name.rpartition('.')
+                pre, _, __ = var.name.rpartition(".")
                 if pre:
                     for i, var_name in enumerate(var.var_in_conditions):
                         if not var_name.startswith(pre):
-                            var.var_in_conditions[i] = pre + '.' + var_name
+                            var.var_in_conditions[i] = pre + "." + var_name
 
     def _set_data(self, data):
-        """Sanity check on the input data and set the auxiliary variables
-        """
+        """Sanity check on the input data and set the auxiliary variables"""
         self._check_data(data)
-        self.data : List = data
-        self.dim : int = len(self.data)
+        self.data: List = data
+        self.dim: int = len(self.data)
         self._bounds = [var.bounds for var in self.data]
         self._var_type = [type(v).__name__ for v in self.data]
         self._var_name = [v.name for v in self.data]
@@ -482,32 +445,27 @@ class SearchSpace(object):
         self._set_levels()
 
     def _set_index(self):
-        """set indices for each type of variables
-        """
+        """set indices for each type of variables"""
         if self.dim > 0:
             for var_type in self._supported_types:
                 name = var_type.__name__
-                attr_mask = name.lower() + '_mask'
-                attr_id = name.lower() + '_id'
+                attr_mask = name.lower() + "_mask"
+                attr_id = name.lower() + "_id"
                 mask = np.asarray(self._var_type) == name
                 self.__dict__[attr_mask] = mask
                 self.__dict__[attr_id] = np.nonzero(mask)[0]
 
             self.categorical_id = np.r_[self.discrete_id, self.ordinal_id, self.bool_id]
             self.categorical_mask = np.bitwise_or(
-                self.bool_mask,
-                np.bitwise_or(
-                    self.discrete_mask, self.ordinal_mask
-                )
+                self.bool_mask, np.bitwise_or(self.discrete_mask, self.ordinal_mask)
             )
 
     def _set_levels(self):
         # TODO: check if this is still needed
-        """Set categorical levels for all nominal variables
-        """
+        """Set categorical levels for all nominal variables"""
         if self.dim > 0:
             if len(self.categorical_id) > 0:
-                self.levels = {i : self._bounds[i] for i in self.categorical_id}
+                self.levels = {i: self._bounds[i] for i in self.categorical_id}
             else:
                 self.levels = None
 
@@ -517,8 +475,7 @@ class SearchSpace(object):
             if not isinstance(data, list):
                 data = [data]
         elif isinstance(index, (list, np.ndarray)):
-            data = [self.data[index[0]]] if len(index) == 1 else \
-                [self.data[i] for i in index]
+            data = [self.data[index[0]]] if len(index) == 1 else [self.data[i] for i in index]
         else:
             data = [self.data[index]]
         return SearchSpace(data, self.random_seed)
@@ -555,8 +512,7 @@ class SearchSpace(object):
         return not self.__eq__(cs)
 
     def __add__(self, space) -> SearchSpace:
-        """Direct Sum of two `SearchSpace` instances
-        """
+        """Direct Sum of two `SearchSpace` instances"""
         assert isinstance(space, SearchSpace)
         # NOTE: the random seed of `self` has the priority
         random_seed = self.random_seed if self.random_seed else space.random_seed
@@ -574,8 +530,7 @@ class SearchSpace(object):
         return self
 
     def __sub__(self, space) -> SearchSpace:
-        """Substraction of two `SearchSpace` instances
-        """
+        """Substraction of two `SearchSpace` instances"""
         assert isinstance(space, SearchSpace)
         random_seed = self.random_seed if self.random_seed else space.random_seed
         _res = set(self.var_name) - set(space.var_name)
@@ -596,8 +551,7 @@ class SearchSpace(object):
         return self
 
     def __mul__(self, N) -> SearchSpace:
-        """Replicate a `SearchSpace` N times
-        """
+        """Replicate a `SearchSpace` N times"""
         data = [deepcopy(var) for _ in range(max(1, int(N))) for var in self.data]
         obj = SearchSpace(data, self.random_seed)
         obj.__class__ = type(self)
@@ -614,9 +568,9 @@ class SearchSpace(object):
         return self.__str__()
 
     def __str__(self):
-        msg = f'{type(self).__name__} of {self.dim} variables: \n'
+        msg = f"{type(self).__name__} of {self.dim} variables: \n"
         for var in self.data:
-            msg += str(var) + '\n'
+            msg += str(var) + "\n"
         return msg
 
     @classmethod
@@ -642,7 +596,7 @@ class SearchSpace(object):
                 raise KeyError(f"The input key {index} not found in `var_name`!")
             else:
                 _index = _index[0]
-        elif hasattr(index, '__iter__'):
+        elif hasattr(index, "__iter__"):
             raise KeyError("Multiple indices are not allowed!")
         else:
             _index = index
@@ -678,11 +632,7 @@ class SearchSpace(object):
         return SearchSpace.__set_type(self)
 
     def sample(
-        self,
-        N: int = 1,
-        method: str = 'uniform',
-        h: Callable = None,
-        g: Callable = None
+        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
     ) -> np.ndarray:
         """Sample random points from the search space
 
@@ -709,9 +659,9 @@ class SearchSpace(object):
         N = max(int(N), 1)
         X = np.empty((N, self.dim), dtype=object)
         for var_type in self._supported_types:
-            attr_id = var_type.__name__.lower() + '_id'
+            attr_id = var_type.__name__.lower() + "_id"
             index = self.__dict__[attr_id]
-            if len(index) > 0:   # if such a type of variables exist.
+            if len(index) > 0:  # if such a type of variables exist.
                 X[:, index] = self.__getitem__(index).sample(N, method, h=h, g=g)
         return X
 
@@ -720,7 +670,7 @@ class SearchSpace(object):
             X = np.array(X, dtype=object)
         if len(X.shape) == 1:
             X = X.reshape(1, -1)
-        if len(self.real_id) > 0:   # if real-valued variables exist.
+        if len(self.real_id) > 0:  # if real-valued variables exist.
             r_subspace = self.__getitem__(self.real_id)
             X[:, self.real_id] = r_subspace.round(X[:, self.real_id].astype(float))
         return X
@@ -730,7 +680,7 @@ class SearchSpace(object):
             X = np.array(X, dtype=object)
         if len(X.shape) == 1:
             X = X.reshape(1, -1)
-        if len(self.real_id) > 0:   # if real-valued variables exist.
+        if len(self.real_id) > 0:  # if real-valued variables exist.
             r_subspace = self.__getitem__(self.real_id)
             X[:, self.real_id] = r_subspace.to_linear_scale(X[:, self.real_id].astype(float))
         return X
@@ -739,24 +689,24 @@ class SearchSpace(object):
         out: dict = {}
         for _, var in enumerate(self.data):
             value = {
-                'range' : var.bounds,
-                'type'  : type(var),
-                'N'     : 1,
+                "range": var.bounds,
+                "type": type(var),
+                "N": 1,
             }
             if isinstance(var, Real):
-                value['precision'] = var.precision
-                value['scale'] = var.scale
+                value["precision"] = var.precision
+                value["scale"] = var.scale
             elif isinstance(var, Integer):
-                value['step'] = var.step
+                value["step"] = var.step
 
-            if hasattr(var, 'conditions'):
-                value['conditions'] = var.conditions
+            if hasattr(var, "conditions"):
+                value["conditions"] = var.conditions
                 # TODO: also export var._action?
             out[var.name] = value
         return out
 
     def to_json(self, file: str):
-        with open(file, 'w') as f:
+        with open(file, "w") as f:
             json.dump(self.to_dict(), f)
 
     @classmethod
@@ -785,36 +735,38 @@ class SearchSpace(object):
 
         variables = []
         for k, v in param.items():
-            if 'range' in v:
-                bounds = v['range']
-                if not hasattr(bounds[0], '__iter__') or isinstance(bounds[0], str):
+            if "range" in v:
+                bounds = v["range"]
+                if not hasattr(bounds[0], "__iter__") or isinstance(bounds[0], str):
                     bounds = tuple(bounds)
             else:
                 bounds = ()
 
-            N = range(int(v['N'])) if 'N' in v else range(1)
-            default_value = v['defualt'] if 'default' in v else None
-            if v['type'] in ['r', 'real']:                  # real-valued parameter
-                precision = v['precision'] if 'precision' in v else None
-                scale = v['scale'] if 'scale' in v else 'linear'
+            N = range(int(v["N"])) if "N" in v else range(1)
+            default_value = v["defualt"] if "default" in v else None
+            if v["type"] in ["r", "real"]:  # real-valued parameter
+                precision = v["precision"] if "precision" in v else None
+                scale = v["scale"] if "scale" in v else "linear"
                 _vars = [
                     Real(
-                        bounds, name=k, default_value=default_value,
-                        precision=precision, scale=scale
-                    ) for _ in N
+                        bounds,
+                        name=k,
+                        default_value=default_value,
+                        precision=precision,
+                        scale=scale,
+                    )
+                    for _ in N
                 ]
-            elif v['type'] in ['i', 'int', 'integer']:      # integer-valued parameter
+            elif v["type"] in ["i", "int", "integer"]:  # integer-valued parameter
                 _vars = [
-                    Integer(
-                        bounds, name=k,
-                        default_value=default_value, step=v.pop('step', 1)
-                    ) for _ in N
+                    Integer(bounds, name=k, default_value=default_value, step=v.pop("step", 1))
+                    for _ in N
                 ]
-            elif v['type'] in ['o', 'ordinal']:             # ordinal parameter
+            elif v["type"] in ["o", "ordinal"]:  # ordinal parameter
                 _vars = [Ordinal(bounds, name=k, default_value=default_value) for _ in N]
-            elif v['type'] in ['c', 'cat']:                 # category-valued parameter
+            elif v["type"] in ["c", "cat"]:  # category-valued parameter
                 _vars = [Discrete(bounds, name=k, default_value=default_value) for _ in N]
-            elif v['type'] in ['b', 'bool']:                # Boolean-valued
+            elif v["type"] in ["b", "bool"]:  # Boolean-valued
                 _vars = [Bool(name=k, default_value=default_value) for _ in N]
             variables += _vars
         return SearchSpace(variables)
@@ -833,7 +785,7 @@ class SearchSpace(object):
         SearchSpace
             an `SearchSpace` object converted from the json file
         """
-        with open(file, 'r') as f:
+        with open(file, "r") as f:
             return cls.from_dict(json.load(f))
 
 
@@ -841,42 +793,36 @@ class SearchSpace(object):
 # the corresponding variables
 class RealSpace(SearchSpace):
     """Space of real values"""
+
     def __init__(
         self,
         bounds: List,
-        var_name: Union[str, List[str]] = 'real',
+        var_name: Union[str, List[str]] = "real",
         default_value: Union[float, List[float]] = None,
         precision: Union[int, List[int]] = None,
         scale: Union[str, List[str]] = None,
-        **kwargs
+        **kwargs,
     ):
         out = self._ready_args(
-            bounds, var_name,
-            default_value=default_value,
-            precision=precision,
-            scale=scale
+            bounds, var_name, default_value=default_value, precision=precision, scale=scale
         )
         data = [Real(**_) for _ in out]
         super().__init__(data, **kwargs)
 
     def sample(
-        self,
-        N: int = 1,
-        method: str = 'uniform',
-        h: Callable = None,
-        g: Callable = None
+        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
     ) -> np.ndarray:
         # TODO: to handle `h` and `g`
         bounds = np.array([var._bounds_transformed for var in self.data])
         lb, ub = bounds[:, 0], bounds[:, 1]
 
-        if method == 'uniform':   # uniform random samples
-            X = ((ub - lb) * rand(N, self.dim) + lb)
-        elif method == 'LHS':     # Latin hypercube sampling
+        if method == "uniform":  # uniform random samples
+            X = (ub - lb) * rand(N, self.dim) + lb
+        elif method == "LHS":  # Latin hypercube sampling
             if N == 1:
-                X = ((ub - lb) * rand(N, self.dim) + lb)
+                X = (ub - lb) * rand(N, self.dim) + lb
             else:
-                X = ((ub - lb) * lhs(self.dim, samples=N, criterion='maximin') + lb)
+                X = (ub - lb) * lhs(self.dim, samples=N, criterion="maximin") + lb
         return self.round(self.to_linear_scale(X))
 
     def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
@@ -896,6 +842,7 @@ class RealSpace(SearchSpace):
 
 class _DiscreteSpace(SearchSpace):
     """Space of discrete values"""
+
     def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
         """do nothing since this method is not valid for this class"""
         return X
@@ -905,11 +852,7 @@ class _DiscreteSpace(SearchSpace):
         return X
 
     def sample(
-        self,
-        N: int = 1,
-        method: str = 'uniform',
-        h: Callable = None,
-        g: Callable = None
+        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
     ) -> np.ndarray:
         if isinstance(self, IntegerSpace):
             dtype = int
@@ -926,13 +869,14 @@ class _DiscreteSpace(SearchSpace):
 
 class IntegerSpace(_DiscreteSpace):
     """Space of contiguous integer values"""
+
     def __init__(
         self,
         bounds: List,
-        var_name: Union[str, List[str]] = 'integer',
+        var_name: Union[str, List[str]] = "integer",
         default_value: Union[int, List[int]] = None,
         step: Optional[int, float] = 1,
-        **kwargs
+        **kwargs,
     ):
         out = self._ready_args(bounds, var_name, default_value=default_value, step=step)
         data = [Integer(**_) for _ in out]
@@ -941,12 +885,13 @@ class IntegerSpace(_DiscreteSpace):
 
 class OrdinalSpace(_DiscreteSpace):
     """Space of ordinal values"""
+
     def __init__(
         self,
         bounds: List[str, int, float],
-        var_name: Union[str, List[str]] = 'ordinal',
-        default_value = None,
-        **kwargs
+        var_name: Union[str, List[str]] = "ordinal",
+        default_value=None,
+        **kwargs,
     ):
         out = self._ready_args(bounds, var_name, default_value=default_value)
         data = [Ordinal(**_) for _ in out]
@@ -955,12 +900,13 @@ class OrdinalSpace(_DiscreteSpace):
 
 class DiscreteSpace(_DiscreteSpace):
     """Space of discrete values"""
+
     def __init__(
         self,
         bounds: List[str, int, float],
-        var_name: Union[str, List[str]] = 'discrete',
-        default_value = None,
-        **kwargs
+        var_name: Union[str, List[str]] = "discrete",
+        default_value=None,
+        **kwargs,
     ):
         out = self._ready_args(bounds, var_name, default_value=default_value)
         data = [Discrete(**_) for _ in out]
@@ -969,11 +915,12 @@ class DiscreteSpace(_DiscreteSpace):
 
 class BoolSpace(_DiscreteSpace):
     """Space of Bool values"""
+
     def __init__(
         self,
-        var_name: Union[str, List[str]] = 'bool',
+        var_name: Union[str, List[str]] = "bool",
         default_value: Union[bool, List[bool]] = None,
-        **kwargs
+        **kwargs,
     ):
         out = self._ready_args((False, True), var_name, default_value=default_value)
         data = [Bool(**_) for _ in out]

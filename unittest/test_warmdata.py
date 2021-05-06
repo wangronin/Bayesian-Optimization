@@ -1,29 +1,18 @@
-import sys
-sys.path.insert(0, '../')
-
 import numpy as np
-from bayes_optim import (
-    ParallelBO,
-    BO,
-    RealSpace,
-    IntegerSpace,
-     DiscreteSpace
-)
-from bayes_optim.surrogate import (
-    trend,
-    GaussianProcess,
-    RandomForest
-)
+from bayes_optim import BO, DiscreteSpace, IntegerSpace, RealSpace
+from bayes_optim.surrogate import GaussianProcess, RandomForest
 
 np.random.seed(42)
 
+
 def obj_fun(x):
     x_r, x_i, x_d = np.array(x[:2]), x[2], x[3]
-    if x_d == 'OK':
+    if x_d == "OK":
         tmp = 0
     else:
         tmp = 1
     return np.sum((x_r + np.array([2, 2])) ** 2) + abs(x_i - 10) * 10 + tmp
+
 
 def test_warm_data_with_GPR():
     dim = 2
@@ -42,10 +31,16 @@ def test_warm_data_with_GPR():
     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
     model = GaussianProcess(
-        theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-        nugget=0, noise_estim=False,
-        optimizer='BFGS', wait_iter=3, random_start=dim,
-        likelihood='concentrated', eval_budget=100 * dim
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=0,
+        noise_estim=False,
+        optimizer="BFGS",
+        wait_iter=3,
+        random_start=dim,
+        likelihood="concentrated",
+        eval_budget=100 * dim,
     )
     opt = BO(
         search_space=space,
@@ -54,16 +49,19 @@ def test_warm_data_with_GPR():
         warm_data=(X, y),
         max_FEs=10,
         verbose=True,
-        n_point=1
+        n_point=1,
     )
     assert np.all(np.asarray(opt.data) == np.asarray(opt.warm_data))
     assert opt.model.is_fitted
     opt.run()
 
+
 def test_warm_data_with_RF():
-    space = RealSpace([-10, 10]) * 2 + \
-        IntegerSpace([5, 15]) + \
-        DiscreteSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'])
+    space = (
+        RealSpace([-10, 10]) * 2
+        + IntegerSpace([5, 15])
+        + DiscreteSpace(["OK", "A", "B", "C", "D", "E", "F", "G"])
+    )
 
     X = space.sample(10)
     y = [obj_fun(x) for x in X]
@@ -74,11 +72,11 @@ def test_warm_data_with_RF():
         obj_fun=obj_fun,
         model=model,
         minimize=True,
-        eval_type='list',
+        eval_type="list",
         max_FEs=5,
         verbose=True,
-        acquisition_fun='EI',
-        warm_data=(X, y)
+        acquisition_fun="EI",
+        warm_data=(X, y),
     )
     opt.run()
     assert opt.data.shape[0] == 15
