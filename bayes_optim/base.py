@@ -1,5 +1,4 @@
-from typing import Callable, Any, Tuple, Optional, List, Union
-
+import os
 import sys
 import functools
 import logging
@@ -7,6 +6,15 @@ import time
 
 from abc import ABC, abstractmethod
 from copy import copy
+
+from typing import (
+    Callable,
+    Any,
+    Tuple,
+    Optional,
+    List,
+    Union
+)
 
 import dill
 import numpy as np
@@ -130,6 +138,9 @@ class BaseOptimizer(ABC):
 
 
 # TODO: inherit from `BaseOptimizer`
+# TODO: `ask` -> suggest, `tell` -> observe, implement `recommend`
+# TODO: implement `verbose` levels
+
 class BaseBO(ABC):
     """Bayesian Optimization Base Class, which implements the Ask-Evaluate-Tell interface
     """
@@ -348,19 +359,24 @@ class BaseBO(ABC):
         self._logger.setLevel(logging.DEBUG)
         fmt = LoggerFormatter()
 
-        if self.verbose and not self._logger.handlers:
-            # create console handler and set level to warning
-            ch = logging.StreamHandler(sys.stdout)
-            ch.setLevel(logging.INFO)
-            ch.setFormatter(fmt)
-            self._logger.addHandler(ch)
+        # create console handler and set level to the vebosity
+        SH = list(filter(lambda h: isinstance(h, logging.StreamHandler), self._logger.handlers))
+        if self.verbose and len(SH) == 0:
+            sh = logging.StreamHandler(sys.stdout)
+            sh.setLevel(logging.INFO)
+            sh.setFormatter(fmt)
+            self._logger.addHandler(sh)
 
         # create file handler and set level to debug
-        if logger is not None:
-            fh = logging.FileHandler(logger)
-            fh.setLevel(logging.DEBUG)
-            fh.setFormatter(fmt)
-            self._logger.addHandler(fh)
+        # TODO: perhaps also according to the verbosity?
+        # TODOL perhaps create a logger class
+        FH = list(filter(lambda h: isinstance(h, logging.FileHandler), self._logger.handlers))
+        if logger is not None and len(FH) == 0:
+            if os.path.exists(logger):
+                fh = logging.FileHandler(logger)
+                fh.setLevel(logging.DEBUG)
+                fh.setFormatter(fmt)
+                self._logger.addHandler(fh)
 
         if hasattr(self, 'logger'):
             self._logger.propagate = False
@@ -674,11 +690,11 @@ class BaseBO(ABC):
             if hasattr(self, 'data'):
                 self.data = dill.dumps(self.data)
 
-            if len(self._logger.handlers) > 1:
-                _ = [h for h in self._logger.handlers if isinstance(h, logging.FileHandler)]
-                _logger = _[0].baseFilename
-            else:
+            FHs = list(filter(lambda h: isinstance(h, logging.FileHandler), self._logger.handlers))
+            if len(FHs) == 0:
                 _logger = None
+            else:
+                _logger = FHs[0].baseFilename  # Only take the first log file
 
             logger = self._logger
             self._logger = _logger
@@ -688,6 +704,7 @@ class BaseBO(ABC):
             self._logger = logger
             if hasattr(self, 'data'):
                 self.data = dill.loads(self.data)
+            self._logger.info(f'save to file {filename}...')
 
     @classmethod
     def load(cls, filename):
@@ -695,7 +712,5 @@ class BaseBO(ABC):
             obj = dill.load(f)
             if hasattr(obj, 'data'):
                 obj.data = dill.loads(obj.data)
-
-            obj.logger = obj._logger
+            obj.logger = getattr(obj, '_logger')
         return obj
-
