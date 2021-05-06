@@ -46,6 +46,11 @@ def test_contains():
         RealSpace([1e-10, 1e-1], 'x', 0.01, scale='log')
     assert RealSpace([1e-10, 1e-1], 'x', 0.01, scale='log') in cs
 
+def test_sample_with_constraints():
+    cs = RealSpace([1e-10, 1e-1], 'x', 0.01, scale='log')
+    # NOTE: `h` and `g` are ineffective now
+    cs.sample(10, method='LHS', h=lambda x: x == 0.05, g=lambda x: x > 0.05)
+
 def test_SearchSpace_remove():
     cs = RealSpace([1e-10, 1e-1], 'x', 7, scale='log') + \
         IntegerSpace([-10, 10], 'y') + \

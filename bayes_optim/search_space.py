@@ -45,6 +45,7 @@ INV_TRANS = {
     'bilog': lambda x: np.sign(x) * (np.exp(np.abs(x)) - 1)
 }
 
+# TODO: discuss and fix the return value of `sample`, `round`, and `to_linear_scale`
 
 class Variable(ABC):
     """Base class for decision variables"""
@@ -230,7 +231,15 @@ class _Discrete(Variable):
     def __hash__(self):
         return hash((self.name, self.bounds, self.default_value))
 
-    def sample(self, N: int = 1, **kwargs) -> List:
+    def sample(
+        self,
+        N: int = 1,
+        method: str = 'uniform',
+        h: Callable = None,
+        g: Callable = None
+    ) -> List:
+        # TODO: to handle `h` and `g`...
+        # TODO: `method` is not take into account for now..
         return list(map(self._map_func, randint(0, self._size, N)))
 
 
@@ -668,8 +677,31 @@ class SearchSpace(object):
         self._set_data(self.data)
         return SearchSpace.__set_type(self)
 
-    # TODO: discuss and fix the return value of `sample`, `round`, and `to_linear_scale`
-    def sample(self, N: int = 1, method: str = 'uniform') -> np.ndarray:
+    def sample(
+        self,
+        N: int = 1,
+        method: str = 'uniform',
+        h: Callable = None,
+        g: Callable = None
+    ) -> np.ndarray:
+        """Sample random points from the search space
+
+        Parameters
+        ----------
+        N : int, optional
+            the number of points to generate, by default 1
+        method : str, optional
+            the sampling strategy, by default 'uniform'
+        h : Callable, optional
+            equality constraints, by default None
+        g : Callable, optional
+            inequality constraints, by default None
+
+        Returns
+        -------
+        np.ndarray
+            the sample points in shape `(N, self.dim)`
+        """
         # in case this space is empty after slicing
         if self.dim == 0:
             return np.empty(0)
@@ -679,7 +711,8 @@ class SearchSpace(object):
         for var_type in self._supported_types:
             attr_id = var_type.__name__.lower() + '_id'
             index = self.__dict__[attr_id]
-            X[:, index] = self.__getitem__(index).sample(N, method)
+            if len(index) > 0:   # if such a type of variables exist.
+                X[:, index] = self.__getitem__(index).sample(N, method, h=h, g=g)
         return X
 
     def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
@@ -687,9 +720,9 @@ class SearchSpace(object):
             X = np.array(X, dtype=object)
         if len(X.shape) == 1:
             X = X.reshape(1, -1)
-
-        r_subspace = self.__getitem__(self.real_id)
-        X[:, self.real_id] = r_subspace.round(X[:, self.real_id].astype(float))
+        if len(self.real_id) > 0:   # if real-valued variables exist.
+            r_subspace = self.__getitem__(self.real_id)
+            X[:, self.real_id] = r_subspace.round(X[:, self.real_id].astype(float))
         return X
 
     def to_linear_scale(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
@@ -697,9 +730,9 @@ class SearchSpace(object):
             X = np.array(X, dtype=object)
         if len(X.shape) == 1:
             X = X.reshape(1, -1)
-
-        r_subspace = self.__getitem__(self.real_id)
-        X[:, self.real_id] = r_subspace.to_linear_scale(X[:, self.real_id].astype(float))
+        if len(self.real_id) > 0:   # if real-valued variables exist.
+            r_subspace = self.__getitem__(self.real_id)
+            X[:, self.real_id] = r_subspace.to_linear_scale(X[:, self.real_id].astype(float))
         return X
 
     def to_dict(self) -> dict:
@@ -826,7 +859,14 @@ class RealSpace(SearchSpace):
         data = [Real(**_) for _ in out]
         super().__init__(data, **kwargs)
 
-    def sample(self, N: int = 1, method: str = 'uniform'):
+    def sample(
+        self,
+        N: int = 1,
+        method: str = 'uniform',
+        h: Callable = None,
+        g: Callable = None
+    ) -> np.ndarray:
+        # TODO: to handle `h` and `g`
         bounds = np.array([var._bounds_transformed for var in self.data])
         lb, ub = bounds[:, 0], bounds[:, 1]
 
@@ -837,7 +877,6 @@ class RealSpace(SearchSpace):
                 X = ((ub - lb) * rand(N, self.dim) + lb)
             else:
                 X = ((ub - lb) * lhs(self.dim, samples=N, criterion='maximin') + lb)
-
         return self.round(self.to_linear_scale(X))
 
     def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
@@ -865,7 +904,13 @@ class _DiscreteSpace(SearchSpace):
         """do nothing since this method is not valid for this class"""
         return X
 
-    def sample(self, N: int = 1, method: str = 'uniform', **kwargs) -> np.ndarray:
+    def sample(
+        self,
+        N: int = 1,
+        method: str = 'uniform',
+        h: Callable = None,
+        g: Callable = None
+    ) -> np.ndarray:
         if isinstance(self, IntegerSpace):
             dtype = int
         elif isinstance(self, BoolSpace):
@@ -875,7 +920,7 @@ class _DiscreteSpace(SearchSpace):
 
         X = np.empty((N, self.dim), dtype=dtype)
         for i in range(self.dim):
-            X[:, i] = self.data[i].sample(N, **kwargs)
+            X[:, i] = self.data[i].sample(N, method=method, h=h, g=g)
         return X
 
 
