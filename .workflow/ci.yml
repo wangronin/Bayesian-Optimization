@@ -1,4 +1,4 @@
-name: Build and Test           
+name: Build and Test
 displayName: 'Build and Test '
 triggers:                                # 流水线触发器配置
   push:                                  # 设置 master 分支 在产生代码 push 时精确触发（PRECISE）构建
@@ -12,18 +12,18 @@ stages:                                  # 构建阶段配置
       failFast: false                    # 允许快速失败，即当 Stage 中有任务失败时，直接结束整个 Stage
       steps:                             # 构建步骤配置
         - step: pythonbuild@1            # 采用 Maven 编译环境
-          name: python-build             # 定义一个 ID 标识为 python-build ,名为 “Python Step” 的阶段
+          name: python-build
           displayName: 'Python Step'
           inputs:                        # 构建输入参数设定
-            pythonVersion: 3.7           # 指定 Python 环境版本为 2.7
+            pythonVersion: 3.7
             goals: |
                 python -m pip install --upgrade pip
                 pip install pytest
                 if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         - step: pythonbuild@1            # 采用 Maven 编译环境
-          name: python-test             # 定义一个 ID 标识为 python-build ,名为 “Python Step” 的阶段
+          name: python-test
           displayName: 'Python Test'
           inputs:                        # 构建输入参数设定
-            pythonVersion: 3.7           # 指定 Python 环境版本为 2.7
+            pythonVersion: 3.7
             goals: |
                 pytest -v
