@@ -1,33 +1,41 @@
-from typing import Callable, Any, Tuple, List, Union, Optional
-
-import os
 import logging
+import os
+from typing import Any, Callable, List, Optional, Tuple, Union
+
 import numpy as np
 
-from .bayes_opt import BO, ParallelBO, NoisyBO, AnnealingBO
+from .acquisition_fun import EI, MGFI, PI, UCB
+from .bayes_opt import BO, AnnealingBO, NoisyBO, ParallelBO
+from .search_space import DiscreteSpace, IntegerSpace, RealSpace, SearchSpace
 from .solution import Solution
-from .surrogate import RandomForest, GaussianProcess, trend
-from .search_space import SearchSpace, IntegerSpace, RealSpace, DiscreteSpace
-from .acquisition_fun import EI, UCB, PI, MGFI
-from .extension import OptimizerPipeline
+from .surrogate import GaussianProcess, RandomForest, trend
 
 __all__ = [
-    'BO', 'ParallelBO', 'NoisyBO', 'AnnealingBO', 'Solution',
-    'RandomForest', 'GaussianProcess', 'trend',
-    'SearchSpace', 'IntegerSpace', 'RealSpace', 'DiscreteSpace',
-    'EI', 'UCB', 'PI', 'MGFI',
-    'RandomForest', 'OptimizerPipeline', 'fmin'
+    "BO",
+    "ParallelBO",
+    "NoisyBO",
+    "AnnealingBO",
+    "Solution",
+    "RandomForest",
+    "GaussianProcess",
+    "trend",
+    "SearchSpace",
+    "IntegerSpace",
+    "RealSpace",
+    "DiscreteSpace",
+    "EI",
+    "UCB",
+    "PI",
+    "MGFI",
+    "RandomForest",
+    "fmin",
 ]
 
 # To use `dill` for the pickling, which works for
 # much more python objects
-os.environ['LOKY_PICKLER'] = 'dill'
+os.environ["LOKY_PICKLER"] = "dill"
 
-verbose = {
-    False : logging.NOTSET,
-    'DEBUG' : logging.DEBUG,
-    'INFO' : logging.INFO
-}
+verbose = {False: logging.NOTSET, "DEBUG": logging.DEBUG, "INFO": logging.INFO}
 
 Vector = List[float]
 Matrix = List[Vector]
@@ -49,7 +57,7 @@ def fmin(
     seed: Optional[int] = None,
     **kwargs
 ) -> Tuple[Vector, float, int, int, List[np.ndarray]]:
-    """ Minimize a function using the Bayesian Optimization algorithm, which only uses
+    """Minimize a function using the Bayesian Optimization algorithm, which only uses
     function values, not derivatives or second derivatives. This function maintains an
     interface similar to `scipy.optimize.fmin`. Hereafter, we use the following customized
     types to describe the usage:
@@ -138,18 +146,25 @@ def fmin(
     thetaU = 10 * (upper - lower) * np.ones(dim)
     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
     model = GaussianProcess(
-        mean=mean, corr='squared_exponential',
-        theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-        nugget=0, noise_estim=False,
-        optimizer='BFGS', wait_iter=3, random_start=dim,
-        likelihood='concentrated', eval_budget=100 * dim
+        mean=mean,
+        corr="squared_exponential",
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=0,
+        noise_estim=False,
+        optimizer="BFGS",
+        wait_iter=3,
+        random_start=dim,
+        likelihood="concentrated",
+        eval_budget=100 * dim,
     )
 
     # set up the warm-starting and DoE size
     if isinstance(x0, int):
         DoE_size = x0
         warm_data = ()
-    elif hasattr(x0, '__iter__'):
+    elif hasattr(x0, "__iter__"):
         DoE_size = None
         if y0 is None:
             y0 = [obj_func(_) for _ in x0]
@@ -165,10 +180,10 @@ def fmin(
         model=model,
         DoE_size=DoE_size,
         warm_data=warm_data,
-        eval_type='list',
+        eval_type="list",
         max_FEs=max_FEs,
         verbose=verbose,
-        n_point=n_point
+        n_point=n_point,
     )
     opt.run()
 
@@ -180,15 +195,13 @@ def fmin(
 
     data_per_iteration = [np.asarray(data[:N, :])]
     data_per_iteration += [
-        np.asarray(data[(i * n):((i + 1) * n), :]) for i in range(opt.iter_count - 1)
+        np.asarray(data[(i * n) : ((i + 1) * n), :]) for i in range(opt.iter_count - 1)
     ]
 
     print(
-        "Optimization terminated successfully.\n"\
-        "        Current function value: {}\n"\
-        "        Iterations: {}\n"\
-        "        Function evaluations: {}\n".format(
-            opt.fopt, opt.iter_count, opt.eval_count
-        )
+        "Optimization terminated successfully.\n"
+        "        Current function value: {}\n"
+        "        Iterations: {}\n"
+        "        Function evaluations: {}\n".format(opt.fopt, opt.iter_count, opt.eval_count)
     )
     return opt.xopt, opt.fopt, opt.iter_count, opt.eval_count, data_per_iteration

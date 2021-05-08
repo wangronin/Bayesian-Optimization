@@ -1,30 +1,23 @@
-"""
-Created on Mon Sep 11 10:48:14 2017
-
-@author: Hao Wang
-@email: wangronin@gmail.com
-"""
 import numpy as np
-from numpy import std, array, atleast_2d
-
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.utils.validation import check_is_fitted
-from sklearn.ensemble._base import _partition_estimators
-from sklearn.preprocessing import OneHotEncoder, LabelEncoder
-from sklearn.metrics import r2_score
-
 from joblib import Parallel, delayed
+from numpy import array, atleast_2d, std
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble._base import _partition_estimators
+from sklearn.metrics import r2_score
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.utils.validation import check_is_fitted
+
 
 # TODO: implement multi-output/objetive surrogate models, better to model the c
 # orrelation among targets
 class SurrogateAggregation(object):
-    def __init__(self, surrogates, aggregation='WS', **kwargs):
+    def __init__(self, surrogates, aggregation="WS", **kwargs):
         self.surrogates = surrogates
         self.N = len(self.surrogates)
         self.aggregation = aggregation
-        self.weights = np.asarray(kwargs['weights'], dtype='float').ravel()
+        self.weights = np.asarray(kwargs["weights"], dtype="float").ravel()
 
-        assert self.aggregation in ['WS', 'Tchebycheff']
+        assert self.aggregation in ["WS", "Tchebycheff"]
 
     def fit(self, X, y):
         pass
@@ -37,21 +30,22 @@ class SurrogateAggregation(object):
         else:
             y_hat_ = np.atleast_2d([_.predict(X, eval_MSE=False).ravel() for _ in self.surrogates])
 
-        if self.aggregation == 'WS':
+        if self.aggregation == "WS":
             y_hat = self.weights.dot(y_hat_)
             if eval_MSE:
-                MSE = (self.weights ** 2.).dot(MSE_)
+                MSE = (self.weights ** 2.0).dot(MSE_)
 
-        elif self.aggregation == 'Tchebycheff':
+        elif self.aggregation == "Tchebycheff":
             # TODO: implement this part
             pass
-        
+
         return (y_hat, MSE) if eval_MSE else y_hat
-    
+
     def gradient(self, X):
         # TODO: implement
         pass
-        
+
+
 def _save_prediction(predict, X, index, out):
     """
     It can't go locally in ForestClassifier or ForestRegressor, because joblib
@@ -59,20 +53,17 @@ def _save_prediction(predict, X, index, out):
     """
     out[..., index] = predict(X, check_input=False)
 
+
 class RandomForest(RandomForestRegressor):
     """Extension on the sklearn's `RandomForestRegressor`
-    Added functionality: 
-        1) MSE estimate, 
+    Added functionality:
+        1) MSE estimate,
         2) OneHotEncoding to handle categorical variables
     """
+
     def __init__(
-        self, 
-        n_estimators=100, 
-        max_features=5/6, 
-        min_samples_leaf=2, 
-        levels=None, 
-        **kwargs
-        ):
+        self, n_estimators=100, max_features=5 / 6, min_samples_leaf=2, levels=None, **kwargs
+    ):
         """
         parameter
         ---------
@@ -101,7 +92,7 @@ class RandomForest(RandomForestRegressor):
 
     def _check_X(self, X):
         X_ = array(X, dtype=object)
-        if hasattr(self, '_levels'):
+        if hasattr(self, "_levels"):
             X_cat = X_[:, self._cat_idx]
             try:
                 X_cat = self._enc.transform(X_cat)
@@ -150,63 +141,67 @@ class RandomForest(RandomForestRegressor):
 
         # Parallel loop
         Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
-            delayed(_save_prediction)(e.predict, X, i, y_hat_all) \
-                for i, e in enumerate(self.estimators_)
+            delayed(_save_prediction)(e.predict, X, i, y_hat_all)
+            for i, e in enumerate(self.estimators_)
         )
 
         y_hat = np.mean(y_hat_all, axis=1).flatten()
         if eval_MSE:
             # TODO: implement the jackknife estimate of variance
-            _MSE_hat = np.std(y_hat_all, axis=1, ddof=1) ** 2.
+            _MSE_hat = np.std(y_hat_all, axis=1, ddof=1) ** 2.0
             _MSE_hat = _MSE_hat.flatten()
 
         return (y_hat, _MSE_hat) if eval_MSE else y_hat
 
-if __name__ == '__main__':
-    # TODO: this part goes into test 
+
+if __name__ == "__main__":
+    # TODO: this part goes into test
     # simple test for mixed variables...
     np.random.seed(12)
 
     n_sample = 110
-    levels = ['OK', 'A', 'B', 'C', 'D', 'E']
-    X = np.c_[np.random.randn(n_sample, 2).astype(object),
-              np.random.choice(levels, size=(n_sample, 1))]
-    y = np.sum(X[:, 0:-1] ** 2., axis=1) + 5 * (X[:, -1] == 'OK')
+    levels = ["OK", "A", "B", "C", "D", "E"]
+    X = np.c_[
+        np.random.randn(n_sample, 2).astype(object), np.random.choice(levels, size=(n_sample, 1))
+    ]
+    y = np.sum(X[:, 0:-1] ** 2.0, axis=1) + 5 * (X[:, -1] == "OK")
 
     X_train, y_train = X[:100, :], y[:100]
     X_test, y_test = X[100:, :], y[100:]
 
     # sklearn-random forest
-    rf = RandomForest(levels={2: levels}, max_features='sqrt')
+    rf = RandomForest(levels={2: levels}, max_features="sqrt")
     rf.fit(X_train, y_train)
     y_hat, mse = rf.predict(X_test, eval_MSE=True)
 
-    print('sklearn random forest:')
-    print('target :', y_test)
-    print('predicted:', y_hat)
-    print('MSE:', mse)
-    print('r2:', r2_score(y_test, y_hat))
+    print("sklearn random forest:")
+    print("target :", y_test)
+    print("predicted:", y_hat)
+    print("MSE:", mse)
+    print("r2:", r2_score(y_test, y_hat))
     print()
 
     if 11 < 2:
-        X = np.c_[np.random.randn(n_sample, 2).astype(object),
-                  np.random.choice(levels, size=(n_sample, 1))]
-        y = np.sum(X[:, 0:-1] ** 2., axis=1) + 5 * (X[:, -1] == 'OK')
+        X = np.c_[
+            np.random.randn(n_sample, 2).astype(object),
+            np.random.choice(levels, size=(n_sample, 1)),
+        ]
+        y = np.sum(X[:, 0:-1] ** 2.0, axis=1) + 5 * (X[:, -1] == "OK")
 
         X_train, y_train = X[:100, :], y[:100]
         X_test, y_test = X[100:, :], y[100:]
 
-        rf_ = RandomForest(levels={2: levels}, max_features='sqrt')
+        rf_ = RandomForest(levels={2: levels}, max_features="sqrt")
         rf_.fit(X_train, y_train)
 
         rf_aggr = SurrogateAggregation((rf, rf_), weights=(0.1, 0.9))
         y_hat, mse = rf_aggr.predict(X_test, eval_MSE=True)
 
-        print('sklearn random forest:')
-        print('target :', y_test)
-        print('predicted:', y_hat)
-        print('MSE:', mse)
-        print('r2:', r2_score(y_test, y_hat))
+        print("sklearn random forest:")
+        print("target :", y_test)
+        print("predicted:", y_hat)
+        print("MSE:", mse)
+        print("r2:", r2_score(y_test, y_hat))
         print()
 
     # TODO: those settings should be in test file as inputs to surroagtes

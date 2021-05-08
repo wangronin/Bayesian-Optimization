@@ -1,23 +1,23 @@
-from typing import Callable, List, Union, Dict
-import sys
 import logging
+import sys
 from copy import copy
+from typing import Callable, Dict, List, Union
 
 import numpy as np
 from scipy.linalg import solve_triangular
 
+from ..misc import LoggerFormatter, handle_box_constraint
 from ..utils import dynamic_penalty, set_bounds
-from ..misc import handle_box_constraint, LoggerFormatter
 
 Vector = List[float]
 Matrix = List[Vector]
 
-__authors__ = ['Hao Wang']
+__authors__ = ["Hao Wang"]
 
 # TODO: get rid of all ``eval`` calls
 class OnePlusOne_CMA(object):
-    """(1+1)-CMA-ES
-    """
+    """(1+1)-CMA-ES"""
+
     def __init__(
         self,
         dim: int,
@@ -39,7 +39,7 @@ class OnePlusOne_CMA(object):
         verbose: bool = False,
         logger: str = None,
         random_seed: int = 42,
-        **kwargs
+        **kwargs,
     ):
         """Hereafter, we use the following customized
         types to describe the usage:
@@ -136,7 +136,7 @@ class OnePlusOne_CMA(object):
         self.xtol: float = xtol
         self.ftol: float = ftol
         self._w: float = 0.9
-        self._delta_x: float  = self.xtol / self._w ** (5 * self.dim)
+        self._delta_x: float = self.xtol / self._w ** (5 * self.dim)
         self._delta_f: float = self.ftol / self._w ** (5 * self.dim)
         self._stop: bool = False
 
@@ -144,12 +144,12 @@ class OnePlusOne_CMA(object):
         self.x = x0
 
     def _init_aux_var(self, opts):
-        self.prob_target = opts['p_succ_target'] if 'p_succ_target' in opts else 2 / 11
-        self.threshold = opts['p_threshold'] if 'p_threshold' in opts else 0.44
-        self.d = opts['d'] if 'd' in opts else 1 + self.dim / 2
-        self.ccov = opts['ccov'] if 'ccov' in opts else 2 / (self.dim ** 2 + 6)
-        self.cp = opts['cp'] if 'cp' in opts else 1 / 12
-        self.cc = opts['cc'] if 'cc' in opts else 2 / (self.dim + 2)
+        self.prob_target = opts["p_succ_target"] if "p_succ_target" in opts else 2 / 11
+        self.threshold = opts["p_threshold"] if "p_threshold" in opts else 0.44
+        self.d = opts["d"] if "d" in opts else 1 + self.dim / 2
+        self.ccov = opts["ccov"] if "ccov" in opts else 2 / (self.dim ** 2 + 6)
+        self.cp = opts["cp"] if "cp" in opts else 1 / 12
+        self.cc = opts["cc"] if "cc" in opts else 2 / (self.dim + 2)
 
         self.success_rate: float = self.prob_target
         self.pc: np.ndarray = np.zeros(self.dim)
@@ -210,7 +210,7 @@ class OnePlusOne_CMA(object):
             fh.setFormatter(fmt)
             self._logger.addHandler(fh)
 
-        if hasattr(self, 'logger'):
+        if hasattr(self, "logger"):
             self._logger.propagate = False
 
     @property
@@ -284,9 +284,7 @@ class OnePlusOne_CMA(object):
             the trial point to check against the constraints
         """
         return dynamic_penalty(
-            x.tolist(), self.iter_count + 1,
-            self.h, self.g,
-            minimize=self.minimize
+            x.tolist(), self.iter_count + 1, self.h, self.g, minimize=self.minimize
         )
 
     def evaluate(self, x):
@@ -298,7 +296,7 @@ class OnePlusOne_CMA(object):
 
     def restart(self):
         if self._restart:
-            self._logger.info('restarting... ')
+            self._logger.info("restarting... ")
             self.x = None
             self.sigma = self.sigma0
             self.pc = np.zeros(self.dim)
@@ -330,13 +328,13 @@ class OnePlusOne_CMA(object):
 
     def tell(self, x: np.ndarray, y: np.ndarray, penalty: float = 0):
         if self._stop:
-            self._logger.info('The optimizer is stopped and `tell` should not be called.')
+            self._logger.info("The optimizer is stopped and `tell` should not be called.")
             return
 
         # TODO: this might not be uncessary
-        if hasattr(y, '__iter__'):
+        if hasattr(y, "__iter__"):
             y = y[0]
-        if hasattr(penalty, '__iter__'):
+        if hasattr(penalty, "__iter__"):
             penalty = penalty[0]
         y_penalized = y + penalty
 
@@ -365,13 +363,13 @@ class OnePlusOne_CMA(object):
 
         # TODO: should this be part of the logging function?
         if self.verbose:
-            self._logger.info(f'iteration {self.iter_count}')
-            self._logger.info(f'fopt: {self.fopt}')
+            self._logger.info(f"iteration {self.iter_count}")
+            self._logger.info(f"fopt: {self.fopt}")
             if self.h is not None or self.g is not None:
                 _penalty = (self.fopt - self.fopt_penalized) * (-1) ** self.minimize
-                self._logger.info(f'penalty: {_penalty:.4e}')
-            self._logger.info(f'xopt: {self.xopt.tolist()}')
-            self._logger.info(f'sigma: {self._sigma}\n')
+                self._logger.info(f"penalty: {_penalty:.4e}")
+            self._logger.info(f"xopt: {self.xopt.tolist()}")
+            self._logger.info(f"sigma: {self._sigma}\n")
 
     def logging(self):
         self.hist_fopt += [self.fopt]
@@ -380,22 +378,22 @@ class OnePlusOne_CMA(object):
 
     def check_stop(self):
         if self.ftarget is not None and self._better(self.fopt, self.ftarget):
-            self.stop_dict['ftarget'] = self.fopt
+            self.stop_dict["ftarget"] = self.fopt
 
         if self.eval_count >= self.max_FEs:
-            self.stop_dict['FEs'] = self.eval_count
+            self.stop_dict["FEs"] = self.eval_count
 
         # TODO: add this as an option: lower and upper bounds for regular sigmas
         if self.sigma < 1e-8 or self.sigma > 1e8:
-            self.stop_dict['sigma'] = self.sigma
+            self.stop_dict["sigma"] = self.sigma
 
         if self._delta_f < self.ftol:
-            self.stop_dict['ftol'] = self._delta_f
+            self.stop_dict["ftol"] = self._delta_f
 
         if self._delta_x < self.xtol:
-            self.stop_dict['xtol'] = self._delta_x
+            self.stop_dict["xtol"] = self._delta_x
 
-        if 'ftarget' in self.stop_dict or 'FEs' in self.stop_dict:
+        if "ftarget" in self.stop_dict or "FEs" in self.stop_dict:
             self._stop = True
         else:
             if self.n_restart > 0:
@@ -406,23 +404,20 @@ class OnePlusOne_CMA(object):
     def _update_covariance(self, z):
         if self.success_rate < self.threshold:
             self.pc = (1 - self.cc) * self.pc + np.sqrt(self._coeff) * z
-            self._C = (1 - self.ccov) * self._C + \
-                self.ccov * np.outer(self.pc, self.pc)
+            self._C = (1 - self.ccov) * self._C + self.ccov * np.outer(self.pc, self.pc)
         else:
             self.pc = (1 - self.cc) * self.pc
-            self._C = (1 - self.ccov * (1 - self._coeff)) * self._C + \
-                self.ccov * np.outer(self.pc, self.pc)
+            self._C = (1 - self.ccov * (1 - self._coeff)) * self._C + self.ccov * np.outer(
+                self.pc, self.pc
+            )
 
         self._C = np.triu(self._C) + np.triu(self._C, 1).T
         self._update_A(self._C)
 
     def _update_step_size(self, success):
         prob_target = self.prob_target
-        self.success_rate = (1 - self.cp) * self.success_rate + \
-            self.cp * success
-        self._sigma *= np.exp(
-            (self.success_rate - prob_target) / (1 - prob_target) / self.d
-        )
+        self.success_rate = (1 - self.cp) * self.success_rate + self.cp * success
+        self._sigma *= np.exp((self.success_rate - prob_target) / (1 - prob_target) / self.d)
 
     def _update_A(self, C):
         if np.any(np.isinf(C)):
@@ -448,11 +443,13 @@ class OnePlusOne_CMA(object):
             self._sigma = self.sigma0
             self._exception = False
 
+
 class OnePlusOne_Cholesky_CMA(OnePlusOne_CMA):
     """(1+1)-Cholesky-CMA-ES improves its base class algorithm by taking advantage of
     Cholesky's decomposition to update the covariance, which is computationally cheaper
 
     """
+
     def _init_covariance(self, C):
         reset = False
         if C is not None:
@@ -482,7 +479,7 @@ class OnePlusOne_Cholesky_CMA(OnePlusOne_CMA):
         cb = self.ccov
         if self.success_rate < self.threshold:
             self.pc = (1 - self.cc) * self.pc + np.sqrt(self._coeff) * z
-            ca = (1 - self.ccov)
+            ca = 1 - self.ccov
         else:
             self.pc = (1 - self.cc) * self.pc
             ca = (1 - self.ccov) + self.ccov * self.cc * (2 - self.cc)

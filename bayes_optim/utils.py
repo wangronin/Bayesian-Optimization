@@ -1,5 +1,7 @@
 from typing import Callable, List
+
 import numpy as np
+
 
 def arg_to_int(arg):
     if isinstance(arg, str):
@@ -10,17 +12,19 @@ def arg_to_int(arg):
         raise ValueError
     return x
 
+
 def set_bounds(bound, dim):
     if isinstance(bound, str):
         bound = eval(bound)
     elif isinstance(bound, (float, int)):
         bound = [bound] * dim
-    elif hasattr(bound, '__iter__'):
+    elif hasattr(bound, "__iter__"):
         bound = list(bound)
         if len(bound) == 1:
             bound *= dim
     assert len(bound) == dim
     return np.asarray(bound)
+
 
 # TODO: move this to a '_penalty.py' file
 def dynamic_penalty(
@@ -32,7 +36,7 @@ def dynamic_penalty(
     alpha: float = 1,
     beta: float = 2,
     epsilon: float = 1e-2,
-    minimize: bool = True
+    minimize: bool = True,
 ) -> np.ndarray:
     r"""Dynamic Penalty calculated as follows:
 
@@ -68,7 +72,7 @@ def dynamic_penalty(
     ``p``
         the dynamic penalty value
     """
-    if not hasattr(X[0], '__iter__') or isinstance(X[0], str):
+    if not hasattr(X[0], "__iter__") or isinstance(X[0], str):
         X = [X]
 
     N = len(X)
@@ -86,20 +90,3 @@ def dynamic_penalty(
 
     p = (-1) ** (not minimize) * (C * t) ** alpha * p
     return p
-
-# TODO: implement this...
-def stochastic_ranking(X, fitness, equality=None, inquality=None, P=0.4, gamma=1,
-                       beta=1, epsilon=0):
-    N = len(X) if isinstance(X, list) else X.shape[0]
-    #N = X.shape[0]
-    p = np.zeros(N)
-
-    if equality is not None:
-        v = np.atleast_2d(list(map(equality, X))).reshape(N, -1)
-        v[np.abs(v) <= epsilon] = 0
-        p += np.sum(np.abs(v) ** gamma, axis=1)
-
-    if inquality is not None:
-        v = np.atleast_2d(list(map(inquality, X))).reshape(N, -1)
-        v[v <= 0] = 0
-        p += np.sum(np.abs(v) ** beta, axis=1)

@@ -2,7 +2,7 @@ import warnings
 from abc import ABC, abstractmethod
 
 import numpy as np
-from numpy import sqrt, exp
+from numpy import exp, sqrt
 from scipy.stats import norm
 
 __authors__ = ['Hao Wang']

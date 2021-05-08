@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import numpy as np
 from numpy import argsort, ceil, exp, mod, zeros
 from numpy.random import geometric, rand, randint, randn

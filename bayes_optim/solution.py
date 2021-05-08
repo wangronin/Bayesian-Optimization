@@ -270,7 +270,7 @@ class Solution(np.ndarray):
             res = cls.__new__(cls, x=_x, var_name=var_name, index=index)
         return res
 
-    def to_dict(self, orient="index", with_index=False, space=None):
+    def to_dict(self, orient="index", with_index=False, **kwargs):
         # NOTE: avoid calling self.__getitem__
         # TODO: the following code only work 2D array
         obj = np.atleast_2d(self.view(np.ndarray))
