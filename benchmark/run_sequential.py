@@ -13,10 +13,10 @@ class _GaussianProcessRegressor(GaussianProcessRegressor):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.is_fitted = False
-    
+
     def fit(self, X, y):
         super().fit(X, y)
-        self.is_fitted = True 
+        self.is_fitted = True
         return self
 
     def predict(self, X, eval_MSE=False):
@@ -30,15 +30,15 @@ class _GaussianProcessRegressor(GaussianProcessRegressor):
             return _
 
 def run_optimizer(
-    optimizer, 
-    dim, 
-    fID, 
-    instance, 
-    logfile, 
-    lb, 
-    ub, 
-    max_FEs, 
-    data_path, 
+    optimizer,
+    dim,
+    fID,
+    instance,
+    logfile,
+    lb,
+    ub,
+    max_FEs,
+    data_path,
     bbob_opt
     ):
     """Parallel BBOB/COCO experiment wrapper
@@ -47,7 +47,7 @@ def run_optimizer(
     start = time()
     seed = np.mod(int(start) + os.getpid(), 1000)
     np.random.seed(seed)
-    
+
     data_path = os.path.join(data_path, str(instance))
     max_FEs = eval(max_FEs)
 
@@ -60,20 +60,20 @@ def run_optimizer(
     f.finalizerun()
     with open(logfile, 'a') as fout:
         fout.write(
-            "{} on f{} in {}D, instance {}: FEs={}, fbest-ftarget={:.4e}, " 
-            "elapsed time [m]: {:.3f}\n".format(optimizer, fID, dim, 
+            "{} on f{} in {}D, instance {}: FEs={}, fbest-ftarget={:.4e}, "
+            "elapsed time [m]: {:.3f}\n".format(optimizer, fID, dim,
             instance, f.evaluations, f.fbest - f.ftarget, (time() - start) / 60.)
         )
 
 def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
     sys.path.insert(0, '../')
     sys.path.insert(0, '../../GaussianProcess')
-    from BayesOpt import BO, ContinuousSpace, OrdinalSpace, \
-        NominalSpace, RandomForest
+    from BayesOpt import BO, RealSpace, IntegerSpace, \
+        DiscreteSpace, RandomForest
     from GaussianProcess import GaussianProcess
     from GaussianProcess.trend import constant_trend
 
-    space = ContinuousSpace([lb, ub]) * dim
+    space = RealSpace([lb, ub]) * dim
 
     # kernel = 1.0 * Matern(length_scale=(1, 1), length_scale_bounds=(1e-10, 1e2))
     # model = _GaussianProcessRegressor(kernel=kernel, alpha=0, n_restarts_optimizer=30, normalize_y=False)
@@ -92,12 +92,12 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
     )
 
     return BO(
-        search_space=space, 
-        obj_fun=obj_fun, 
-        model=model, 
+        search_space=space,
+        obj_fun=obj_fun,
+        model=model,
         DoE_size=dim * 10,
-        max_FEs=max_FEs, 
-        verbose=True, 
+        max_FEs=max_FEs,
+        verbose=True,
         n_point=1,
         minimize=True,
         acquisition_fun='EI',
@@ -105,11 +105,11 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
         logger=None
     )
 
-if __name__ == '__main__': 
+if __name__ == '__main__':
     dims = (2, )
     fIDs = bn.nfreeIDs[6:]    # for all fcts
     instance = [1] * 10
-    
+
     algorithm = test_BO
 
     opts = {
@@ -120,9 +120,9 @@ if __name__ == '__main__':
     }
     opts['bbob_opt'] = {
         'comments': 'max_FEs={0}'.format(opts['max_FEs']),
-        'algid': algorithm.__name__ 
+        'algid': algorithm.__name__
     }
-    
+
     for dim in dims:
         for fID in fIDs:
             for i in instance:

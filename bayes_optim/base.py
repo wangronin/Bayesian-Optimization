@@ -1,29 +1,53 @@
-"""
-Created on Mon Apr 23 17:16:39 2018
-
-@author: Hao Wang
-@email: wangronin@gmail.com
-
-"""
-import numpy as np
-import os, sys, dill, functools, logging, time
-
+import functools
+import logging
+import sys
+import time
 from abc import ABC, abstractmethod
-from copy import copy, deepcopy
-from typing import Callable, Any, Tuple, Optional
+from copy import copy
+from typing import Any, Callable, List, Optional, Tuple, Union
+
+import dill
+import numpy as np
 from joblib import Parallel, delayed
+from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
-from sklearn.metrics import r2_score
-from sklearn.cluster import KMeans
-
-from . import AcquisitionFunction
-from .Solution import Solution
-from .SearchSpace import SearchSpace
-from .utils import arg_to_int
-from .misc import LoggerFormatter
+from . import acquisition_fun as AcquisitionFunction
 from .acquisition_optim import argmax_restart
+from .acquisition_optim.option import (
+    default_AQ_max_FEs,
+    default_AQ_n_restart,
+    default_AQ_wait_iter,
+)
+from .misc import LoggerFormatter
+from .search_space import SearchSpace
+from .solution import Solution
+from .utils import arg_to_int, dynamic_penalty
 
-class baseOptimizer(ABC):
+__authors__ = ["Hao Wang"]
+
+
+def wrap_func(func, kind, var_names):
+    @functools.wraps(func)
+    def wrapper(X):
+        if not isinstance(X, Solution):
+            X = Solution(X, var_name=var_names)
+        if kind == "list":
+            return func(X.tolist())
+        if kind == "dict":
+            X = X.to_dict()
+            return [func(_) for _ in X]
+
+    return wrapper
+
+
+# TODO: inherit from `BaseOptimizer`
+# TODO: `ask` -> suggest, `tell` -> observe, implement `recommend`
+# TODO: implement `verbose` levels
+
+
+class BaseBO(ABC):
+    """Bayesian Optimization Base Class, which implements the Ask-Evaluate-Tell interface"""
+
     def __init__(
         self,
         search_space: SearchSpace,
@@ -31,164 +55,12 @@ class baseOptimizer(ABC):
         parallel_obj_fun: Callable = None,
         eq_fun: Callable = None,
         ineq_fun: Callable = None,
-        ftarget: Optional[float] = None,
-        max_FEs: Optional[int] = None,
-        minimize: bool = True,
-        n_job: int = 1,
-        verbose = False,
-        random_seed: Optional[int] = None,
-        logger: Optional[str] = None
-        ):
-        self.verbose = verbose
-        self.logger = logger
-        self.random_seed = random_seed
-
-        self.search_space = search_space
-        self.obj_fun = obj_fun
-        self.parallel_obj_fun = parallel_obj_fun
-        self.h = eq_fun
-        self.g = ineq_fun
-        self.n_job = max(1, int(n_job))
-        self.ftarget = ftarget
-        self.minimize = minimize
-
-        self.xopt = None
-        self.fopt = None
-        self.stop_dict = {}
-
-    @abstractmethod
-    def ask(self, n_point=None):
-        """Get suggestions from the optimizer.
-
-        Parameters
-        ----------
-        n_point : int
-            Desired number of parallel suggestions in the output
-
-        Returns
-        -------
-        next_guess : list of dict
-            List of `n_suggestions` suggestions to evaluate the objective
-            function. Each suggestion is a dictionary where each key
-            corresponds to a parameter being optimized.
-        """
-        return
-
-    @abstractmethod
-    def tell(self, X, y):
-        """Feed an observation back.
-
-        Parameters
-        ----------
-        X : list of dict-like
-            Places where the objective function has already been evaluated.
-            Each suggestion is a dictionary where each key corresponds to a
-            parameter being optimized.
-        y : array-like, shape (n,)
-            Corresponding values where objective has been evaluated
-        """
-        return
-
-    def evaluate(self, X):
-        """Evaluate the candidate points in `X`
-        """
-        # Parallelization is handled by the objective function itself
-        if self.parallel_obj_fun is not None:
-            func_vals = self.parallel_obj_fun(X)
-        else:
-            if self.n_job > 1: # or by ourselves..
-                func_vals = Parallel(n_jobs=self.n_job)(
-                    delayed(self.obj_fun)(x) for x in X
-                )
-            else:              # or sequential execution
-                func_vals = [self.obj_fun(x) for x in X]
-        return func_vals
-
-    @abstractmethod
-    def check_stop(self):
-        return
-
-    def step(self):
-        X = self.ask()
-        func_vals = self.evaluate(X)
-        self.tell(X, func_vals)
-
-    def run(self):
-        while not self.check_stop():
-            self.step()
-        return self.xopt, self.fopt, self.stop_dict
-
-    @property
-    def search_space(self):
-        return self._search_space
-
-    @search_space.setter
-    def search_space(self, search_space):
-        self._search_space = search_space
-        self.dim = len(self._search_space)
-        self.var_names = self._search_space.var_name
-        self.r_index = self._search_space.id_C       # indices of continuous variable
-        self.i_index = self._search_space.id_O       # indices of integer variable
-        self.d_index = self._search_space.id_N       # indices of categorical variable
-
-        self.param_type = self._search_space.var_type
-        self.N_r = len(self.r_index)
-        self.N_i = len(self.i_index)
-        self.N_d = len(self.d_index)
-
-    @property
-    def random_seed(self):
-        return self._random_seed
-
-    @random_seed.setter
-    def random_seed(self, seed):
-        if seed:
-            self._random_seed = int(seed)
-            if self._random_seed:
-                np.random.seed(self._random_seed)
-
-    @property
-    def logger(self):
-        return self._logger
-
-    @logger.setter
-    def logger(self, logger):
-        self._logger = logging.getLogger(self.__class__.__name__)
-        self._logger.setLevel(logging.DEBUG)
-        fmt = LoggerFormatter()
-
-        if self.verbose:
-            # create console handler and set level to warning
-            ch = logging.StreamHandler(sys.stdout)
-            ch.setLevel(logging.INFO)
-            ch.setFormatter(fmt)
-            self._logger.addHandler(ch)
-
-        # create file handler and set level to debug
-        if logger is not None:
-            fh = logging.FileHandler(logger)
-            fh.setLevel(logging.DEBUG)
-            fh.setFormatter(fmt)
-            self._logger.addHandler(fh)
-
-        if hasattr(self, 'logger'):
-            self._logger.propagate = False
-
-
-class baseBO(ABC):
-    def __init__(
-        self,
-        search_space: SearchSpace,
-        obj_fun: Callable,
-        parallel_obj_fun: Callable = None,
-        eq_fun: Callable = None,
-        ineq_fun: Callable = None,
-        model: Optional[Any] = None,   # TODO: regulate the type for `model`
-        eval_type: str = 'list',
+        model: Optional[Any] = None,  # TODO: regulate the type for `model`
+        eval_type: str = "list",
         DoE_size: Optional[int] = None,
         warm_data: Tuple = (),
         n_point: int = 1,
-        acquisition_fun: str = 'EI',
+        acquisition_fun: str = "EI",
         acquisition_par: dict = {},
         acquisition_optimization: dict = {},
         ftarget: Optional[float] = None,
@@ -198,14 +70,15 @@ class baseBO(ABC):
         data_file: Optional[str] = None,
         verbose: bool = False,
         random_seed: Optional[int] = None,
-        logger: Optional[str] = None
-        ):
-        """ The base class for Bayesian Optimization
+        logger: Optional[str] = None,
+        instance_name: Optional[str] = None,
+    ):
+        """The base class for Bayesian Optimization
 
         Parameters
         ----------
         search_space : SearchSpace
-            The search space, an instance of the `SearchSpace` class.
+            The search space, an instance of `SearchSpace` class.
         obj_fun : Callable
             The objective function to optimize.
         parallel_obj_fun : Callable, optional
@@ -222,7 +95,7 @@ class baseBO(ABC):
             by default None.
         eval_type : str, optional
             The type of input argument allowed by `obj_func` or `parallel_obj_fun`:
-            it could be either 'list', 'dict' or 'dataframe', by default 'list'.
+            it could be either 'list' or 'dict', by default 'list'.
         DoE_size : int, optional
             The size of inital Design of Experiment (DoE), by default None.
         warm_data: Tuple, optional
@@ -268,23 +141,25 @@ class baseBO(ABC):
         self.verbose = verbose
         self.data_file = data_file
         self.max_FEs = int(max_FEs) if max_FEs else np.inf
+        self.instance_name = instance_name
+        self.metric_meta = None
 
         self.search_space = search_space
         self.DoE_size = DoE_size
 
         self.acquisition_fun = acquisition_fun
         self._acquisition_par = acquisition_par
-        self._acquisition_callbacks = []   # the callback functions executed after
-                                           # every call of `arg_max_acquisition`
+        self._acquisition_callbacks = []  # the callback functions executed after
+        # every call of `arg_max_acquisition`
         self.model = model
         self.logger = logger
         self.random_seed = random_seed
 
-        self._get_best = np.min if self.minimize else np.max
         self._eval_type = eval_type
+        self._set_internal_optimization(**acquisition_optimization)
+        self._get_best = np.min if self.minimize else np.max
         self._init_flatfitness_trial = 2
         self._set_aux_vars()
-        self._set_internal_optimization(**acquisition_optimization)
         self.warm_data = warm_data
 
     @property
@@ -296,7 +171,7 @@ class baseBO(ABC):
         if isinstance(fun, str):
             self._acquisition_fun = fun
         else:
-            assert hasattr(fun, '__call__')
+            assert hasattr(fun, "__call__")
         self._acquisition_fun = fun
 
     @property
@@ -335,9 +210,10 @@ class baseBO(ABC):
         self._search_space = search_space
         self.dim = len(self._search_space)
         self.var_names = self._search_space.var_name
-        self.r_index = self._search_space.id_C       # indices of continuous variable
-        self.i_index = self._search_space.id_O       # indices of integer variable
-        self.d_index = self._search_space.id_N       # indices of categorical variable
+        self.r_index = self._search_space.real_id  # indices of continuous variable
+        self.i_index = self._search_space.integer_id  # indices of integer variable
+        # indices of categorical variable
+        self.d_index = self._search_space.categorical_id
 
         self.param_type = self._search_space.var_type
         self.N_r = len(self.r_index)
@@ -381,25 +257,32 @@ class baseBO(ABC):
             self._logger.propagate = False
             return
 
-        self._logger = logging.getLogger(self.__class__.__name__)
+        # NOTE: logging.getLogger create new instance based on `name`
+        # no new instance will be created if the same name is provided
+        name = self.instance_name if self.instance_name else str(id(self))
+        self._logger = logging.getLogger(f"{self.__class__.__name__} ({name})")
         self._logger.setLevel(logging.DEBUG)
         fmt = LoggerFormatter()
 
-        if self.verbose:
-            # create console handler and set level to warning
-            ch = logging.StreamHandler(sys.stdout)
-            ch.setLevel(logging.INFO)
-            ch.setFormatter(fmt)
-            self._logger.addHandler(ch)
+        # create console handler and set level to the vebosity
+        SH = list(filter(lambda h: isinstance(h, logging.StreamHandler), self._logger.handlers))
+        if self.verbose and len(SH) == 0:
+            sh = logging.StreamHandler(sys.stdout)
+            sh.setLevel(logging.INFO)
+            sh.setFormatter(fmt)
+            self._logger.addHandler(sh)
 
         # create file handler and set level to debug
-        if logger is not None:
+        # TODO: perhaps also according to the verbosity?
+        # TODOL perhaps create a logger class
+        FH = list(filter(lambda h: isinstance(h, logging.FileHandler), self._logger.handlers))
+        if logger is not None and len(FH) == 0:
             fh = logging.FileHandler(logger)
             fh.setLevel(logging.DEBUG)
             fh.setFormatter(fmt)
             self._logger.addHandler(fh)
 
-        if hasattr(self, 'logger'):
+        if hasattr(self, "logger"):
             self._logger.propagate = False
 
     def _set_aux_vars(self):
@@ -408,59 +291,67 @@ class baseBO(ABC):
         self.stop_dict = {}
         self.hist_f = []
 
-        if self._eval_type == 'list':
+        if self._eval_type == "list":
             self._to_pheno = lambda x: x.tolist()
-            self._to_geno = lambda x: Solution(x, var_name=self.var_names)
-        elif self._eval_type == 'dict':
+            self._to_geno = lambda x, index=None: Solution(x, var_name=self.var_names, index=index)
+        elif self._eval_type == "dict":
             self._to_pheno = lambda x: x.to_dict(space=self._search_space)
-            self._to_geno = lambda x: Solution.from_dict(x, space=self._search_space)
-        elif self._eval_type == 'dataframe':
-            self._to_pheno = lambda x: x.to_dataframe()
-            self._to_geno = lambda x: Solution.from_dataframe(x)
+            self._to_geno = lambda x, index=None: Solution.from_dict(x, index=index)
 
     def _set_internal_optimization(self, **kwargs):
-        if 'optimizer' in kwargs:
-            self._optimizer = kwargs['optimizer']
+        if "optimizer" in kwargs:
+            self._optimizer = kwargs["optimizer"]
         else:
-            if self.N_d + self.N_i == 0 and hasattr(self.model, 'gradient'):
-                self._optimizer = 'BFGS'
+            if self.N_d + self.N_i == 0 and hasattr(self.model, "gradient"):
+                self._optimizer = "BFGS"
             else:
-                self._optimizer = 'MIES'
+                self._optimizer = "MIES"
 
-        # NOTE: `AQ`: acquisition
-        if 'max_FEs' in kwargs:
-            self.AQ_max_FEs = arg_to_int(kwargs['max_FEs'])
+        # TODO: this is an ad-hoc solution
+        if (self.h is not None or self.g is not None) and self._optimizer == "BFGS":
+            self._optimizer = "OnePlusOne_Cholesky_CMA"
+
+        # NOTE: `AQ` -> acquisition
+        if "max_FEs" in kwargs:
+            self.AQ_max_FEs = arg_to_int(kwargs["max_FEs"])
         else:
-            self.AQ_max_FEs = int(5e2 * self.dim) if self._optimizer == 'MIES' else \
-                int(1e2 * self.dim)
+            self.AQ_max_FEs = default_AQ_max_FEs[self._optimizer](self.dim)
 
-        self.AQ_n_restart = int(5 * self.dim) if 'n_restart' not in kwargs \
-            else arg_to_int(kwargs['n_restart'])
-        self.AQ_wait_iter = 3 if 'wait_iter' not in kwargs \
-            else arg_to_int(kwargs['wait_iter'])
+        self.AQ_n_restart = (
+            default_AQ_n_restart(self.dim)
+            if "n_restart" not in kwargs
+            else arg_to_int(kwargs["n_restart"])
+        )
+        self.AQ_wait_iter = (
+            default_AQ_wait_iter if "wait_iter" not in kwargs else arg_to_int(kwargs["wait_iter"])
+        )
+
+        self._h, self._g = self.h, self.g
+        if self._h is not None:
+            self._h = wrap_func(self._h, self._eval_type, self.search_space.var_name)
+        if self._g is not None:
+            self._g = wrap_func(self._g, self._eval_type, self.search_space.var_name)
 
         self._argmax_restart = functools.partial(
             argmax_restart,
             search_space=self._search_space,
-            h=self.h,
-            g=self.g,
-            eval_type=self._eval_type,
+            h=self._h,
+            g=self._g,
             eval_budget=self.AQ_max_FEs,
             n_restart=self.AQ_n_restart,
             wait_iter=self.AQ_wait_iter,
-            optimizer=self._optimizer
+            optimizer=self._optimizer,
         )
 
     def _check_params(self):
         # TODO: add more parameter check-ups
         if np.isinf(self.max_FEs):
-            raise ValueError('max_FEs cannot be infinite')
+            raise ValueError("max_FEs cannot be infinite")
 
         assert hasattr(AcquisitionFunction, self._acquisition_fun)
 
     def _compare(self, f1, f2):
-        """Test if objecctive value f1 is better than f2
-        """
+        """Test if objecctive value f1 is better than f2"""
         return f1 < f2 if self.minimize else f2 > f1
 
     def run(self):
@@ -473,51 +364,54 @@ class baseBO(ABC):
 
         t0 = time.time()
         func_vals = self.evaluate(X)
-        self._logger.info('evaluation takes {:.4f}s'.format(time.time() - t0))
+        self._logger.info("evaluation takes {:.4f}s".format(time.time() - t0))
 
         self.tell(X, func_vals)
 
-    def ask(self, n_point=None, seed=None):
-        if isinstance(seed, int):
-            np.random.seed(seed)
+    def ask(self, n_point: int = None):
         if self.model.is_fitted:
-            if n_point is None:
-                n_point = self.n_point
+            msg = f"Ask {n_point} points:"
+            n_point = self.n_point if n_point is None else n_point
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
-
-            X = Solution(
-                X, index=len(self.data) + np.arange(len(X)),
-                var_name=self.var_names
-            )
+            # validate the new candidate solutions
             X = self.pre_eval_check(X)
 
-            # TODO: handle the constraints when performing the random sampling
             if len(X) < n_point:
-                self._logger.warn(
-                    "iteration {}: duplicated solution found "
-                    "by optimization! New points is taken from random "
-                    "design".format(self.iter_count)
+                self._logger.warning(
+                    f"iteration {self.iter_count}: duplicated solution found "
+                    "by optimization! New points is taken from random design."
                 )
                 N = n_point - len(X)
-                method = 'LHS' if N > 1 else 'uniform'
-                s = self._search_space.sampling(N=N, method=method)
-                X = X.tolist() + s
-                X = Solution(
-                    X, index=len(self.data) + np.arange(len(X)),
-                    var_name=self.var_names
-                )
-                X = self._search_space.round(X)
-        else:   # initial DoE
+                method = "LHS" if N > 1 else "uniform"
+                s = self._search_space.sample(N=N, method=method, h=self._h, g=self._g).tolist()
+                X = self._search_space.round(X + s)
+        else:  # initial DoE
+            msg = f"Ask {n_point} points (DoE):"
             if not n_point:
                 n_point = self._DoE_size
+            X = self._search_space.round(self.create_DoE(n_point))
 
-            X = self._search_space.round(
-                self.create_DoE(n_point)
-            )
+        index = np.arange(len(X))
+        if hasattr(self, "data"):
+            index += len(self.data)
+
+        # make a `Solution` object
+        X = Solution(X, index=index, var_name=self.var_names)
+        self._logger.info(msg)
+        for i, _ in enumerate(X):
+            self._logger.info(f"#{i + 1} - {self._to_pheno(X[i])[0]}")
         return self._to_pheno(X)
 
-    def tell(self, X, func_vals, warm_start=False):
+    def tell(
+        self,
+        X: List[Union[list, dict]],
+        func_vals: List[Union[float, list]],
+        h_vals: List[Union[float, list]] = None,
+        g_vals: List[Union[float, list]] = None,
+        index: List[str] = None,
+        warm_start: bool = False,
+    ):
         """Tell the BO about the function values of proposed candidate solutions
 
         Parameters
@@ -527,95 +421,95 @@ class baseBO(ABC):
         func_vals : List/np.ndarray of reals
             The corresponding function values
         """
-        X = self._to_geno(X)
 
-        if warm_start:
-            msg = f'warm-starting from {len(X)} points:'
-        elif self.iter_count == 0:
-            msg = f'initial DoE of size {len(X)}:'
-        else:
-            msg = f'iteration {self.iter_count}, {len(X)} infill points:'
-        self._logger.info(msg)
-
-        for i in range(len(X)):
+        X = self._to_geno(X, index)
+        self._logger.info(f"iteration {self.iter_count}, observing {len(X)} points:")
+        for i, _ in enumerate(X):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
-
             if not warm_start:
                 self.eval_count += 1
 
             self._logger.info(
-                f'#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])}'
+                f"#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])[0]}"
             )
 
         X = self.post_eval_check(X)
-        self.data = self.data + X if hasattr(self, 'data') else X
+        self.data = self.data + X if hasattr(self, "data") else X
+        self.update_model()
 
         if self.data_file is not None:
             X.to_csv(self.data_file, header=False, append=True)
 
         self.fopt = self._get_best(self.data.fitness)
-        _xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]
-        self.xopt = self._to_pheno(_xopt)
-        if self._eval_type == 'dict':
+        self._xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]
+        self.xopt = self._to_pheno(self._xopt)  # the pheno type
+
+        # FIXME: this is an ad-hoc solution
+        if self._eval_type == "dict":
             self.xopt = self.xopt[0]
 
-        self._logger.info('fopt: {}'.format(self.fopt))
-        self._logger.info('xopt: {}'.format(self.xopt))
+        self._logger.info(f"fopt: {self.fopt}")
+        # TODO: to handle the constraints properly
+        if self.h is not None or self.g is not None:
+            _penalty = dynamic_penalty(
+                self._xopt.tolist(), 1, self._h, self._g, minimize=self.minimize
+            )
+            self._logger.info(f"penalty: {_penalty[0]:.4e}")
+        self._logger.info(f"xopt: {self.xopt}\n")
 
         if not self.model.is_fitted:
-            self._fBest_DoE = copy(self.fopt) # the best f-value from DoE
-            self._xBest_DoE = copy(self.xopt) # the best point from DoE
-
-        r2 = self.update_model()
-        self._logger.info('Surrogate model r2: {}\n'.format(r2))
+            self._fBest_DoE = copy(self.fopt)  # the best point in the DoE
+            self._xBest_DoE = copy(self.xopt)
 
         if not warm_start:
             self.iter_count += 1
             self.hist_f.append(self.fopt)
 
-    def create_DoE(self, n_point=None):
+    def create_DoE(self, n_point: int) -> List:
         DoE = []
         while len(DoE) < n_point:
-            DoE += self._search_space.sampling(n_point - len(DoE), method='LHS')
-            DoE = self.pre_eval_check(DoE).tolist()
+            DoE += self._search_space.sample(
+                n_point - len(DoE),
+                method="LHS"
+                # h=self._h, g=self._g
+            ).tolist()
+            DoE = self.pre_eval_check(DoE)
+        return DoE
 
-        return Solution(DoE, var_name=self.var_names)
+    def evaluate(self, X):
+        """Evaluate the candidate points and update evaluation info in the dataframe"""
+        # Parallelization is handled by the objective function itself
+        if self.parallel_obj_fun is not None:
+            func_vals = self.parallel_obj_fun(X)
+        else:
+            if self.n_job > 1:  # or by ourselves..
+                func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for x in X)
+            else:  # or sequential execution
+                func_vals = [self.obj_fun(x) for x in X]
+        return func_vals
 
     @abstractmethod
-    def pre_eval_check(self, X):
+    def pre_eval_check(self, X: Solution):
+        """This function is meant for checking validaty of the solutions prior to the evaluation
+
+        Parameters
+        ----------
+        X : Solution
+            the candidate solutions
+
+        """
         raise NotImplementedError
 
     def post_eval_check(self, X):
         _ = np.isnan(X.fitness) | np.isinf(X.fitness)
         if np.any(_):
             self._logger.warn(
-                '{} candidate solutions are removed '
-                'due to falied fitness evaluation: \n{}'.format(sum(_), str(X[_, :]))
+                f"{sum(_)} candidate solutions are removed "
+                f"due to falied fitness evaluation: \n{str(X[_, :])}"
             )
             X = X[~_, :]
         return X
-
-    def evaluate(self, X):
-        """Evaluate the candidate points and update evaluation info in the dataframe
-        """
-        # Parallelization is handled by the objective function itself
-        if self.parallel_obj_fun is not None:
-            func_vals = self.parallel_obj_fun(X)
-        else:
-            if self.n_job > 1: # or by ourselves..
-                if self._eval_type == 'dataframe':
-                    func_vals = Parallel(n_jobs=self.n_job)(
-                        delayed(self.obj_fun)(x) for _, x in X.iterrows()
-                    )
-                else:
-                    func_vals = Parallel(n_jobs=self.n_job)(
-                        delayed(self.obj_fun)(x) for x in X
-                    )
-            else:              # or sequential execution
-                func_vals = [self.obj_fun(x) for x in X]
-
-        return func_vals
 
     def update_model(self):
         # TODO: implement a proper model selection here
@@ -623,12 +517,14 @@ class baseBO(ABC):
         data = self.data
         fitness = data.fitness
 
-        # to standardize the response values to prevent numerical overflow that might
+        # TODO: to standardize the response values to prevent numerical overflow that might
         # appear in the MGF-based acquisition function.
         # Standardization should make it easier to specify the GP prior, compared to
         # rescaling values to the unit interval.
-        fitness_ = (fitness - np.mean(fitness)) / np.std(fitness) \
-            if self._acquisition_fun == 'MGFI' else fitness
+        _std = np.std(fitness)
+        fitness_ = (
+            fitness if np.isclose(_std, 0) else (fitness - np.mean(fitness)) / np.std(fitness)
+        )
 
         self.fmin, self.fmax = np.min(fitness_), np.max(fitness_)
         self.frange = self.fmax - self.fmin
@@ -636,13 +532,13 @@ class baseBO(ABC):
         self.model.fit(data, fitness_)
         fitness_hat = self.model.predict(data)
 
-        # TODO: need to report more performance metric for regression
         r2 = r2_score(fitness_, fitness_hat)
-        return r2
+        MAPE = mean_absolute_percentage_error(fitness_, fitness_hat)
+        self._logger.info(f"model r2: {r2}, MAPE: {MAPE}")
 
     def arg_max_acquisition(self, n_point=None, return_value=False):
-        """
-        Global Optimization of the acqusition function / Infill criterion
+        """Global Optimization of the acqusition function / Infill criterion
+
         Returns
         -------
             candidates: tuple of list,
@@ -650,31 +546,30 @@ class baseBO(ABC):
             values: tuple,
                 criterion value of the candidate solution
         """
-        self._logger.debug('acquisition optimziation...')
+        self._logger.debug("acquisition optimziation...")
         t0 = time.time()
         n_point = self.n_point if n_point is None else int(n_point)
-        return_dx = True if self._optimizer == 'BFGS' else False
+        return_dx = self._optimizer == "BFGS"
 
         if n_point > 1:  # multi-point/batch sequential strategy
             candidates, values = self._batch_arg_max_acquisition(
                 n_point=n_point, return_dx=return_dx
             )
-        else:            # single-point strategy
+        else:  # single-point strategy
             criteria = self._create_acquisition(par={}, return_dx=return_dx)
             candidates, values = self._argmax_restart(criteria, logger=self._logger)
             candidates, values = [candidates], [values]
 
-        self._logger.debug(
-            'acquisition optimziation takes {:.4f}s'.format(time.time() - t0)
-        )
-        for callback in self._acquisition_callbacks: callback()
+        self._logger.debug("acquisition optimziation takes {:.4f}s".format(time.time() - t0))
+        for callback in self._acquisition_callbacks:
+            callback()
 
         return (candidates, values) if return_value else candidates
 
     def _create_acquisition(self, fun=None, par={}, return_dx=False):
         fun = fun if fun is not None else self._acquisition_fun
         par = copy(self._acquisition_par) if not par else par
-        par.update({'model' : self.model, 'minimize' : self.minimize})
+        par.update({"model": self.model, "minimize": self.minimize})
 
         criterion = getattr(AcquisitionFunction, fun)(**par)
         return functools.partial(criterion, return_dx=return_dx)
@@ -684,26 +579,26 @@ class baseBO(ABC):
 
     def check_stop(self):
         if self.eval_count >= self.max_FEs:
-            self.stop_dict['max_FEs'] = self.eval_count
+            self.stop_dict["max_FEs"] = self.eval_count
 
-        if self.ftarget is not None and hasattr(self, 'xopt'):
+        if self.ftarget is not None and hasattr(self, "xopt"):
             if self._compare(self.fopt, self.ftarget):
-                self.stop_dict['ftarget'] = self.fopt
+                self.stop_dict["ftarget"] = self.fopt
 
         return bool(self.stop_dict)
 
     def save(self, filename):
-        with open(filename, 'wb') as f:
+        with open(filename, "wb") as f:
             # NOTE: we need to dump `self.data` first. Otherwise, some
             # attributes of it will be lost
-            if hasattr(self, 'data'):
+            if hasattr(self, "data"):
                 self.data = dill.dumps(self.data)
 
-            if len(self._logger.handlers) != 0:
-                _ = [h for h in self._logger.handlers if isinstance(h, logging.FileHandler)]
-                _logger = _[0].baseFilename if len(_) != 0 else None
-            else:
+            FHs = list(filter(lambda h: isinstance(h, logging.FileHandler), self._logger.handlers))
+            if len(FHs) == 0:
                 _logger = None
+            else:
+                _logger = FHs[0].baseFilename  # Only take the first log file
 
             logger = self._logger
             self._logger = _logger
@@ -711,16 +606,15 @@ class baseBO(ABC):
             dill.dump(self, f)
 
             self._logger = logger
-            if hasattr(self, 'data'):
+            if hasattr(self, "data"):
                 self.data = dill.loads(self.data)
+            self._logger.info(f"save to file {filename}...")
 
     @classmethod
     def load(cls, filename):
-        with open(filename, 'rb') as f:
+        with open(filename, "rb") as f:
             obj = dill.load(f)
-            if hasattr(obj, 'data'):
+            if hasattr(obj, "data"):
                 obj.data = dill.loads(obj.data)
-
-            obj.logger = obj._logger
+            obj.logger = getattr(obj, "_logger")
         return obj
-

@@ -1,13 +1,8 @@
 import numpy as np
-import sys, os
-sys.path.insert(0, '../')
-
-from bayes_optim import fmin, ContinuousSpace, OrdinalSpace, NominalSpace
-from bayes_optim.Extension import MultiAcquisitionBO
-from bayes_optim.Surrogate import RandomForest
-from bayes_optim.acquisition_optim import MIES
+from bayes_optim import fmin
 
 np.random.seed(42)
+
 
 def test_fmin():
     def f(x):
@@ -29,69 +24,35 @@ def test_fmin():
     minimum = fmin(f, [-5] * 2, [5] * 2, x0=X, max_FEs=5, verbose=False)
     assert minimum[2] == 5
 
-def test_MIES():
-    def obj_fun(X):
-        v = []
-        for x in X:
-            x_r = np.array([x['real_%d'%i] for i in range(2)])
-            x_i = np.array([x['int_%d'%i] for i in range(2)])
-            x_d = np.array([x['cat_%d'%i] for i in range(2)])
-
-            v.append(
-                np.sum(x_r ** 2) + \
-                np.sum(np.abs(x_i - 10) / 123.) + \
-                np.sum(x_d == 'OK')
-            )
-        return v
-
-    search_space = ContinuousSpace([-5, 5], var_name='real') * 2 + \
-        OrdinalSpace([5, 15], var_name='int') * 2 + \
-        NominalSpace(
-            ['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'],
-            var_name='cat'
-        ) * 2
-
-    opt = MIES(
-        search_space=search_space,
-        obj_func=obj_fun,
-        max_eval=100,
-        eval_type='dict',
-        verbose=True   # turn this off, if you prefer no output
-    )
-    xopt, fopt, stop_dict = opt.optimize()
-
-    print('xopt: {}'.format(xopt))
-    print('fopt: {}'.format(fopt))
-    print('stop criteria: {}'.format(stop_dict))
 
 # def test_multi_acquisition():
-    # dim_r = 2  # dimension of the real values
-    # def obj_fun(x):
-    #     x_r = np.array([x['continuous_%d'%i] for i in range(dim_r)])
-    #     x_i = x['ordinal']
-    #     x_d = x['nominal']
-    #     _ = 0 if x_d == 'OK' else 1
-    #     return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + _ * 2
+# dim_r = 2  # dimension of the real values
+# def obj_fun(x):
+#     x_r = np.array([x['continuous_%d'%i] for i in range(dim_r)])
+#     x_i = x['ordinal']
+#     x_d = x['nominal']
+#     _ = 0 if x_d == 'OK' else 1
+#     return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + _ * 2
 
-    # search_space = ContinuousSpace([-5, 5], var_name='continuous') * dim_r + \
-    #     OrdinalSpace([5, 15], var_name='ordinal') + \
-    #     NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'], var_name='nominal')
+# search_space = RealSpace([-5, 5], var_name='continuous') * dim_r + \
+#     IntegerSpace([5, 15], var_name='ordinal') + \
+#     DiscreteSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'], var_name='nominal')
 
-    # model = RandomForest(levels=search_space.levels)
+# model = RandomForest(levels=search_space.levels)
 
-    # opt = MultiAcquisitionBO(
-    #     search_space=search_space,
-    #     obj_fun=obj_fun,
-    #     model=model,
-    #     max_FEs=8,
-    #     DoE_size=4,    # the initial DoE size
-    #     eval_type='dict',
-    #     n_job=4,       # number of processes
-    #     n_point=4,     # number of the candidate solution proposed in each iteration
-    #     verbose=True   # turn this off, if you prefer no output
-    # )
+# opt = MultiAcquisitionBO(
+#     search_space=search_space,
+#     obj_fun=obj_fun,
+#     model=model,
+#     max_FEs=8,
+#     DoE_size=4,    # the initial DoE size
+#     eval_type='dict',
+#     n_job=4,       # number of processes
+#     n_point=4,     # number of the candidate solution proposed in each iteration
+#     verbose=True   # turn this off, if you prefer no output
+# )
 
-    # xopt, fopt, stop_dict = opt.run()
-    # print('xopt: {}'.format(xopt))
-    # print('fopt: {}'.format(fopt))
-    # print('stop criteria: {}'.format(stop_dict))
+# xopt, fopt, stop_dict = opt.run()
+# print('xopt: {}'.format(xopt))
+# print('fopt: {}'.format(fopt))
+# print('stop criteria: {}'.format(stop_dict))

@@ -1,17 +1,7 @@
-import numpy as np
-import atexit, signal, errno, os, sys, time
+from typing import Callable, List
 
-def set_bounds(bound, dim):
-    if isinstance(bound, str):
-        bound = eval(bound)
-    elif isinstance(bound, (float, int)):
-        bound = [bound] * dim
-    elif hasattr(bound, '__iter__'):
-        bound = list(bound)
-        if len(bound) == 1:
-            bound *= dim
-    assert len(bound) == dim
-    return np.asarray(bound)
+import numpy as np
+
 
 def arg_to_int(arg):
     if isinstance(arg, str):
@@ -22,37 +12,70 @@ def arg_to_int(arg):
         raise ValueError
     return x
 
-# TODO: re-written those functions to C/Cython
-def non_dominated_set_2d(y, minimize=True):
+
+def set_bounds(bound, dim):
+    if isinstance(bound, str):
+        bound = eval(bound)
+    elif isinstance(bound, (float, int)):
+        bound = [bound] * dim
+    elif hasattr(bound, "__iter__"):
+        bound = list(bound)
+        if len(bound) == 1:
+            bound *= dim
+    assert len(bound) == dim
+    return np.asarray(bound)
+
+
+# TODO: move this to a '_penalty.py' file
+def dynamic_penalty(
+    X: List,
+    t: int = 1,
+    equality: Callable = None,
+    inequality: Callable = None,
+    C: float = 0.5,
+    alpha: float = 1,
+    beta: float = 2,
+    epsilon: float = 1e-2,
+    minimize: bool = True,
+) -> np.ndarray:
+    r"""Dynamic Penalty calculated as follows:
+
+    $$(tC)^{\alpha} * [\sum_i max(|h(x_i)|, \epsilon) + \sum_i max(0, g(x_i))^{\beta}],$$
+
+    where $x_i$ -> each row of ``X``, h -> ``equality``, and g -> ``inequality``.
+
+    TODO: give a reference here
+
+    Parameters
+    ----------
+    X : np.ndarray
+        Input candidate solutions
+    t : int, optional
+        The iteration number of the optimization algorithm employing this method, by default 1
+    equality : Callable, optional
+        Equality function, by default None
+    inequality : Callable, optional
+        Inequality function, by default None
+    C : float, optional
+        coefficient of the iteration term, by default 0.5
+    alpha : float, optional
+        exponent to the iteration term, by default 1
+    beta : float, optional
+        coefficient to the inequality terms, by default 2
+    epsilon : float, optional
+        threshold to determine whether the equality constraint is met, by default 1e-4
+    minimize : bool, optional
+        minimize or maximize? by default True
+
+    Returns
+    -------
+    ``p``
+        the dynamic penalty value
     """
-    Argument
-    --------
-    y : numpy 2d array,
-        where the each solution occupies a row
-    """
-    y = np.asarray(y)
-    N, _ = y.shape
+    if not hasattr(X[0], "__iter__") or isinstance(X[0], str):
+        X = [X]
 
-    if isinstance(minimize, bool):
-        minimize = [minimize]
-
-    minimize = np.asarray(minimize).ravel()
-    assert len(minimize) == 1 or minimize.shape == (N, )
-    y *= (np.asarray([-1] * N) ** minimize).reshape(-1, 1)
-
-    _ = np.argsort(y[:, 0])[::-1]
-    y2 = y[_, 1]
-    ND = []
-    for i in range(N):
-        v = y2[i]
-        if not any(v <= y2[ND]) or len(ND) == 0:
-            ND.append(i)
-    return _[ND]
-
-def dynamic_penalty(X, t, equality=None, inequality=None, C=0.5, alpha=1, beta=2,
-                    epsilon=0.01, minimize=True):
-    X = np.atleast_2d(X)
-    N = X.shape[0]
+    N = len(X)
     p = np.zeros(N)
 
     if equality is not None:
@@ -63,24 +86,7 @@ def dynamic_penalty(X, t, equality=None, inequality=None, C=0.5, alpha=1, beta=2
     if inequality is not None:
         v = np.atleast_2d(list(map(inequality, X))).reshape(N, -1)
         v[v <= 0] = 0
-        p += np.sum(v ** beta, axis=1)
+        p += np.sum(np.abs(v) ** beta, axis=1)
 
     p = (-1) ** (not minimize) * (C * t) ** alpha * p
     return p
-
-# TODO: get this done and test it
-def stochastic_ranking(X, fitness, equality=None, inquality=None, P=0.4, gamma=1,
-                       beta=1, epsilon=0):
-    N = len(X) if isinstance(X, list) else X.shape[0]
-    #N = X.shape[0]
-    p = np.zeros(N)
-
-    if equality is not None:
-        v = np.atleast_2d(list(map(equality, X))).reshape(N, -1)
-        v[np.abs(v) <= epsilon] = 0
-        p += np.sum(np.abs(v) ** gamma, axis=1)
-
-    if inquality is not None:
-        v = np.atleast_2d(list(map(inquality, X))).reshape(N, -1)
-        v[v <= 0] = 0
-        p += np.sum(np.abs(v) ** beta, axis=1)
