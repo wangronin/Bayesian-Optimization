@@ -4,7 +4,7 @@ import sys
 import numpy as np
 sys.path.insert(0, '../')
 
-from bayes_optim import ParallelBO, ContinuousSpace, OrdinalSpace, NominalSpace
+from bayes_optim import BO, ParallelBO, RealSpace, IntegerSpace, DiscreteSpace
 from bayes_optim.Surrogate import RandomForest
 
 seed = 666
@@ -17,7 +17,7 @@ def obj_fun0(x):
     return np.sum(x_r ** 2) + abs(x_i - 10) / 123. + _ * 2
 
 def obj_fun(x):
-    x_r = np.array([x['continuous_%d'%i] for i in range(dim_r)])
+    x_r = np.array([x['continuous%d'%i] for i in range(dim_r)])
     x_i = x['ordinal']
     x_d = x['nominal']
     _ = 0 if x_d == 'OK' else 1
@@ -26,21 +26,21 @@ def obj_fun(x):
 # Continuous variables can be specified as follows:
 # a 2-D variable in [-5, 5]^2
 # for 2 variables, the naming scheme is continuous0, continuous1
-C = ContinuousSpace([-5, 5], var_name='continuous') * dim_r
+C = RealSpace([-5, 5], var_name='continuous') * dim_r
 
 # Equivalently, you can also use
-# C = ContinuousSpace([[-5, 5]]] * dim)
+# C = RealSpace([[-5, 5]]] * dim)
 # The general usage is:
-# ContinuousSpace([[lb_1, ub_1], [lb_2, ub_2], ..., [lb_n, ub_n]])
+# RealSpace([[lb_1, ub_1], [lb_2, ub_2], ..., [lb_n, ub_n]])
 
 # Integer (ordinal) variables can be specified as follows:
 # The domain of integer variables can be given as with continuous ones
 # var_name is optional
-I = OrdinalSpace([5, 15], var_name='ordinal')
+I = IntegerSpace([5, 15], var_name='ordinal')
 
 # Discrete (nominal) variables can be specified as follows:
 # No lb, ub... a list of categories instead
-N = NominalSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'], var_name='nominal')
+N = DiscreteSpace(['OK', 'A', 'B', 'C', 'D', 'E', 'F', 'G'], var_name='nominal')
 
 # The whole search space can be constructed:
 search_space = C + I + N
@@ -49,17 +49,17 @@ search_space = C + I + N
 # For mixed variable type, the random forest is typically used
 model = RandomForest(levels=search_space.levels)
 
-opt = ParallelBO(
+opt = BO(
     search_space=search_space,
     obj_fun=obj_fun,
     model=model,
-    max_FEs=100,
+    max_FEs=50,
     DoE_size=3,    # the initial DoE size
     eval_type='dict',
     acquisition_fun='MGFI',
     acquisition_par={'t' : 2},
-    n_job=3,       # number of processes
-    n_point=3,     # number of the candidate solution proposed in each iteration
+    n_job=1,       # number of processes
+    n_point=1,     # number of the candidate solution proposed in each iteration
     verbose=True   # turn this off, if you prefer no output
 )
 xopt, fopt, stop_dict = opt.run()

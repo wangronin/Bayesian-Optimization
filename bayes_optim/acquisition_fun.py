@@ -1,17 +1,37 @@
-"""
-@author: Hao Wang
-@email: wangronin@gmail.com
-"""
 import warnings
-import numpy as np
-
-from numpy import sqrt, exp, pi
-from scipy.stats import norm
 from abc import ABC, abstractmethod
 
+import numpy as np
+from numpy import exp, sqrt
+from scipy.stats import norm
+
+__authors__ = ['Hao Wang']
+
+# TODO: add annotations
 # TODO: implement noisy handling infill criteria, e.g., EQI (expected quantile improvement)
 # TODO: perphaps also enable acquisition function engineering here?
 # TODO: multi-objective extension
+
+
+def penalized_acquisition(x, acquisition_func, X_mean, pca, bounds, return_dx):
+    x_ = pca.inverse_transform(x) + X_mean
+    bounds = np.asarray(bounds)
+    idx_lower = x_ < bounds[:, 0]
+    idx_upper = x_ > bounds[:, 1]
+    penalty = np.sum([bounds[i, 0] - x_[i] for i in idx_lower]) + \
+        np.sum([x_[i] - bounds[i, 1] for i in idx_upper])
+    penalty *= -1
+
+    if penalty == 0:
+        return acquisition_func(x)
+    else:
+        if return_dx:
+            g = np.zeros((len(x), 1))
+            g[idx_lower, :] = 1
+            g[idx_upper, :] = -1
+            return penalty, g
+        else:
+            return penalty
 
 class AcquisitionFunction(ABC):
     def __init__(self, model=None, minimize=True):
@@ -38,7 +58,7 @@ class AcquisitionFunction(ABC):
         y_hat, sd2 = self._model.predict(X, eval_MSE=True)
         sd = sqrt(sd2)
         if not self.minimize:
-            y_hat = -1 * y_hat
+            y_hat = -y_hat
         return y_hat, sd
 
     def _gradient(self, X):
@@ -85,89 +105,66 @@ class UCB(AcquisitionFunction):
 
     @alpha.setter
     def alpha(self, alpha):
-        assert alpha >= 0.5 and alpha <= 1
+        assert alpha > 0
         self._alpha = alpha
-
-    def _predict(self, X):
-        y_hat, sd2 = self._model.predict(X, eval_MSE=True)
-        sd = sqrt(sd2)
-
-        # NOTE: convert the problem to maximizatio for UCB
-        if self.minimize:
-            y_hat = -y_hat
-
-        return y_hat, sd
-
-    def _gradient(self, X):
-        y_dx, sd2_dx = self._model.gradient(X)
-        if self.minimize:
-            y_dx = -y_dx
-        return y_dx, sd2_dx
 
     def __call__(self, X, return_dx=False):
         X = self.check_X(X)
-        y_, sd_ = self._predict(X)
+        n_sample = X.shape[0]
+        y_hat, sd = self._predict(X)
 
         try:
-            f_value = y_ + sd_ * norm.ppf(self.alpha)
-            if len(f_value) == 1:
-                f_value = f_value[0]
+            f_value = y_hat + self.alpha * sd
+            if n_sample == 1:
+                f_value = sum(f_value)
         except Exception: # in case of numerical errors
             f_value = 0
 
         if return_dx:
-            # TODO: to verify the gradient by rendering it on 2D
             y_dx, sd2_dx = self._gradient(X)
-            sd_dx = sd2_dx / (2. * sd_)
+            sd_dx = sd2_dx / (2. * sd)
             try:
-                f_dx = y_dx + sd_dx * norm.ppf(self.alpha)
+                f_dx = y_dx + self.alpha * sd_dx
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
             return f_value, f_dx
-
         return f_value
 
 class EI(ImprovementBased):
     def __call__(self, X, return_dx=False):
         X = self.check_X(X)
-        n_sample, n_feature = X.shape
+        n_sample = X.shape[0]
         y_hat, sd = self._predict(X)
 
-        # if the GPR variance is too small
-        # TODO: check the rationale behind 1e-6 and why the ratio if intended
+        # if the Kriging variance is to small
+        # TODO: check the rationale of 1e-6 and why the ratio if intended
         if hasattr(self._model, 'sigma2'):
-            idx = sd / np.sqrt(self._model.sigma2) < 1e-6
+            if sd / np.sqrt(self._model.sigma2) < 1e-6:
+                return (0, np.zeros((len(X[0]), 1))) if return_dx else 0
         else:
-            # TODO: implement a counterpart of 'sigma2' for random forest
-            idx = sd < 1e-10
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings('error')
-            try:
-                xcr_ = self._plugin - y_hat
-                xcr = xcr_ / sd
-                xcr_prob, xcr_dens = norm.cdf(xcr), norm.pdf(xcr)
-                f_value = xcr_ * xcr_prob + sd * xcr_dens
-                f_value[idx] = 0
-            except Exception:
-                f_value = np.zeros(n_sample)
-
-        if n_sample == 1:
-            f_value = f_value[0]
+            # TODO: implement a counterpart of 'sigma2' for randomforest
+            # or simply put a try...except around the code below
+            if sd < 1e-10:
+                return (0, np.zeros((len(X[0]), 1))) if return_dx else 0
+        try:
+            xcr_ = self._plugin - y_hat
+            xcr = xcr_ / sd
+            xcr_prob, xcr_dens = norm.cdf(xcr), norm.pdf(xcr)
+            f_value = xcr_ * xcr_prob + sd * xcr_dens
+            if n_sample == 1:
+                f_value = sum(f_value)
+        except Exception: # in case of numerical errors
+            # IMPORTANT: always keep the output in the same type
+            f_value = 0
 
         if return_dx:
-            with warnings.catch_warnings():
-                warnings.filterwarnings('error')
-                y_dx, sd2_dx = self._gradient(X)
-
-                sd_dx = np.zeros((n_feature, n_sample))
-                sd_dx[:, ~idx] = sd2_dx[:, ~idx] / (2. * sd[~idx])
-                try:
-                    f_dx = -y_dx * xcr_prob + sd_dx * xcr_dens
-                except Exception:
-                    f_dx = np.zeros((n_feature, n_sample))
-                return f_value, f_dx
-
+            y_dx, sd2_dx = self._gradient(X)
+            sd_dx = sd2_dx / (2. * sd)
+            try:
+                f_dx = -y_dx * xcr_prob + sd_dx * xcr_dens
+            except Exception:
+                f_dx = np.zeros((len(X[0]), 1))
+            return f_value, f_dx
         return f_value
 
 class EpsilonPI(ImprovementBased):
@@ -189,14 +186,7 @@ class EpsilonPI(ImprovementBased):
 
     def __call__(self, X, return_dx=False):
         X = self.check_X(X)
-        n_sample, n_feature = X.shape
         y_hat, sd = self._predict(X)
-
-        if hasattr(self._model, 'sigma2'):
-            idx = sd / np.sqrt(self._model.sigma2) < 1e-6
-        else:
-            # TODO: implement a counterpart of 'sigma2' for random forest
-            idx = sd < 1e-10
 
         coef = 1 - self._epsilon if y_hat > 0 else (1 + self._epsilon)
         try:
@@ -204,22 +194,15 @@ class EpsilonPI(ImprovementBased):
             xcr = xcr_ / sd
             f_value = norm.cdf(xcr)
         except Exception:
-            f_value = np.zeros(n_sample)
-
-        f_value[idx] = 0
-        f_value[np.isinf(f_value)] = 0
-        f_value[np.isnan(f_value)] = 0
-        if n_sample == 1:
-            f_value = f_value[0]
+            f_value = 0.
 
         if return_dx:
             y_dx, sd2_dx = self._gradient(X)
-            sd_dx = np.zeros((n_feature, n_sample))
-            sd_dx[:, ~idx] = sd2_dx[:, ~idx] / (2. * sd[~idx])
+            sd_dx = sd2_dx / (2. * sd)
             try:
-                f_dx = -1 * (coef * y_dx + xcr * sd_dx) * norm.pdf(xcr) / sd
+                f_dx = -(coef * y_dx + xcr * sd_dx) * norm.pdf(xcr) / sd
             except Exception:
-                f_dx = np.zeros((n_feature, n_sample))
+                f_dx = np.zeros((len(X[0]), 1))
             return f_value, f_dx
         return f_value
 
@@ -249,14 +232,13 @@ class MGFI(ImprovementBased):
 
     def __call__(self, X, return_dx=False):
         X = self.check_X(X)
-        n_sample, n_feature = X.shape
         y_hat, sd = self._predict(X)
+        n_sample = X.shape[0]
 
-        if hasattr(self._model, 'sigma2'):
-            idx = sd / np.sqrt(self._model.sigma2) < 1e-6
-        else:
-            # TODO: implement a counterpart of 'sigma2' for random forest
-            idx = sd < 1e-10
+        # if the Kriging variance is to small
+        # TODO: check the rationale of 1e-6 and why the ratio if intended
+        if np.isclose(sd, 0):
+            return (np.array([0.]), np.zeros((len(X[0]), 1))) if return_dx else 0.
 
         with warnings.catch_warnings():
             warnings.filterwarnings('error')
@@ -265,20 +247,17 @@ class MGFI(ImprovementBased):
                 beta_p = (self._plugin - y_hat_p) / sd
                 term = self._t * (self._plugin - y_hat - 1)
                 f_ = norm.cdf(beta_p) * exp(term + self._t ** 2. * sd ** 2. / 2.)
+                if n_sample == 1:
+                    f_ = sum(f_)
             except Exception: # in case of numerical errors
-                f_ = np.zeros(n_sample)
+                f_ = 0.
 
-        f_[idx] = 0
-        f_[np.isinf(f_)] = 0
-        f_[np.isnan(f_)] = 0
-        if n_sample == 1:
-            f_ = f_[0]
+        if np.isinf(f_):
+            f_ = 0.
 
         if return_dx:
             y_dx, sd2_dx = self._gradient(X)
-
-            sd_dx = np.zeros((n_feature, n_sample))
-            sd_dx[:, ~idx] = sd2_dx[:, ~idx] / (2. * sd[~idx])
+            sd_dx = sd2_dx / (2. * sd)
 
             try:
                 term = exp(self._t * (self._plugin + self._t * sd ** 2. / 2 - y_hat - 1))
@@ -288,7 +267,7 @@ class MGFI(ImprovementBased):
                 f_dx = term * (norm.pdf(beta_p) * beta_p_dx + \
                     norm.cdf(beta_p) * ((self._t ** 2) * sd * sd_dx - self._t * y_dx))
             except Exception:
-                f_dx = np.zeros((n_feature, n_sample))
+                f_dx = np.zeros((len(X[0]), 1))
             return f_, f_dx
         return f_
 
