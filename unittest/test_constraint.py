@@ -3,7 +3,7 @@ import sys
 import numpy as np
 import pytest
 
-sys.path.insert(0, "./")
+sys.path.insert(0, "../")
 from bayes_optim import BO, IntegerSpace, RealSpace
 from bayes_optim.surrogate import RandomForest
 

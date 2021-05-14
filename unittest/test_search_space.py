@@ -5,7 +5,7 @@ import sys
 import numpy as np
 import pytest
 
-sys.path.insert(0, "./")
+sys.path.insert(0, "../")
 from bayes_optim.search_space import DiscreteSpace, IntegerSpace, Real, RealSpace, SearchSpace
 from bayes_optim.solution import Solution
 

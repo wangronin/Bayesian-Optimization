@@ -4,7 +4,7 @@ import sys
 import dill
 import numpy as np
 
-sys.path.insert(0, "./")
+sys.path.insert(0, "../")
 from bayes_optim import Solution
 
 

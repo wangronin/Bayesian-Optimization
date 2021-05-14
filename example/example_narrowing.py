@@ -69,7 +69,6 @@ def mean_improvement(data, model, metrics):
 
 
 space = RealSpace([lb, ub]) * dim
-
 mean = trend.constant_trend(dim, beta=None)
 thetaL = 1e-10 * (ub - lb) * np.ones(dim)
 thetaU = 10 * (ub - lb) * np.ones(dim)
