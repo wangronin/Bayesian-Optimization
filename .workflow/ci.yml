@@ -1,4 +1,4 @@
-name: Build and Test
+name: Build_and_Test
 displayName: 'Build and Test '
 triggers:                                # 流水线触发器配置
   push:                                  # 设置 master 分支 在产生代码 push 时精确触发（PRECISE）构建
