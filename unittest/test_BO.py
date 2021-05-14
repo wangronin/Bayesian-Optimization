@@ -1,7 +1,10 @@
 import os
+import sys
 
 import numpy as np
 import pytest
+
+sys.path.insert(0, "./")
 from bayes_optim import BO, ParallelBO
 from bayes_optim.search_space import BoolSpace, DiscreteSpace, IntegerSpace, RealSpace
 from bayes_optim.surrogate import GaussianProcess, RandomForest, trend

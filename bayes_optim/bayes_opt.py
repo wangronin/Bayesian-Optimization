@@ -210,6 +210,7 @@ class NarrowingBO(BO):
             kwargs["acquisition_optimization"]["optimizer"] = "MIES"
         else:
             kwargs["acquisition_optimization"] = {"optimizer": "MIES"}
+
         super().__init__(*argv, **kwargs)
         self.narrowing_fun = narrowing_fun
         self.narrowing_improving_fun = narrowing_improving_fun
@@ -239,16 +240,15 @@ class NarrowingBO(BO):
                     _deactive_fs = self.narrowing_fun(self.data, self.model, self.active_fs)
                     self.deactivation_fs_stack.append(_deactive_fs)
                     self.active_fs = list(set(self.active_fs) - set(_deactive_fs.keys()))
-                    self._logger.info(
+                    self.logger.info(
                         "narrowing the search space, remove " + str(self.deactivation_fs_stack[-1])
                     )
                 else:
-                    if len(self.deactivation_fs_stack):
+                    if len(self.deactivation_fs_stack) != 0:
                         _pop = list(self.deactivation_fs_stack.pop().keys())
                         self.active_fs = self.active_fs + _pop
-                        self._logger.info("narrowing the search space, add " + str(_pop))
+                        self.logger.info("narrowing the search space, add " + str(_pop))
                     else:
-                        self._logger.info("narrowing the search space, nothing changed")
+                        self.logger.info("narrowing the search space, nothing changed")
             # Currently, the features disabled are treated as eq constraints
-
         return self.xopt, self.fopt, self.stop_dict

@@ -40,6 +40,89 @@ def wrap_func(func, kind, var_names):
     return wrapper
 
 
+class baseOptimizer(ABC):
+    def __init__(self, verbose):
+        self.verbose = verbose
+        self.xopt = None
+        self.fopt = None
+        self.stop_dict = {}
+
+    @abstractmethod
+    def ask(self, n_point=None):
+        """Get suggestions from the optimizer.
+        Parameters
+        ----------
+        n_point : int
+            Desired number of parallel suggestions in the output
+        Returns
+        -------
+        next_guess : list of dict
+            List of `n_suggestions` suggestions to evaluate the objective
+            function. Each suggestion is a dictionary where each key
+            corresponds to a parameter being optimized.
+        """
+        return
+
+    @abstractmethod
+    def tell(self, X, y):
+        """Feed an observation back.
+        Parameters
+        ----------
+        X : list of dict-like
+            Places where the objective function has already been evaluated.
+            Each suggestion is a dictionary where each key corresponds to a
+            parameter being optimized.
+        y : array-like, shape (n,)
+            Corresponding values where objective has been evaluated
+        """
+        return
+
+    @abstractmethod
+    def evaluate(self, X):
+        return
+
+    @abstractmethod
+    def check_stop(self):
+        return
+
+    def step(self):
+        X = self.ask()
+        func_vals = self.evaluate(X)
+        self.tell(X, func_vals)
+
+    def run(self):
+        while not self.check_stop():
+            self.step()
+        return self.xopt, self.fopt, self.stop_dict
+
+    @property
+    def logger(self):
+        return self._logger
+
+    @logger.setter
+    def logger(self, logger):
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger.setLevel(logging.DEBUG)
+        fmt = LoggerFormatter()
+
+        if self.verbose:
+            # create console handler and set level to warning
+            ch = logging.StreamHandler(sys.stdout)
+            ch.setLevel(logging.INFO)
+            ch.setFormatter(fmt)
+            self._logger.addHandler(ch)
+
+        # create file handler and set level to debug
+        if logger is not None:
+            fh = logging.FileHandler(logger)
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(fmt)
+            self._logger.addHandler(fh)
+
+        if hasattr(self, "logger"):
+            self._logger.propagate = False
+
+
 # TODO: inherit from `BaseOptimizer`
 # TODO: `ask` -> suggest, `tell` -> observe, implement `recommend`
 # TODO: implement `verbose` levels
