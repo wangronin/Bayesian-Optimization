@@ -5,8 +5,8 @@ from typing import Any, Callable, List, Optional, Tuple, Union
 import numpy as np
 
 from .acquisition_fun import EI, MGFI, PI, UCB
-from .bayes_opt import BO, AnnealingBO, NoisyBO, ParallelBO
-from .extension import NarrowingBO, OptimizerPipeline
+from .bayes_opt import BO, AnnealingBO, NoisyBO, ParallelBO, NarrowingBO
+from .extension import OptimizerPipeline
 from .search_space import DiscreteSpace, IntegerSpace, RealSpace, SearchSpace
 from .solution import Solution
 from .surrogate import GaussianProcess, RandomForest, trend

@@ -4,6 +4,7 @@ import sys
 from typing import List, Union
 
 import numpy as np
+import pandas as pd
 
 sys.path.insert(0, "../")
 
@@ -11,9 +12,8 @@ from bayes_optim import NarrowingBO, RealSpace
 from bayes_optim.surrogate import GaussianProcess, trend
 
 np.random.seed(123)
-dim = 10
-subdim = 5
-lb, ub = 1, 5
+dim = 25 # Should be greater than 2
+lb, ub = -5, 15
 
 
 def specifiy_dummy_vars(d_eff: int):
@@ -22,15 +22,19 @@ def specifiy_dummy_vars(d_eff: int):
         def inner(x):
             x = np.asarray(x[:d_eff])
             return func(x)
-
         return inner
-
     return wrapper
 
 
 @specifiy_dummy_vars(2)
 def branin(x):
-    pass
+    """ Branin function (https://www.sfu.ca/~ssurjano/branin.html)
+    Global minimum 0.397881 at (-Pi, 12.275), (Pi, 2.275), and (9.42478, 2.475)
+    """
+    x1 = x[0]
+    x2 = x[1]
+    g_x = (x2 - (5.1 * x1**2)/(4 * np.pi**2 ) + 5 * x1 / np.pi  -6) ** 2 + 10 * (1 - (1 / (8 * np.pi))) * np.cos(x1) + 10
+    return np.abs(0.397881 - g_x)
 
 
 @specifiy_dummy_vars(2)
@@ -46,10 +50,12 @@ def corr_fsel(data, model, active_fs):
     """
     if len(active_fs) == 1:
         return {}
-    df = data.to_dataframe()
+    df = pd.DataFrame(data.tolist(), columns=data.var_name.tolist())
+    df["f"] = data.fitness
     df = df[active_fs + ["f"]]
     cor = df.corr()
     cor_fitness = abs(cor["f"])
+    # TODO is the name of the variable influencing the sort?
     fs = cor_fitness.sort_values(ascending=True).index[0]
     # TODO set the value for the discarded feature
     return {fs: 0}
@@ -89,13 +95,13 @@ model = GaussianProcess(
 
 opt = NarrowingBO(
     search_space=space,
-    obj_fun=fitness,
+    obj_fun=branin,
     model=model,
-    DoE_size=5,
-    max_FEs=25,
+    DoE_size=30,
+    max_FEs=500,
     verbose=True,
     n_point=1,
-    minimize=False,
+    minimize=True,
     narrowing_fun=corr_fsel,
     narrowing_improving_fun=mean_improvement,
     narrowing_FEs=5,
