@@ -18,6 +18,11 @@ def test_Variable():
     assert all(np.asarray(x.var_type) == np.asarray(["Integer"] * 3))
 
 
+def test_real_warning():
+    x = Real([-np.inf, 5], "x", 2, scale="log10")
+    assert x.bounds[0] == 1e-300
+
+
 def test_SearchSpace_var_name():
     cs = (
         RealSpace([1e-10, 1e-1], "x", 7, scale="log")

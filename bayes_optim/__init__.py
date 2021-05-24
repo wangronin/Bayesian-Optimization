@@ -6,7 +6,17 @@ import numpy as np
 
 from .acquisition_fun import EI, MGFI, PI, UCB
 from .bayes_opt import BO, AnnealingBO, NoisyBO, ParallelBO
-from .search_space import DiscreteSpace, IntegerSpace, RealSpace, SearchSpace
+from .search_space import (
+    Bool,
+    Discrete,
+    DiscreteSpace,
+    Integer,
+    IntegerSpace,
+    Ordinal,
+    Real,
+    RealSpace,
+    SearchSpace,
+)
 from .solution import Solution
 from .surrogate import GaussianProcess, RandomForest, trend
 
@@ -29,6 +39,11 @@ __all__ = [
     "MGFI",
     "RandomForest",
     "fmin",
+    "Integer",
+    "Ordinal",
+    "Real",
+    "Bool",
+    "Discrete",
 ]
 
 # To use `dill` for the pickling, which works for

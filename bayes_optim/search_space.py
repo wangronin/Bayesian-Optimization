@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import sys
+import warnings
 from abc import ABC
 from collections import Counter
 from copy import copy, deepcopy
@@ -15,12 +17,14 @@ from scipy.special import logit
 
 __authors__ = "Hao Wang"
 
+MAX = sys.float_info.max
+
 TRANS = {
-    "linear": [lambda x: x, [-np.inf, np.inf]],
-    "log": [np.log, [0, np.inf]],
-    "log10": [np.log10, [0, np.inf]],
-    "logit": [logit, [0, 1]],
-    "bilog": [lambda x: np.sign(x) * np.log(1 + np.abs(x)), [-np.inf, np.inf]],
+    "linear": [lambda x: x, [-MAX, MAX]],
+    "log": [np.log, [1e-300, MAX]],
+    "log10": [np.log10, [1e-300, MAX]],
+    "logit": [logit, [1e-300, 1]],
+    "bilog": [lambda x: np.sign(x) * np.log(1 + np.abs(x)), [-MAX, MAX]],
 }
 INV_TRANS = {
     "linear": lambda x: x,
@@ -180,18 +184,29 @@ class Real(Variable):
         self._trans: Callable = TRANS[scale][0]
         self._inv_trans: Callable = INV_TRANS[scale]
         _range = TRANS[scale][1]
+        bounds = list(self.bounds)
 
-        if (self.bounds[0] < _range[0]) or (self.bounds[0] > _range[1]):
-            raise ValueError(
-                f"lower bound {self.bounds[0]} not in the working "
-                f"range of the given scale {self._scale}"
+        if (bounds[0] < _range[0]) or (bounds[0] > _range[1]):
+            bounds[0] = _range[0]
+            warnings.warn(
+                f"lower bound {bounds[0]} not in the working "
+                f"range of the given scale {self._scale} is set to the default value {_range[0]}"
             )
+            # raise ValueError(
+            #     f"lower bound {self.bounds[0]} not in the working "
+            #     f"range of the given scale {self._scale}"
+            # )
 
-        if (self.bounds[1] < _range[0]) or (self.bounds[1] > _range[1]):
-            raise ValueError(
-                f"upper bound {self.bounds[1]} not in the working"
-                f"of the given scale {self._scale}"
+        if (bounds[1] < _range[0]) or (bounds[1] > _range[1]):
+            bounds[1] = _range[1]
+            warnings.warn(
+                f"upper bound {bounds[1]} not in the working "
+                f"range of the given scale {self._scale} is set to the default value {_range[1]}"
             )
+            # raise ValueError(
+            #     f"upper bound {self.bounds[1]} is invalid for the given scale {self._scale}"
+            # )
+        self.bounds = tuple(bounds)
         self._bounds_transformed = self._trans(self.bounds)
 
     def to_linear_scale(self, X):
