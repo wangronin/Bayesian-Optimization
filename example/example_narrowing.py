@@ -52,13 +52,13 @@ def corr_fsel(data, model, active_fs):
         return {}
     df = pd.DataFrame(data.tolist(), columns=data.var_name.tolist())
     df["f"] = data.fitness
-    df = df[active_fs + ["f"]]
+    df = df[list(active_fs) + ["f"]]
     cor = df.corr()
     cor_fitness = abs(cor["f"])
     # TODO is the name of the variable influencing the sort?
     fs = cor_fitness.sort_values(ascending=True).index[0]
     # TODO set the value for the discarded feature
-    return {fs: 0}
+    return fs, 0
 
 
 def mean_improvement(data, model, metrics):
@@ -97,14 +97,14 @@ opt = NarrowingBO(
     search_space=space,
     obj_fun=branin,
     model=model,
-    DoE_size=30,
-    max_FEs=500,
+    DoE_size=5,
+    max_FEs=20,
     verbose=True,
     n_point=1,
     minimize=True,
-    narrowing_fun=corr_fsel,
-    narrowing_improving_fun=mean_improvement,
-    narrowing_FEs=5,
+    var_selector=corr_fsel,
+    search_space_improving_fun=mean_improvement,
+    var_selection_FEs=5
 )
 
 print(opt.run())

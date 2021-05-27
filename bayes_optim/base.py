@@ -514,7 +514,8 @@ class BaseBO(ABC):
                 self.eval_count += 1
 
             self._logger.info(
-                f"#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])[0]}"
+                f"#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])}"
+#                f"#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])[0]}"
             )
 
         X = self.post_eval_check(X)

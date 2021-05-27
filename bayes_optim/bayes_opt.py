@@ -197,11 +197,12 @@ def partial_argument(func: callable, masks: np.ndarray, values: np.ndarray):
 
     @functools.wraps(func)
     def wrapper(X):
-        N = X.shape[1]
-        X = np.empty((N, len(masks)))
-        X[:, masks] = values
-        X[:, ~masks] = X
-        return func(X)
+        N = X.shape[1] if X.ndim > 1 else 1
+        Y = np.empty((N, len(masks)))
+        if len(values) > 0:
+            Y[:, masks] = list(values)
+        Y[:, ~masks] = X
+        return func(Y)
 
     return wrapper
 
@@ -212,27 +213,27 @@ class NarrowingBO(BO):
 
     def __init__(
         self,
-        narrowing_fun: Callable = None,
-        narrowing_improving_fun: Callable = None,
-        narrowing_FEs: int = 1,
+        var_selector: Callable = None,
+        search_space_improving_fun: Callable = None,
+        var_selection_FEs: int = 1,
         **kwargs,
     ):
         """Online automatic variable (de-)selection for BO
 
         Parameters
         ----------
-        narrowing_fun: Callable
+        var_selector: Callable
             Function that rank the solution features, and returns a sub set of
             features to discard. The function will receive as input the data points
             evaluated and their fitness, the model, and the list of active features.
             Then, the function should return a dict of features and default value to deactivate.
-        narrowing_improving_fun: Callable
+        search_space_improving_fun: Callable
             Function that evaluates the overall performance of the narrowed search space. It should
             return a decision value (boolean, true if we should continue narrowing), and a dict with
             all the metrics. As input, the function receives the data, the model, and the previous
             metrics.
-        narrowing_FEs: int
-            Number of function evaluations before a narrowing occurs
+        var_selection_FEs: int
+            Number of function evaluations before a (de)selection of features occurs
         """
         if "acquisition_optimization" in kwargs:
             kwargs["acquisition_optimization"]["optimizer"] = "MIES"
@@ -240,10 +241,10 @@ class NarrowingBO(BO):
             kwargs["acquisition_optimization"] = {"optimizer": "MIES"}
 
         super().__init__(**kwargs)
-        self.narrowing_fun: callable = narrowing_fun
-        self.narrowing_improving_fun: callable = narrowing_improving_fun
-        assert narrowing_FEs < self.max_FEs
-        self.narrowing_FEs: int = narrowing_FEs
+        self.var_selector: callable = var_selector
+        self.search_space_improving_fun: callable = search_space_improving_fun
+        assert var_selection_FEs < self.max_FEs
+        self.var_selection_FEs: int = var_selection_FEs
         self.inactive: OrderedDict = OrderedDict()
 
     def _create_acquisition(self, fun=None, par={}, return_dx=False):
@@ -274,12 +275,12 @@ class NarrowingBO(BO):
         _metrics = {}
         while not self.check_stop():
             self.step()
-            if (self.eval_count % self.narrowing_FEs) == 0 and (
+            if (self.eval_count % self.var_selection_FEs) == 0 and (
                 self.DoE_size is None or self.eval_count > self.DoE_size
             ):
-                decision, _metrics = self.narrowing_improving_fun(self.data, self.model, _metrics)
+                decision, _metrics = self.search_space_improving_fun(self.data, self.model, _metrics)
                 if decision:
-                    inactive_var, value = self.narrowing_fun(
+                    inactive_var, value = self.var_selector(
                         self.data,
                         self.model,
                         set(self.search_space.var_name) - set(self.inactive.keys()),
