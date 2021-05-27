@@ -202,12 +202,12 @@ def partial_argument(func: callable, masks: np.ndarray, values: np.ndarray):
         if len(values) > 0:
             Y[:, masks] = list(values)
         Y[:, ~masks] = X
+        # Y = Y if X.ndim > 1 else Y[0]
         return func(Y)
 
     return wrapper
 
 
-# TODO: @Andres: shall we re-name some variables, e.g., narrowing_fun -> var_selector?
 class NarrowingBO(BO):
     """BO with Automatic variable (de-)selection"""
 
@@ -260,16 +260,40 @@ class NarrowingBO(BO):
         """Set ``self._argmax_restart`` for the reduced subspace"""
         mask = np.array([v in self.inactive.keys() for v in self._search_space.var_name])
         idx = np.nonzero(~mask)[0]
+
+        wrapped_h, wrapped_g = self._h, self._g
+        if wrapped_h is not None:
+            wrapped_h = partial_argument(self._h, mask, self.inactive.values())
+        if wrapped_g is not None:
+            wrapped_g = partial_argument(self._g, mask, self.inactive.values())
+
         self._argmax_restart = functools.partial(
             argmax_restart,
             search_space=self._search_space[idx],
-            h=partial_argument(self._h, mask, self.inactive.values()),
-            g=partial_argument(self._g, mask, self.inactive.values()),
+            h=wrapped_h,
+            g=wrapped_g,
             eval_budget=self.AQ_max_FEs,
             n_restart=self.AQ_n_restart,
             wait_iter=self.AQ_wait_iter,
             optimizer=self._optimizer,
         )
+
+    def arg_max_acquisition(self, n_point=None, return_value=False):
+        """Global Optimization of the acqusition function / Infill criterion adapted
+        to the reduced search space
+        """
+        _super = super().arg_max_acquisition(n_point, return_value)
+        candidates = _super[0] if return_value else _super
+        values = _super[1] if return_value else None
+
+        masks = np.array([v in self.inactive.keys() for v in self._search_space.var_name])
+        N = len(candidates)
+        Y = np.empty((N, len(masks)))
+        if len(self.inactive.values()) > 0:
+            Y[:, masks] = list(self.inactive.values())
+        Y[:, ~masks] = candidates
+
+        return (Y, values) if return_value else Y
 
     def run(self):
         _metrics = {}
@@ -286,10 +310,11 @@ class NarrowingBO(BO):
                         set(self.search_space.var_name) - set(self.inactive.keys()),
                     )
                     self.inactive[inactive_var] = value
-                    self.__set_argmax()
+                    #self.__set_argmax()
                     self.logger.info(f"fixing variable {inactive_var} to value {value}")
                 else:
                     if len(self.inactive) != 0:
                         v = self.inactive.popitem()[0]
                         self.logger.info(f"adding variable {v} back to the search space")
+                self.__set_argmax()
         return self.xopt, self.fopt, self.stop_dict

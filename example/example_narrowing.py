@@ -61,7 +61,7 @@ def corr_fsel(data, model, active_fs):
     return fs, 0
 
 
-def mean_improvement(data, model, metrics):
+def mean_improvement(data, model, metrics, tolerance=0.00, minimize=True):
     """Mean fitness improvement criteria.
     The mean fitness is calculated for all the available data
     points. If the mean is improving (ge) in relation to the
@@ -69,9 +69,24 @@ def mean_improvement(data, model, metrics):
     is returned, along with the new calculated mean.
     """
     _mean = np.mean([x.fitness for x in data])
-    if ("mean" in metrics and _mean >= metrics["mean"]) or "mean" not in metrics:
-        return True, {"mean": _mean}
-    return False, {"mean": _mean}
+    improving = False
+    if "mean" not in metrics:
+        improving = True
+    else:
+        diff = (_mean - metrics["mean"]) / metrics["mean"]
+        diff = - diff if minimize else diff
+        improving = True if diff >= -tolerance else False
+
+    return improving, {"mean": _mean}
+
+
+def min_mean_improvement(data, model, metrics):
+    return mean_improvement(data, model, metrics, tolerance=0.00, minimize=True)
+
+
+def max_mean_improvement(data, model, metrics):
+    return mean_improvement(data, model, metrics, tolerance=0.00, minimize=False)
+
 
 
 space = RealSpace([lb, ub]) * dim
@@ -103,7 +118,7 @@ opt = NarrowingBO(
     n_point=1,
     minimize=True,
     var_selector=corr_fsel,
-    search_space_improving_fun=mean_improvement,
+    search_space_improving_fun=min_mean_improvement,
     var_selection_FEs=5
 )
 
