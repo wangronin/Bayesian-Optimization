@@ -1,14 +1,11 @@
 import copy
-import functools
-from collections import OrderedDict
 from copy import copy
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List
 
 import numpy as np
 from joblib import Parallel, delayed
 
 from . import acquisition_fun as AcquisitionFunction
-from .acquisition_optim import argmax_restart
 from .base import BaseBO
 from .solution import Solution
 
@@ -182,42 +179,16 @@ class NoisyBO(ParallelBO):
         return super()._create_acquisition(par=par, return_dx=return_dx)
 
 
-def partial_argument(func: callable, masks: np.ndarray, values: np.ndarray):
-    """fill-in the values for inactive variables
-
-    Parameters
-    ----------
-    func : callable
-        the target function to call which is defined on the original search space
-    masks : np.ndarray
-        the mask array indicating which variables are deemed inactive
-    values : np.ndarray
-        the values fixed for the inactive variables
-    """
-
-    @functools.wraps(func)
-    def wrapper(X):
-        N = X.shape[1]
-        X = np.empty((N, len(masks)))
-        X[:, masks] = values
-        X[:, ~masks] = X
-        return func(X)
-
-    return wrapper
-
-
-# TODO: @Andres: shall we re-name some variables, e.g., narrowing_fun -> var_selector?
 class NarrowingBO(BO):
-    """BO with Automatic variable (de-)selection"""
-
     def __init__(
         self,
         narrowing_fun: Callable = None,
         narrowing_improving_fun: Callable = None,
         narrowing_FEs: int = 1,
-        **kwargs,
+        *argv,
+        **kwargs
     ):
-        """Online automatic variable (de-)selection for BO
+        """The base class for Bayesian Optimization
 
         Parameters
         ----------
@@ -234,41 +205,28 @@ class NarrowingBO(BO):
         narrowing_FEs: int
             Number of function evaluations before a narrowing occurs
         """
+        kwargs["eq_fun"] = self._penalty
         if "acquisition_optimization" in kwargs:
             kwargs["acquisition_optimization"]["optimizer"] = "MIES"
         else:
             kwargs["acquisition_optimization"] = {"optimizer": "MIES"}
 
-        super().__init__(**kwargs)
-        self.narrowing_fun: callable = narrowing_fun
-        self.narrowing_improving_fun: callable = narrowing_improving_fun
+        super().__init__(*argv, **kwargs)
+        self.narrowing_fun = narrowing_fun
+        self.narrowing_improving_fun = narrowing_improving_fun
         assert narrowing_FEs < self.max_FEs
-        self.narrowing_FEs: int = narrowing_FEs
-        self.inactive: OrderedDict = OrderedDict()
+        self.narrowing_FEs = narrowing_FEs
+        self.active_fs = self.search_space.var_name.copy()
+        self.deactivation_fs_stack = []
+        self.h = self._penalty  # h is the eq_fun
 
-    def _create_acquisition(self, fun=None, par={}, return_dx=False):
-        """Create an acquisition function that works in the reduced search space"""
-        mask = np.array([v in self.inactive.keys() for v in self._search_space.var_name])
-        return partial_argument(
-            super()._create_acquisition(fun, par, return_dx),
-            mask,
-            self.inactive.values(),
-        )
-
-    def __set_argmax(self):
-        """Set ``self._argmax_restart`` for the reduced subspace"""
-        mask = np.array([v in self.inactive.keys() for v in self._search_space.var_name])
-        idx = np.nonzero(~mask)[0]
-        self._argmax_restart = functools.partial(
-            argmax_restart,
-            search_space=self._search_space[idx],
-            h=partial_argument(self._h, mask, self.inactive.values()),
-            g=partial_argument(self._g, mask, self.inactive.values()),
-            eval_budget=self.AQ_max_FEs,
-            n_restart=self.AQ_n_restart,
-            wait_iter=self.AQ_wait_iter,
-            optimizer=self._optimizer,
-        )
+    def _penalty(self, x):
+        penalty = 0
+        for deact_step in self.deactivation_fs_stack:
+            for k, v in deact_step.items():
+                ix = self.search_space.var_name.index(k)
+                penalty = penalty + abs(x[ix] - v)
+        return penalty
 
     def run(self):
         _metrics = {}
@@ -279,16 +237,18 @@ class NarrowingBO(BO):
             ):
                 decision, _metrics = self.narrowing_improving_fun(self.data, self.model, _metrics)
                 if decision:
-                    inactive_var, value = self.narrowing_fun(
-                        self.data,
-                        self.model,
-                        set(self.search_space.var_name) - set(self.inactive.keys()),
+                    _deactive_fs = self.narrowing_fun(self.data, self.model, self.active_fs)
+                    self.deactivation_fs_stack.append(_deactive_fs)
+                    self.active_fs = list(set(self.active_fs) - set(_deactive_fs.keys()))
+                    self.logger.info(
+                        "narrowing the search space, remove " + str(self.deactivation_fs_stack[-1])
                     )
-                    self.inactive[inactive_var] = value
-                    self.__set_argmax()
-                    self.logger.info(f"fixing variable {inactive_var} to value {value}")
                 else:
-                    if len(self.inactive) != 0:
-                        v = self.inactive.popitem()[0]
-                        self.logger.info(f"adding variable {v} back to the search space")
+                    if len(self.deactivation_fs_stack) != 0:
+                        _pop = list(self.deactivation_fs_stack.pop().keys())
+                        self.active_fs = self.active_fs + _pop
+                        self.logger.info("narrowing the search space, add " + str(_pop))
+                    else:
+                        self.logger.info("narrowing the search space, nothing changed")
+            # Currently, the features disabled are treated as eq constraints
         return self.xopt, self.fopt, self.stop_dict
