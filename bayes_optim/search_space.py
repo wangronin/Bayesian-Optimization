@@ -11,6 +11,7 @@ from itertools import chain
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+from numpy.lib.arraysetops import isin
 from numpy.random import rand, randint
 from pyDOE import lhs
 from scipy.special import logit
@@ -18,7 +19,6 @@ from scipy.special import logit
 __authors__ = "Hao Wang"
 
 MAX = sys.float_info.max
-
 TRANS = {
     "linear": [lambda x: x, [-MAX, MAX]],
     "log": [np.log, [1e-300, MAX]],
@@ -34,9 +34,7 @@ INV_TRANS = {
     "bilog": lambda x: np.sign(x) * (np.exp(np.abs(x)) - 1),
 }
 
-# TODO: discuss and fix the return value of `sample`, `round`, and `to_linear_scale`
-
-
+# TODO: discuss and fix the return type of `sample`, `round`, and `to_linear_scale`
 class Variable(ABC):
     """Base class for decision variables"""
 
@@ -86,6 +84,9 @@ class Variable(ABC):
         if self.default_value is not None:
             msg += f" | default: {self.default_value}"
         return msg
+
+    def __contains__(self, x: Union[float, str, object]) -> bool:
+        pass
 
     def __eq__(self, var: Variable) -> bool:
         return (
@@ -170,6 +171,9 @@ class Real(Variable):
         msg += f" | scale: {self.scale}"
         return msg
 
+    def __contains__(self, x: Union[float, str]) -> bool:
+        return x >= self.bounds[0] and x <= self.bounds[1]
+
     @property
     def scale(self):
         return self._scale
@@ -232,6 +236,9 @@ class _Discrete(Variable):
         self._size: int = None
         super().__init__(bounds, *args, **kwargs)
 
+    def __contains__(self, x: Union[int, str]) -> bool:
+        return x in self.bounds
+
     def __hash__(self):
         return hash((self.name, self.bounds, self.default_value))
 
@@ -263,10 +270,14 @@ class Ordinal(_Discrete):
 
 
 class Integer(_Discrete):
-    """Integer variable, whose values are contiguous"""
+    """Integer variable"""
 
     def __init__(
-        self, bounds, name: str = "i", default_value: int = None, step: Optional[int, float] = 1
+        self,
+        bounds: Tuple[int],
+        name: str = "i",
+        default_value: int = None,
+        step: Optional[int, float] = 1,
     ):
         super().__init__(bounds, name, default_value)
         assert len(self.bounds) == 2
@@ -275,6 +286,9 @@ class Integer(_Discrete):
         self.step = step
         self._map_func = lambda i: self.bounds[0] + i * self.step
         self._size = int(np.floor((self.bounds[1] - self.bounds[0]) / self.step) + 1)
+
+    def __contains__(self, x: int) -> bool:
+        return x >= self.bounds[0] and x <= self.bounds[1]
 
     def __hash__(self):
         return hash((self.name, self.bounds, self.default_value, self.step))
@@ -484,37 +498,61 @@ class SearchSpace(object):
             else:
                 self.levels = None
 
-    def __getitem__(self, index) -> SearchSpace:
-        if isinstance(index, slice):
+    def __getitem__(self, index) -> Union[SearchSpace, Variable]:
+        if isinstance(index, (int, slice)):
             data = self.data[index]
-            if not isinstance(data, list):
-                data = [data]
-        elif isinstance(index, (list, np.ndarray)):
-            data = [self.data[index[0]]] if len(index) == 1 else [self.data[i] for i in index]
+        elif hasattr(index, "__iter__") and not isinstance(index, str):
+            if isinstance(index[0], str):
+                index = [np.nonzero(np.array(self.var_name) == i)[0][0] for i in index]
+            data = [self.data[i] for i in index]
+        elif isinstance(index, str):
+            index = np.nonzero(np.array(self.var_name) == index)[0][0]
+            data = self.data[index]
         else:
-            data = [self.data[index]]
-        return SearchSpace(data, self.random_seed)
+            raise Exception(f"index type {type(index)} is not supported")
+
+        if isinstance(data, Variable):
+            out = data
+        elif isinstance(data, list):
+            out = SearchSpace(data, self.random_seed)
+        return out
 
     def __setitem__(self, index, value):
         if isinstance(index, (int, slice)):
             self.data[index] = value
-        elif isinstance(index, list):
+        elif isinstance(index, str):
+            index = np.nonzero(np.array(self.var_name) == index)[0][0]
+            self.data[index] = value
+        elif hasattr(index, "__iter__") and not isinstance(index, str):
+            if not hasattr(value, "__iter__") or isinstance(value, str):
+                value = [value] * len(index)
             for i, v in zip(index, value):
-                self.data[i] = v
+                if isinstance(i, str):
+                    k = np.nonzero(np.array(self.var_name) == i)[0][0]
+                    self.data[k] = v
+                elif isinstance(i, int):
+                    self.data[i] = v
+                else:
+                    raise Exception(f"index type {type(i)} is not supported")
         self._set_data(self.data)
 
-    def __contains__(self, item: Union[str, Variable, SearchSpace]) -> bool:
+    def __contains__(self, item: Union[str, Variable, SearchSpace, list, dict]) -> bool:
+        """check if a name, a variable, a space, or a sample point in the the search space"""
         if isinstance(item, str):
             return item in self.var_name
         if isinstance(item, Variable):
             return item in self.data
         if isinstance(item, SearchSpace):
             return all(map(lambda x: x in self.data, item.data))
+        if isinstance(item, list):
+            return all([v in self.__getitem__(i) for i, v in enumerate(item)])
+        if isinstance(item, dict):
+            return all([v in self.__getitem__(i) for i, v in item.items()])
 
     def __len__(self):
         return self.dim
 
-    def __iter__(self):
+    def __iter__(self) -> Variable:
         i = 0
         while i < self.dim:
             yield self.__getitem__(i)

@@ -3,7 +3,14 @@ import re
 
 import numpy as np
 import pytest
-from bayes_optim.search_space import DiscreteSpace, IntegerSpace, Real, RealSpace, SearchSpace
+from bayes_optim.search_space import (
+    DiscreteSpace,
+    IntegerSpace,
+    Real,
+    RealSpace,
+    SearchSpace,
+    Variable,
+)
 from bayes_optim.solution import Solution
 
 
@@ -56,6 +63,20 @@ def test_contains():
     assert RealSpace([1e-10, 1e-1], "x", 0.01, scale="log") in cs
 
 
+def test_in():
+    cs = (
+        IntegerSpace([-10, 10], "y")
+        + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
+        + RealSpace([1e-10, 1e-1], "x", 0.01, scale="log")
+    )
+    x = Solution(cs.sample(1), var_name=cs.var_name)
+    assert RealSpace([1e-10, 1e-1], "x", 0.01, scale="log") in cs
+    assert "x" in cs
+    assert "xx" not in cs
+    assert x.tolist()[0] in cs
+    assert x.to_dict()[0] in cs
+
+
 def test_sample_with_constraints():
     cs = RealSpace([1e-10, 1e-1], "x", 0.01, scale="log")
     # NOTE: `h` and `g` are ineffective now
@@ -70,7 +91,7 @@ def test_SearchSpace_remove():
     )
 
     cs.remove(0)
-    assert isinstance(cs[0], IntegerSpace)
+    assert isinstance(cs[[0]], IntegerSpace)
 
     cs.remove("z")
     assert isinstance(cs, IntegerSpace)
@@ -137,9 +158,9 @@ def test_SearchSpace_slice():
         + IntegerSpace([-10, 10], "y")
         + DiscreteSpace(["A", "B", "C"], "z")
     )
-    assert isinstance(cs[0], RealSpace)
-    assert isinstance(cs[1], IntegerSpace)
-    assert isinstance(cs[2], DiscreteSpace)
+    assert isinstance(cs[[0]], RealSpace)
+    assert isinstance(cs[[1]], IntegerSpace)
+    assert isinstance(cs[[2]], DiscreteSpace)
 
 
 def test_sample():
@@ -213,8 +234,8 @@ def test_iter():
     )
     cs *= 2
 
-    for _cs in iter(cs):
-        assert _cs.dim == 1
+    for var in iter(cs):
+        assert isinstance(var, Variable)
 
 
 def test_from_dict():
@@ -252,5 +273,5 @@ def test_update():
     cs2 = RealSpace([-100, 100], "x1") + IntegerSpace([0, 10], "y")
     cs.update(cs2)
     assert "y" in cs.var_name
-    assert cs[1].data[0].bounds[0] == -100
-    assert cs[1].data[0].bounds[1] == 100
+    assert cs[[1]].data[0].bounds[0] == -100
+    assert cs[[1]].data[0].bounds[1] == 100
