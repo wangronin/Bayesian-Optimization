@@ -295,7 +295,7 @@ class BaseBO(ABC):
             self._to_pheno = lambda x: x.tolist()
             self._to_geno = lambda x, index=None: Solution(x, var_name=self.var_names, index=index)
         elif self._eval_type == "dict":
-            self._to_pheno = lambda x: x.to_dict(space=self._search_space)
+            self._to_pheno = lambda x: x.to_dict()
             self._to_geno = lambda x, index=None: Solution.from_dict(x, index=index)
 
     def _set_internal_optimization(self, **kwargs):
@@ -354,10 +354,10 @@ class BaseBO(ABC):
         """Test if objecctive value f1 is better than f2"""
         return f1 < f2 if self.minimize else f2 > f1
 
-    def run(self):
+    def run(self) -> Tuple[List[Solution], dict]:
         while not self.check_stop():
             self.step()
-        return self.xopt, self.fopt, self.stop_dict
+        return self._to_pheno(self.xopt), self.xopt.fitness, self.stop_dict
 
     def step(self):
         X = self.ask()
@@ -400,9 +400,10 @@ class BaseBO(ABC):
         X = Solution(X, index=index, var_name=self.var_names)
         self._logger.info(msg)
         for i, _ in enumerate(X):
-            self._logger.info(f"#{i + 1} - {self._to_pheno(X[i])[0]}")
+            self._logger.info(f"#{i + 1} - {self._to_pheno(X[i])}")
         return self._to_pheno(X)
 
+    # TODO: implement method to handle known, expensive constraints `h_vals` and `g_vals`
     def tell(
         self,
         X: List[Union[list, dict]],
@@ -421,7 +422,6 @@ class BaseBO(ABC):
         func_vals : List/np.ndarray of reals
             The corresponding function values
         """
-
         X = self._to_geno(X, index)
         self._logger.info(f"iteration {self.iter_count}, observing {len(X)} points:")
         for i, _ in enumerate(X):
@@ -431,7 +431,7 @@ class BaseBO(ABC):
                 self.eval_count += 1
 
             self._logger.info(
-                f"#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])[0]}"
+                f"#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])}"
             )
 
         X = self.post_eval_check(X)
@@ -442,29 +442,27 @@ class BaseBO(ABC):
             X.to_csv(self.data_file, header=False, append=True)
 
         self.fopt = self._get_best(self.data.fitness)
-        self._xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]
-        self.xopt = self._to_pheno(self._xopt)  # the pheno type
-
-        # FIXME: this is an ad-hoc solution
-        if self._eval_type == "dict":
-            self.xopt = self.xopt[0]
+        self.xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]
 
         self._logger.info(f"fopt: {self.fopt}")
         # TODO: to handle the constraints properly
         if self.h is not None or self.g is not None:
             _penalty = dynamic_penalty(
-                self._xopt.tolist(), 1, self._h, self._g, minimize=self.minimize
+                self.xopt.tolist(), 1, self._h, self._g, minimize=self.minimize
             )
             self._logger.info(f"penalty: {_penalty[0]:.4e}")
-        self._logger.info(f"xopt: {self.xopt}\n")
+        self._logger.info(f"xopt: {self._to_pheno(self.xopt)}\n")
 
         if not self.model.is_fitted:
             self._fBest_DoE = copy(self.fopt)  # the best point in the DoE
-            self._xBest_DoE = copy(self.xopt)
+            self._xBest_DoE = copy(self._to_pheno(self.xopt))
 
         if not warm_start:
             self.iter_count += 1
             self.hist_f.append(self.fopt)
+
+    def recommend(self) -> List[Solution]:
+        return [self.xopt]
 
     def create_DoE(self, n_point: int) -> List:
         DoE = []

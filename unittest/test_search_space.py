@@ -69,12 +69,12 @@ def test_in():
         + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
         + RealSpace([1e-10, 1e-1], "x", 0.01, scale="log")
     )
-    x = Solution(cs.sample(1), var_name=cs.var_name)
+    x = Solution(cs.sample(1)[0], var_name=cs.var_name)
     assert RealSpace([1e-10, 1e-1], "x", 0.01, scale="log") in cs
     assert "x" in cs
     assert "xx" not in cs
-    assert x.tolist()[0] in cs
-    assert x.to_dict()[0] in cs
+    assert x.tolist() in cs
+    assert x.to_dict() in cs
 
 
 def test_sample_with_constraints():
