@@ -29,12 +29,12 @@ __authors__ = ["Hao Wang"]
 def wrap_func(func, kind, var_names):
     @functools.wraps(func)
     def wrapper(X):
-        X = Solution(np.atleast_2d(X), var_name=var_names)
+        X = Solution(np.array(X, dtype="object")[np.newaxis, :], var_name=var_names)
         if kind == "list":
             X = X.tolist()
         elif kind == "dict":
             X = X.to_dict()
-        return [func(_) for _ in X]
+        return np.array([func(_) for _ in X]).ravel()
 
     return wrapper
 
