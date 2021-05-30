@@ -270,6 +270,8 @@ class Solution(np.ndarray):
         return res
 
     def unique(self) -> Solution:
+        if len(self.shape) == 1:
+            return self
         _, index = np.unique(self.tolist(), axis=0, return_index=True)
         return self[np.sort(index)]
 
@@ -301,7 +303,7 @@ class Solution(np.ndarray):
                     {self.var_name[k]: obj[i, k] for k in range(self.dim)}
                     for i, _index in enumerate(self.index)
                 ]
-                if len(res) == 1:
+                if len(self.shape) == 1:
                     res = res[0]
         elif orient == "var":
             if with_index:

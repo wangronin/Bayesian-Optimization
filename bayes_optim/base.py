@@ -29,13 +29,12 @@ __authors__ = ["Hao Wang"]
 def wrap_func(func, kind, var_names):
     @functools.wraps(func)
     def wrapper(X):
-        if not isinstance(X, Solution):
-            X = Solution(X, var_name=var_names)
+        X = Solution(np.atleast_2d(X), var_name=var_names)
         if kind == "list":
-            return func(X.tolist())
-        if kind == "dict":
+            X = X.tolist()
+        elif kind == "dict":
             X = X.to_dict()
-            return [func(_) for _ in X]
+        return [func(_) for _ in X]
 
     return wrapper
 
@@ -350,7 +349,7 @@ class BaseBO(ABC):
 
         assert hasattr(AcquisitionFunction, self._acquisition_fun)
 
-    def _compare(self, f1, f2):
+    def _compare(self, f1: float, f2: float) -> bool:
         """Test if objecctive value f1 is better than f2"""
         return f1 < f2 if self.minimize else f2 > f1
 
@@ -368,7 +367,7 @@ class BaseBO(ABC):
 
         self.tell(X, func_vals)
 
-    def ask(self, n_point: int = None):
+    def ask(self, n_point: int = None) -> Union[List[list], List[dict]]:
         if self.model.is_fitted:
             msg = f"Ask {n_point} points:"
             n_point = self.n_point if n_point is None else n_point
@@ -475,7 +474,7 @@ class BaseBO(ABC):
             DoE = self.pre_eval_check(DoE)
         return DoE
 
-    def evaluate(self, X):
+    def evaluate(self, X) -> List[float]:
         """Evaluate the candidate points and update evaluation info in the dataframe"""
         # Parallelization is handled by the objective function itself
         if self.parallel_obj_fun is not None:
@@ -488,7 +487,7 @@ class BaseBO(ABC):
         return func_vals
 
     @abstractmethod
-    def pre_eval_check(self, X: Solution):
+    def pre_eval_check(self, X: Solution) -> Solution:
         """This function is meant for checking validaty of the solutions prior to the evaluation
 
         Parameters
@@ -499,7 +498,7 @@ class BaseBO(ABC):
         """
         raise NotImplementedError
 
-    def post_eval_check(self, X):
+    def post_eval_check(self, X: Solution) -> Solution:
         _ = np.isnan(X.fitness) | np.isinf(X.fitness)
         if np.any(_):
             self._logger.warn(
@@ -534,7 +533,7 @@ class BaseBO(ABC):
         MAPE = mean_absolute_percentage_error(fitness_, fitness_hat)
         self._logger.info(f"model r2: {r2}, MAPE: {MAPE}")
 
-    def arg_max_acquisition(self, n_point=None, return_value=False):
+    def arg_max_acquisition(self, n_point: int = None, return_value: bool = False) -> List[list]:
         """Global Optimization of the acqusition function / Infill criterion
 
         Returns
@@ -564,7 +563,9 @@ class BaseBO(ABC):
 
         return (candidates, values) if return_value else candidates
 
-    def _create_acquisition(self, fun=None, par={}, return_dx=False):
+    def _create_acquisition(
+        self, fun: str = None, par: dict = {}, return_dx: bool = False
+    ) -> callable:
         fun = fun if fun is not None else self._acquisition_fun
         par = copy(self._acquisition_par) if not par else par
         par.update({"model": self.model, "minimize": self.minimize})
@@ -572,7 +573,7 @@ class BaseBO(ABC):
         criterion = getattr(AcquisitionFunction, fun)(**par)
         return functools.partial(criterion, return_dx=return_dx)
 
-    def _batch_arg_max_acquisition(self, n_point, return_dx):
+    def _batch_arg_max_acquisition(self, n_point: int, return_dx: int):
         raise NotImplementedError
 
     def check_stop(self):
