@@ -3,14 +3,8 @@ import re
 
 import numpy as np
 import pytest
-from bayes_optim.search_space import (
-    DiscreteSpace,
-    IntegerSpace,
-    Real,
-    RealSpace,
-    SearchSpace,
-    Variable,
-)
+from bayes_optim.search_space import (DiscreteSpace, IntegerSpace, Real,
+                                      RealSpace, SearchSpace, Variable)
 from bayes_optim.solution import Solution
 
 
@@ -78,9 +72,10 @@ def test_in():
 
 
 def test_sample_with_constraints():
+    g = lambda x: x - 0.1
     cs = RealSpace([1e-10, 1e-1], "x", 0.01, scale="log")
-    # NOTE: `h` and `g` are ineffective now
-    cs.sample(10, method="LHS", h=lambda x: x == 0.05, g=lambda x: x > 0.05)
+    X = cs.sample(10, method="LHS", g=g)
+    assert all(list(map(lambda x: g(x) <= 0, X)))
 
 
 def test_SearchSpace_remove():

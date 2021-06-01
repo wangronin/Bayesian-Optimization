@@ -842,8 +842,6 @@ class SearchSpace(object):
             return cls.from_dict(json.load(f))
 
 
-# TODO: those classes might not be necessary.. we could move the `sample` method to
-# the corresponding variables
 class RealSpace(SearchSpace):
     """Space of real values"""
 
@@ -865,18 +863,31 @@ class RealSpace(SearchSpace):
     def sample(
         self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
     ) -> np.ndarray:
-        # TODO: to handle `h` and `g`
         bounds = np.array([var._bounds_transformed for var in self.data])
         lb, ub = bounds[:, 0], bounds[:, 1]
+        s, N_ = [], N
+        # NOTE: simple Monte Carlo sampling, which will take an exponential running time when
+        # the feasible space diminishes exponentially
+        # TODO: implement more efficient sampling method
+        while True:
+            if method == "uniform":  # uniform random samples
+                X = (ub - lb) * rand(N_, self.dim) + lb
+            elif method == "LHS":  # Latin hypercube sampling
+                if N_ == 1:
+                    X = (ub - lb) * rand(N_, self.dim) + lb
+                else:
+                    X = (ub - lb) * lhs(self.dim, samples=N_, criterion="maximin") + lb
 
-        if method == "uniform":  # uniform random samples
-            X = (ub - lb) * rand(N, self.dim) + lb
-        elif method == "LHS":  # Latin hypercube sampling
-            if N == 1:
-                X = (ub - lb) * rand(N, self.dim) + lb
-            else:
-                X = (ub - lb) * lhs(self.dim, samples=N, criterion="maximin") + lb
-        return self.round(self.to_linear_scale(X))
+            if h:
+                X = np.atleast_2d(list(filter(lambda x: h(x) == 0, X)))
+            if g and len(X) > 0:
+                X = np.atleast_2d(list(filter(lambda x: g(x) <= 0, X)))
+
+            s.append(X)
+            N_ = N - len(X)
+            if N_ == 0:
+                break
+        return self.round(self.to_linear_scale(np.concatenate(s)))
 
     def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
         X = np.atleast_2d(X).astype(float)

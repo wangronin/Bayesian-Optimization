@@ -373,9 +373,7 @@ class BaseBO(ABC):
             n_point = self.n_point if n_point is None else n_point
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
-            # validate the new candidate solutions
-            X = self.pre_eval_check(X)
-
+            X = self.pre_eval_check(X)  # validate the new candidate solutions
             if len(X) < n_point:
                 self._logger.warning(
                     f"iteration {self.iter_count}: duplicated solution found "
@@ -402,7 +400,6 @@ class BaseBO(ABC):
             self._logger.info(f"#{i + 1} - {self._to_pheno(X[i])}")
         return self._to_pheno(X)
 
-    # TODO: implement method to handle known, expensive constraints `h_vals` and `g_vals`
     def tell(
         self,
         X: List[Union[list, dict]],
@@ -421,6 +418,7 @@ class BaseBO(ABC):
         func_vals : List/np.ndarray of reals
             The corresponding function values
         """
+        # TODO: implement method to handle known, expensive constraints `h_vals` and `g_vals`
         X = self._to_geno(X, index)
         self._logger.info(f"iteration {self.iter_count}, observing {len(X)} points:")
         for i, _ in enumerate(X):
@@ -467,9 +465,7 @@ class BaseBO(ABC):
         DoE = []
         while len(DoE) < n_point:
             DoE += self._search_space.sample(
-                n_point - len(DoE),
-                method="LHS"
-                # h=self._h, g=self._g
+                n_point - len(DoE), method="LHS", h=self._h, g=self._g
             ).tolist()
             DoE = self.pre_eval_check(DoE)
         return DoE
@@ -565,7 +561,7 @@ class BaseBO(ABC):
 
     def _create_acquisition(
         self, fun: str = None, par: dict = {}, return_dx: bool = False
-    ) -> callable:
+    ) -> Callable:
         fun = fun if fun is not None else self._acquisition_fun
         par = copy(self._acquisition_par) if not par else par
         par.update({"model": self.model, "minimize": self.minimize})
