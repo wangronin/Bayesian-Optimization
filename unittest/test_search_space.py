@@ -3,8 +3,14 @@ import re
 
 import numpy as np
 import pytest
-from bayes_optim.search_space import (DiscreteSpace, IntegerSpace, Real,
-                                      RealSpace, SearchSpace, Variable)
+from bayes_optim.search_space import (
+    DiscreteSpace,
+    IntegerSpace,
+    Real,
+    RealSpace,
+    SearchSpace,
+    Variable,
+)
 from bayes_optim.solution import Solution
 
 

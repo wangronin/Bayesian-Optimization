@@ -242,10 +242,7 @@ class _Discrete(Variable):
     def __hash__(self):
         return hash((self.name, self.bounds, self.default_value))
 
-    def sample(
-        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
-    ) -> List:
-        # TODO: to handle `h` and `g`...
+    def sample(self, N: int = 1, method: str = "uniform") -> List:
         # TODO: `method` is not take into account for now..
         return list(map(self._map_func, randint(0, self._size, N)))
 
@@ -311,7 +308,7 @@ class Bool(_Discrete):
         self._size = 2
 
 
-class SearchSpace(object):
+class SearchSpace:
     """Search Space Base Class
 
     Attributes
@@ -349,13 +346,14 @@ class SearchSpace(object):
     _supported_types = (Real, Integer, Ordinal, Discrete, Bool)
 
     def __init__(self, data: List[Variable], random_seed: int = None):
-        """
+        """Search Space
+
         Parameters
         ----------
-        data : List
-            It should be a list of instances of class `Variable`
+        data : List[Variable]
+            a list of variables consistuting the search space
         random_seed : int, optional
-            The random seed controlling the `sample` function, by default None
+            random seed controlling the `sample` function, by default None
         """
         # declarations to fix the pylint warnings..
         self._var_name: List[str] = []
@@ -700,11 +698,33 @@ class SearchSpace(object):
         g : Callable, optional
             inequality constraints, by default None
 
+        NOTES
+        -----
+        At this moment, the constraints are handled using the simple Monte Carlo sampling
+
         Returns
         -------
         np.ndarray
             the sample points in shape `(N, self.dim)`
         """
+        X, n = [], N
+        # NOTE: simple Monte Carlo sampling, which will take an exponential running time when
+        # the feasible space diminishes exponentially
+        # TODO: implement more efficient sampling method
+        while True:
+            S = self._sample(N, method)
+            if h:
+                S = np.atleast_2d(list(filter(lambda x: h(x) == 0, S)))
+            if g and len(X) > 0:
+                S = np.atleast_2d(list(filter(lambda x: g(x) <= 0, S)))
+
+            X.append(S)
+            n = N - len(S)
+            if n == 0:
+                break
+        return np.concatenate(X)
+
+    def _sample(self, N: int = 1, method: str = "uniform") -> np.ndarray:
         # in case this space is empty after slicing
         if self.dim == 0:
             return np.empty(0)
@@ -715,7 +735,7 @@ class SearchSpace(object):
             attr_id = var_type.__name__.lower() + "_id"
             index = self.__dict__[attr_id]
             if len(index) > 0:  # if such a type of variables exist.
-                X[:, index] = self.__getitem__(index).sample(N, method, h=h, g=g)
+                X[:, index] = getattr(self[index], "_sample")(N, method)
         return X
 
     def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
@@ -860,34 +880,17 @@ class RealSpace(SearchSpace):
         data = [Real(**_) for _ in out]
         super().__init__(data, **kwargs)
 
-    def sample(
-        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
-    ) -> np.ndarray:
+    def _sample(self, N: int = 1, method: str = "uniform") -> np.ndarray:
         bounds = np.array([var._bounds_transformed for var in self.data])
         lb, ub = bounds[:, 0], bounds[:, 1]
-        s, N_ = [], N
-        # NOTE: simple Monte Carlo sampling, which will take an exponential running time when
-        # the feasible space diminishes exponentially
-        # TODO: implement more efficient sampling method
-        while True:
-            if method == "uniform":  # uniform random samples
-                X = (ub - lb) * rand(N_, self.dim) + lb
-            elif method == "LHS":  # Latin hypercube sampling
-                if N_ == 1:
-                    X = (ub - lb) * rand(N_, self.dim) + lb
-                else:
-                    X = (ub - lb) * lhs(self.dim, samples=N_, criterion="maximin") + lb
-
-            if h:
-                X = np.atleast_2d(list(filter(lambda x: h(x) == 0, X)))
-            if g and len(X) > 0:
-                X = np.atleast_2d(list(filter(lambda x: g(x) <= 0, X)))
-
-            s.append(X)
-            N_ = N - len(X)
-            if N_ == 0:
-                break
-        return self.round(self.to_linear_scale(np.concatenate(s)))
+        if method == "uniform":  # uniform random samples
+            X = (ub - lb) * rand(N, self.dim) + lb
+        elif method == "LHS":  # Latin hypercube sampling
+            if N == 1:
+                X = (ub - lb) * rand(N, self.dim) + lb
+            else:
+                X = (ub - lb) * lhs(self.dim, samples=N, criterion="maximin") + lb
+        return self.round(self.to_linear_scale(X))
 
     def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
         X = np.atleast_2d(X).astype(float)
@@ -915,9 +918,7 @@ class _DiscreteSpace(SearchSpace):
         """do nothing since this method is not valid for this class"""
         return X
 
-    def sample(
-        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
-    ) -> np.ndarray:
+    def _sample(self, N: int = 1, method: str = "uniform") -> np.ndarray:
         if isinstance(self, IntegerSpace):
             dtype = int
         elif isinstance(self, BoolSpace):
@@ -927,7 +928,7 @@ class _DiscreteSpace(SearchSpace):
 
         X = np.empty((N, self.dim), dtype=dtype)
         for i in range(self.dim):
-            X[:, i] = self.data[i].sample(N, method=method, h=h, g=g)
+            X[:, i] = self.data[i].sample(N, method=method)
         return X
 
 
