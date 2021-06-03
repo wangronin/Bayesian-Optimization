@@ -13,11 +13,9 @@ from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
 from . import acquisition_fun as AcquisitionFunction
 from .acquisition_optim import argmax_restart
-from .acquisition_optim.option import (
-    default_AQ_max_FEs,
-    default_AQ_n_restart,
-    default_AQ_wait_iter,
-)
+from .acquisition_optim.option import (default_AQ_max_FEs,
+                                       default_AQ_n_restart,
+                                       default_AQ_wait_iter)
 from .misc import LoggerFormatter
 from .search_space import SearchSpace
 from .solution import Solution
@@ -369,8 +367,8 @@ class BaseBO(ABC):
 
     def ask(self, n_point: int = None) -> Union[List[list], List[dict]]:
         if self.model.is_fitted:
-            msg = f"Ask {n_point} points:"
             n_point = self.n_point if n_point is None else n_point
+            msg = f"Ask {n_point} points:"
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
             X = self.pre_eval_check(X)  # validate the new candidate solutions
