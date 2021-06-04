@@ -3,7 +3,7 @@ displayName: 'Build and Test '
 triggers:                                # 流水线触发器配置
   push:                                  # 设置 master 分支 在产生代码 push 时精确触发（PRECISE）构建
     - matchType: PRECISE
-      branch: master
+      branch: main
 commitMessage: ''                        # 通过匹配当前提交的 CommitMessage 决定是否执行流水线
 stages:                                  # 构建阶段配置
   - stage:                               # 定义一个 ID 标识为 python-build-stage ,名为 “Python Stage” 的阶段
