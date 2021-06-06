@@ -720,7 +720,7 @@ class SearchSpace:
 
             if len(S) != 0:
                 X.append(S)
-            n = N - len(S)
+            n -= len(S)
             max_trial -= 1
             if n == 0 or max_trial == 0:
                 break
