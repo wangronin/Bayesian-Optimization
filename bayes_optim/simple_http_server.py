@@ -218,7 +218,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
         opt.tell(data["X"], data["y"])
         opt.save(dump_file)
 
-        rsp_data["xopt"] = opt.xopt
+        rsp_data["xopt"] = opt.xopt.to_dict()
         rsp_data["fopt"] = opt.fopt
 
     def _finalize(self, data):
