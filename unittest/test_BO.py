@@ -137,7 +137,6 @@ def test_flat_continuous():
         eval_budget=100 * dim,
     )
 
-    # model = RandomForest(levels=space.levels)
     opt = BO(
         search_space=space,
         obj_fun=fitness,
@@ -148,6 +147,36 @@ def test_flat_continuous():
         n_point=1,
     )
     print(opt.run())
+
+
+def test_infeasible_constraints():
+    dim = 5
+    lb, ub = -5, 5
+
+    def fitness(_):
+        return 1
+
+    space = RealSpace([lb, ub]) * dim
+    model = RandomForest(levels=space.levels)
+    opt = BO(
+        search_space=space,
+        obj_fun=fitness,
+        model=model,
+        DoE_size=5,
+        ineq_fun=lambda x: x[0] + 5.1,
+        max_FEs=10,
+        verbose=True,
+        n_point=1,
+    )
+    X = opt.ask()
+    assert len(X) == 0
+
+    try:
+        opt.run()
+    except Exception as e:
+        assert str(e) == (
+            "Ask yields empty solutions. Please check the search space/constraints are feasible"
+        )
 
 
 @pytest.mark.parametrize("eval_type", ["list", "dict"])  # type: ignore

@@ -1,7 +1,35 @@
+import functools
+import time
 from typing import Callable, List
 
 import numpy as np
 
+from .solution import Solution
+
+
+def func_with_list_arg(func, arg_type, var_names):
+    @functools.wraps(func)
+    def wrapper(X):
+        X = Solution(np.array(X, dtype="object")[np.newaxis, :], var_name=var_names)
+        if arg_type == "list":
+            X = X.tolist()
+        elif arg_type == "dict":
+            X = X.to_dict()
+        return np.array([func(_) for _ in X]).ravel()
+
+    return wrapper
+
+def timeit(func):
+    @functools.wraps(func)
+    def __func__(ref, *arg, **kwargv):
+        t0 = time.time()
+        out = func(ref, *arg, **kwargv)
+        if hasattr(ref, 'logger'):
+            ref.logger.info(f"{func.__name__} takes {time.time() - t0:.4f}s")
+        else:
+            print(f"{func.__name__} takes {time.time() - t0:.4f}s")
+        return out
+    return __func__
 
 def arg_to_int(arg):
     if isinstance(arg, str):

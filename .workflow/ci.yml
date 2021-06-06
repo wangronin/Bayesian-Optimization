@@ -18,5 +18,4 @@ stages:                                  # 构建阶段配置
             goals: |
                 python -m pip install --upgrade pip
                 pip install pytest
-                if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-                pytest -v unittest
+                pip install -r requirements.txt

@@ -21,22 +21,9 @@ from .acquisition_optim.option import (
 from .misc import LoggerFormatter
 from .search_space import SearchSpace
 from .solution import Solution
-from .utils import arg_to_int, dynamic_penalty
+from .utils import arg_to_int, dynamic_penalty, func_with_list_arg, timeit
 
 __authors__ = ["Hao Wang"]
-
-
-def wrap_func(func, kind, var_names):
-    @functools.wraps(func)
-    def wrapper(X):
-        X = Solution(np.array(X, dtype="object")[np.newaxis, :], var_name=var_names)
-        if kind == "list":
-            X = X.tolist()
-        elif kind == "dict":
-            X = X.to_dict()
-        return np.array([func(_) for _ in X]).ravel()
-
-    return wrapper
 
 
 # TODO: inherit from `BaseOptimizer`
@@ -329,11 +316,12 @@ class BaseBO(ABC):
             default_AQ_wait_iter if "wait_iter" not in kwargs else arg_to_int(kwargs["wait_iter"])
         )
 
+        # NOTE: `_h` and `_g` are wrappers of `h` and `g`, which always take lists as input
         self._h, self._g = self.h, self.g
         if self._h is not None:
-            self._h = wrap_func(self._h, self._eval_type, self.search_space.var_name)
+            self._h = func_with_list_arg(self._h, self._eval_type, self.search_space.var_name)
         if self._g is not None:
-            self._g = wrap_func(self._g, self._eval_type, self.search_space.var_name)
+            self._g = func_with_list_arg(self._g, self._eval_type, self.search_space.var_name)
 
         self._argmax_restart = functools.partial(
             argmax_restart,
@@ -363,18 +351,22 @@ class BaseBO(ABC):
         return self._to_pheno(self.xopt), self.xopt.fitness, self.stop_dict
 
     def step(self):
+        self.logger.info(f"iteration {self.iter_count} starts...")
         X = self.ask()
-
-        t0 = time.time()
+        if len(X) == 0:
+            # TODO: customize exception classes
+            raise Exception(
+                "Ask yields empty solutions. "
+                "Please check the search space/constraints are feasible"
+            )
         func_vals = self.evaluate(X)
-        self._logger.info("evaluation takes {:.4f}s".format(time.time() - t0))
-
         self.tell(X, func_vals)
 
+    @timeit
     def ask(self, n_point: int = None) -> Union[List[list], List[dict]]:
         if self.model.is_fitted:
             n_point = self.n_point if n_point is None else n_point
-            msg = f"Ask {n_point} points:"
+            msg = f"asking {n_point} points:"
             X = self.arg_max_acquisition(n_point=n_point)
             X = self._search_space.round(X)  # round to precision if specified
             X = self.pre_eval_check(X)  # validate the new candidate solutions
@@ -388,8 +380,8 @@ class BaseBO(ABC):
                 s = self._search_space.sample(N=N, method=method, h=self._h, g=self._g).tolist()
                 X = self._search_space.round(X + s)
         else:  # take the initial DoE
-            msg = f"Ask {n_point} points (using DoE):"
             n_point = self._DoE_size if n_point is None else n_point
+            msg = f"asking {n_point} points (using DoE):"
             X = self.create_DoE(n_point)
 
         if len(X) == 0:  # NOTE: this would happen if the constraints are too restrict
@@ -406,6 +398,7 @@ class BaseBO(ABC):
 
         return self._to_pheno(X)
 
+    @timeit
     def tell(
         self,
         X: List[Union[list, dict]],
@@ -426,7 +419,7 @@ class BaseBO(ABC):
         """
         # TODO: implement method to handle known, expensive constraints `h_vals` and `g_vals`
         X = self._to_geno(X, index)
-        self._logger.info(f"iteration {self.iter_count}, observing {len(X)} points:")
+        self._logger.info(f"observing {len(X)} points:")
         for i, _ in enumerate(X):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
@@ -464,6 +457,19 @@ class BaseBO(ABC):
             self.iter_count += 1
             self.hist_f.append(self.fopt)
 
+    @timeit
+    def evaluate(self, X) -> List[float]:
+        """Evaluate the candidate points and update evaluation info in the dataframe"""
+        # Parallelization is handled by the objective function itself
+        if self.parallel_obj_fun is not None:
+            func_vals = self.parallel_obj_fun(X)
+        else:
+            if self.n_job > 1:  # or by ourselves..
+                func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for x in X)
+            else:  # or sequential execution
+                func_vals = [self.obj_fun(x) for x in X]
+        return func_vals
+
     def recommend(self) -> List[Solution]:
         if self.xopt is None:
             return []
@@ -487,18 +493,6 @@ class BaseBO(ABC):
             DoE = self._search_space.round(DoE)
             DoE = self.pre_eval_check(DoE)
         return DoE
-
-    def evaluate(self, X) -> List[float]:
-        """Evaluate the candidate points and update evaluation info in the dataframe"""
-        # Parallelization is handled by the objective function itself
-        if self.parallel_obj_fun is not None:
-            func_vals = self.parallel_obj_fun(X)
-        else:
-            if self.n_job > 1:  # or by ourselves..
-                func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for x in X)
-            else:  # or sequential execution
-                func_vals = [self.obj_fun(x) for x in X]
-        return func_vals
 
     @abstractmethod
     def pre_eval_check(self, X: Solution) -> Solution:

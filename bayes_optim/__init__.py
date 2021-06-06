@@ -70,7 +70,7 @@ def fmin(
     verbose: Optional[bool] = False,
     callback: Optional[Callable] = None,
     seed: Optional[int] = None,
-    **kwargs
+    **kwargs,
 ) -> Tuple[Vector, float, int, int, List[np.ndarray]]:
     """Minimize a function using the Bayesian Optimization algorithm, which only uses
     function values, not derivatives or second derivatives. This function maintains an

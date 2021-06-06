@@ -12,13 +12,14 @@ from abc import abstractmethod, ABC
 from numpy import newaxis, zeros, tile, eye, r_, c_, ones, array, atleast_2d
 from sklearn.ensemble import RandomForestRegressor
 
+
 class Trend(ABC):
     pass
 
+
 class BasisExpansionTrend(Trend):
     def __init__(self, n_feature, n_dim=None, beta=None):
-        """n_dim : the dimension of the function space of the trend function
-        """
+        """n_dim : the dimension of the function space of the trend function"""
         self.n_feature = int(n_feature)
         self.n_dim = int(n_dim)
         self.beta = beta
@@ -30,11 +31,11 @@ class BasisExpansionTrend(Trend):
     @beta.setter
     def beta(self, beta):
         if beta is not None:
-            if not hasattr(beta, '__iter__'):
+            if not hasattr(beta, "__iter__"):
                 beta = array([beta] * self.n_dim)
             beta = atleast_2d(beta).reshape(-1, 1)
             if len(beta) != self.n_dim:
-                raise Exception('Shapes of beta and F do not match.')
+                raise Exception("Shapes of beta and F do not match.")
         self._beta = beta
 
     def __str__(self):
@@ -42,13 +43,13 @@ class BasisExpansionTrend(Trend):
 
     def __call__(self, X):
         if self._beta is None:
-            raise Exception('beta is not set!')
+            raise Exception("beta is not set!")
         return self.F(X).dot(self._beta)
-    
+
     @abstractmethod
     def F(self, X):
         "Evaluate the function basis as X"
-    
+
     @abstractmethod
     def Jacobian(self, X):
         "Compute the Jacobian matrix of function basis"
@@ -63,7 +64,7 @@ class BasisExpansionTrend(Trend):
         if X.shape[1] != self.n_feature:
             X = X.T
         if X.shape[1] != self.n_feature:
-            raise Exception('x does not have the right size!')
+            raise Exception("x does not have the right size!")
         return X
 
     def __eq__(self, trend_b):
@@ -71,6 +72,7 @@ class BasisExpansionTrend(Trend):
 
     def __add__(self, trend_b):
         pass
+
 
 # TODO: change all Jacobian function to denominator layout
 # TODO: also to unify the naming of classes.
@@ -80,6 +82,7 @@ class constant_trend(BasisExpansionTrend):
     x --> f(x) = 1
 
     """
+
     def __init__(self, n_feature, beta=None):
         super(constant_trend, self).__init__(n_feature, 1, beta)
 
@@ -90,21 +93,23 @@ class constant_trend(BasisExpansionTrend):
 
     def Jacobian(self, x):
         self.check_input(x)
-        return zeros((1, self.n_feature)) # numerator layout
+        return zeros((1, self.n_feature))  # numerator layout
 
     def Hessian(self, x):
         self.check_input(x)
         # TODO: unified the layout for matrix calculus here!!!
-        return zeros((self.n_feature, self.n_feature, self.n_dim)) # denominator layout
+        return zeros((self.n_feature, self.n_feature, self.n_dim))  # denominator layout
+
 
 class linear_trend(BasisExpansionTrend):
     """First order polynomial (linear, p = n+1) regression model.
 
     x --> f(x) = [ 1, x_1, ..., x_n ].T
     """
+
     def __init__(self, n_feature, beta=None):
         super(linear_trend, self).__init__(n_feature, n_feature + 1, beta)
-    
+
     def F(self, X):
         X = self.check_input(X)
         n_eval = X.shape[0]
@@ -114,11 +119,12 @@ class linear_trend(BasisExpansionTrend):
         x = self.check_input(x)
         assert x.shape[0] == 1
         return r_[zeros((1, self.n_feature)), eye(self.n_feature)]
-    
+
     def Hessian(self, x):
         self.check_input(x)
         # TODO: unified the layout for matrix calculus here!!!
-        return zeros((self.n_feature, self.n_feature, self.n_dim)) # denominator layout
+        return zeros((self.n_feature, self.n_feature, self.n_dim))  # denominator layout
+
 
 class quadratic_trend(BasisExpansionTrend):
     """
@@ -127,6 +133,7 @@ class quadratic_trend(BasisExpansionTrend):
     x --> f(x) = [ 1, { x_i, i = 1,...,n }, { x_i * x_j,  (i,j) = 1,...,n } ].T
                                                           i > j
     """
+
     def __init__(self, n_feature, beta=None):
         super(quadratic_trend, self).__init__(
             n_feature, (n_feature + 1) * (n_feature + 2) / 2, beta
@@ -146,6 +153,7 @@ class quadratic_trend(BasisExpansionTrend):
     def Hessian(self, X):
         raise NotImplementedError
 
+
 class NonparametricTrend(Trend):
     def __init__(self, X, y):
         self.regr = RandomForestRegressor(20)
@@ -154,7 +162,8 @@ class NonparametricTrend(Trend):
     def __call__(self, X):
         return self.regr.predict(X)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     T = linear_trend(2, beta=(1, 2, 10))
 
     X = np.random.randn(5, 2)

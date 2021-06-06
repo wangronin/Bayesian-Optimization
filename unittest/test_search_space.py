@@ -176,16 +176,16 @@ def test_sample():
     X = cs.sample(5, method="uniform")
     cs.to_linear_scale(X)
 
+
 def test_constraints():
-    cs = (
-        RealSpace([-5, 5], "x") * 2
-    )
+    cs = RealSpace([-5, 5], "x") * 2
     g = lambda x: x[0] + x[1] - 5
     X = cs.sample(10, g=g)
     assert all([g(x) <= 0 for x in X])
 
     X = cs.sample(10, g=lambda x: x[0] + 5.1)
     assert len(X) == 0
+
 
 def test_scale():
     cs = RealSpace([1e-10, 1e-1], "x", scale="log", random_seed=42)

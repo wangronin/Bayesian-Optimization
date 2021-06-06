@@ -75,7 +75,7 @@ class RandomForest(RandomForestRegressor):
             n_estimators=n_estimators,
             max_features=max_features,
             min_samples_leaf=min_samples_leaf,
-            **kwargs
+            **kwargs,
         )
         self.is_fitted = False
 
