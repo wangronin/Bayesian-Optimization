@@ -13,9 +13,11 @@ from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
 from . import acquisition_fun as AcquisitionFunction
 from .acquisition_optim import argmax_restart
-from .acquisition_optim.option import (default_AQ_max_FEs,
-                                       default_AQ_n_restart,
-                                       default_AQ_wait_iter)
+from .acquisition_optim.option import (
+    default_AQ_max_FEs,
+    default_AQ_n_restart,
+    default_AQ_wait_iter,
+)
 from .misc import LoggerFormatter
 from .search_space import SearchSpace
 from .solution import Solution
@@ -158,6 +160,10 @@ class BaseBO(ABC):
         self._init_flatfitness_trial = 2
         self._set_aux_vars()
         self.warm_data = warm_data
+
+        # TODO: ad-hoc fix
+        self.xopt = None
+        self.fopt = None
 
     @property
     def acquisition_fun(self):
@@ -381,21 +387,23 @@ class BaseBO(ABC):
                 method = "LHS" if N > 1 else "uniform"
                 s = self._search_space.sample(N=N, method=method, h=self._h, g=self._g).tolist()
                 X = self._search_space.round(X + s)
-        else:  # initial DoE
-            msg = f"Ask {n_point} points (DoE):"
-            if not n_point:
-                n_point = self._DoE_size
-            X = self._search_space.round(self.create_DoE(n_point))
+        else:  # take the initial DoE
+            msg = f"Ask {n_point} points (using DoE):"
+            n_point = self._DoE_size if n_point is None else n_point
+            X = self.create_DoE(n_point)
+
+        if len(X) == 0:  # NOTE: this would happen if the constraints are too restrict
+            return []
 
         index = np.arange(len(X))
         if hasattr(self, "data"):
             index += len(self.data)
 
-        # make a `Solution` object
         X = Solution(X, index=index, var_name=self.var_names)
         self._logger.info(msg)
         for i, _ in enumerate(X):
             self._logger.info(f"#{i + 1} - {self._to_pheno(X[i])}")
+
         return self._to_pheno(X)
 
     def tell(
@@ -457,14 +465,26 @@ class BaseBO(ABC):
             self.hist_f.append(self.fopt)
 
     def recommend(self) -> List[Solution]:
+        if self.xopt is None:
+            return []
         return [self.xopt]
 
     def create_DoE(self, n_point: int) -> List:
-        DoE = []
-        while len(DoE) < n_point:
-            DoE += self._search_space.sample(
-                n_point - len(DoE), method="LHS", h=self._h, g=self._g
-            ).tolist()
+        """get the initial sample points using Design of Experiemnt (DoE) methods
+
+        Parameters
+        ----------
+        n_point : int
+            the number of sample points to draw
+
+        Returns
+        -------
+        List
+            a list of sample points
+        """
+        DoE = self._search_space.sample(n_point, method="LHS", h=self._h, g=self._g).tolist()
+        if len(DoE) != 0:
+            DoE = self._search_space.round(DoE)
             DoE = self.pre_eval_check(DoE)
         return DoE
 

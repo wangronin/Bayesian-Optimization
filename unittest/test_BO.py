@@ -150,11 +150,6 @@ def test_flat_continuous():
     print(opt.run())
 
 
-# @pytest.mark.parametrize("", ["list", "dict"])
-# def test_homogeneous():
-#     pass
-
-
 @pytest.mark.parametrize("eval_type", ["list", "dict"])  # type: ignore
 def test_mix_space(eval_type):
     dim_r = 2  # dimension of the real values

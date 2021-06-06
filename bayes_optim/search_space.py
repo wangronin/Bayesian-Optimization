@@ -707,22 +707,24 @@ class SearchSpace:
         np.ndarray
             the sample points in shape `(N, self.dim)`
         """
-        X, n = [], N
         # NOTE: simple Monte Carlo sampling, which will take an exponential running time when
         # the feasible space diminishes exponentially
         # TODO: implement more efficient sampling method
+        X, n, max_trial = [], N, 1e3
         while True:
             S = self._sample(N, method)
             if h:
-                S = np.atleast_2d(list(filter(lambda x: h(x) == 0, S)))
-            if g and len(X) > 0:
-                S = np.atleast_2d(list(filter(lambda x: g(x) <= 0, S)))
+                S = list(filter(lambda x: np.all(h(x) == 0), S))
+            if g and len(S) > 0:
+                S = list(filter(lambda x: np.all(g(x) <= 0), S))
 
-            X.append(S)
+            if len(S) != 0:
+                X.append(S)
             n = N - len(S)
-            if n == 0:
+            max_trial -= 1
+            if n == 0 or max_trial == 0:
                 break
-        return np.concatenate(X)
+        return np.empty(0) if len(X) == 0 else np.concatenate(X, axis=0)
 
     def _sample(self, N: int = 1, method: str = "uniform") -> np.ndarray:
         # in case this space is empty after slicing
@@ -783,7 +785,7 @@ class SearchSpace:
             json.dump(self.to_dict(), f)
 
     @classmethod
-    def from_dict(cls, param: dict, **kwargs) -> SearchSpace:
+    def from_dict(cls, param: dict) -> SearchSpace:
         """Create a search space object from input dictionary
 
         Parameters
