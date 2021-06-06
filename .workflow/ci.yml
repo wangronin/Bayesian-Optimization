@@ -10,20 +10,13 @@ stages:                                  # 构建阶段配置
       name: build
       displayName: 'Build Stage'
       failFast: false                    # 允许快速失败，即当 Stage 中有任务失败时，直接结束整个 Stage
-      steps:                             # 构建步骤配置
-        - step: pythonbuild@1            # 采用 Maven 编译环境
-          name: python-build
-          displayName: 'Python Step'
-          inputs:                        # 构建输入参数设定
-            pythonVersion: 3.7
-            goals: |
-                python -m pip install --upgrade pip
-                pip install pytest
-                if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         - step: pythonbuild@1            # 采用 Maven 编译环境
           name: python-test
           displayName: 'Python Test'
           inputs:                        # 构建输入参数设定
             pythonVersion: 3.7
             goals: |
-                pytest -v
+                python -m pip install --upgrade pip
+                pip install pytest
+                if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+                pytest -v unittest
