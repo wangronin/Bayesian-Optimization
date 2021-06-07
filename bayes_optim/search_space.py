@@ -645,8 +645,7 @@ class SearchSpace:
             _index = np.nonzero(np.array(self._var_name) == index)[0]
             if len(_index) == 0:
                 raise KeyError(f"The input key {index} not found in `var_name`!")
-            else:
-                _index = _index[0]
+            _index = _index[0]
         elif hasattr(index, "__iter__"):
             raise KeyError("Multiple indices are not allowed!")
         else:

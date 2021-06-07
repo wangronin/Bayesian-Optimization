@@ -108,6 +108,51 @@ def test_homogenous(var_type):
     print(opt.run())
 
 
+def test_fixed_var():
+    dim = 5
+
+    def fitness(x):
+        x = np.asarray(x)
+        return np.sum(x ** 2)
+
+    lb, ub = -5, 5
+    space = RealSpace([lb, ub], "x") * dim
+    mean = trend.constant_trend(dim, beta=None)
+    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
+    thetaU = 10 * (ub - lb) * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
+    model = GaussianProcess(
+        mean=mean,
+        corr="squared_exponential",
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=0,
+        noise_estim=False,
+        optimizer="BFGS",
+        wait_iter=3,
+        random_start=dim,
+        likelihood="concentrated",
+        eval_budget=100 * dim,
+    )
+
+    opt = ParallelBO(
+        search_space=space,
+        obj_fun=fitness,
+        model=model,
+        DoE_size=5,
+        max_FEs=10,
+        verbose=True,
+        n_point=3,
+    )
+    X = opt.ask(3, fixed={"x2": 3.2})
+    assert all([x[2] == 3.2 for x in X])
+    opt.tell(X, [fitness(x) for x in X])
+    X = opt.ask(3, fixed={"x2": 3.2, "x3": 0})
+    assert all([x[2] == 3.2 for x in X])
+
+
 def test_flat_continuous():
     dim = 5
     lb, ub = -1, 5
@@ -136,7 +181,6 @@ def test_flat_continuous():
         likelihood="concentrated",
         eval_budget=100 * dim,
     )
-
     opt = BO(
         search_space=space,
         obj_fun=fitness,
@@ -221,7 +265,7 @@ def test_mix_space(eval_type):
         eval_type=eval_type,
         acquisition_fun="MGFI",
         acquisition_par={"t": 2},
-        n_job=3,  # number of processes
+        n_job=1,  # number of processes
         n_point=3,  # number of the candidate solution proposed in each iteration
         verbose=True,  # turn this off, if you prefer no output
     )

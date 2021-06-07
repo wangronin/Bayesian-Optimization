@@ -3,8 +3,8 @@ import logging
 import sys
 import time
 from abc import ABC, abstractmethod
-from copy import copy
-from typing import Any, Callable, List, Optional, Tuple, Union
+from copy import copy, deepcopy
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import dill
 import numpy as np
@@ -21,13 +21,19 @@ from .acquisition_optim.option import (
 from .misc import LoggerFormatter
 from .search_space import SearchSpace
 from .solution import Solution
-from .utils import arg_to_int, dynamic_penalty, func_with_list_arg, timeit
+from .utils import (
+    arg_to_int,
+    dynamic_penalty,
+    fillin_fixed_value,
+    func_with_list_arg,
+    partial_argument,
+    timeit,
+)
 
 __authors__ = ["Hao Wang"]
 
 
-# TODO: inherit from `BaseOptimizer`
-# TODO: `ask` -> suggest, `tell` -> observe, implement `recommend`
+# TODO: `ask` -> suggest, `tell` -> observe
 # TODO: implement `verbose` levels
 
 
@@ -289,6 +295,7 @@ class BaseBO(ABC):
             self._to_geno = lambda x, index=None: Solution.from_dict(x, index=index)
 
     def _set_internal_optimization(self, **kwargs):
+        # TODO: turn this into an Option Class
         if "optimizer" in kwargs:
             self._optimizer = kwargs["optimizer"]
         else:
@@ -323,11 +330,16 @@ class BaseBO(ABC):
         if self._g is not None:
             self._g = func_with_list_arg(self._g, self._eval_type, self.search_space.var_name)
 
+    def __set_argmax(self, fixed: Dict = None):
+        """Set ``self._argmax_restart`` for optimizing the acquisition function"""
+        fixed = {} if fixed is None else fixed
+        mask = np.array([v in fixed.keys() for v in self._search_space.var_name])
+        idx = np.nonzero(~mask)[0]
         self._argmax_restart = functools.partial(
             argmax_restart,
-            search_space=self._search_space,
-            h=self._h,
-            g=self._g,
+            search_space=self._search_space[idx],
+            h=partial_argument(self._h, mask, fixed.values()) if self._h else None,
+            g=partial_argument(self._g, mask, fixed.values()) if self._g else None,
             eval_budget=self.AQ_max_FEs,
             n_restart=self.AQ_n_restart,
             wait_iter=self.AQ_wait_iter,
@@ -363,11 +375,28 @@ class BaseBO(ABC):
         self.tell(X, func_vals)
 
     @timeit
-    def ask(self, n_point: int = None) -> Union[List[list], List[dict]]:
+    def ask(
+        self, n_point: int = None, fixed: Dict[str, Union[float, int, str]] = None
+    ) -> Union[List[list], List[dict]]:
+        """suggest a list of candidate solutions
+
+        Parameters
+        ----------
+        n_point : int, optional
+            the number of candidates to request, by default None
+        fixed : Dict[str, Union[float, int, str]], optional
+            a dictionary specifies the decision variables fixed and the value to which those
+            are fixed, by default None
+
+        Returns
+        -------
+        Union[List[list], List[dict]]
+            the suggested candidates
+        """
         if self.model.is_fitted:
             n_point = self.n_point if n_point is None else n_point
             msg = f"asking {n_point} points:"
-            X = self.arg_max_acquisition(n_point=n_point)
+            X = self.arg_max_acquisition(n_point=n_point, fixed=fixed)
             X = self._search_space.round(X)  # round to precision if specified
             X = self.pre_eval_check(X)  # validate the new candidate solutions
             if len(X) < n_point:
@@ -376,13 +405,13 @@ class BaseBO(ABC):
                     "by optimization! New points is taken from random design."
                 )
                 N = n_point - len(X)
-                method = "LHS" if N > 1 else "uniform"
-                s = self._search_space.sample(N=N, method=method, h=self._h, g=self._g).tolist()
+                # take random samples if the acquisition optimization failed
+                s = self.create_DoE(N, fixed=fixed)
                 X = self._search_space.round(X + s)
         else:  # take the initial DoE
             n_point = self._DoE_size if n_point is None else n_point
             msg = f"asking {n_point} points (using DoE):"
-            X = self.create_DoE(n_point)
+            X = self.create_DoE(n_point, fixed=fixed)
 
         if len(X) == 0:  # NOTE: this would happen if the constraints are too restrict
             return []
@@ -475,7 +504,7 @@ class BaseBO(ABC):
             return []
         return [self.xopt]
 
-    def create_DoE(self, n_point: int) -> List:
+    def create_DoE(self, n_point: int, fixed: Dict = None) -> List:
         """get the initial sample points using Design of Experiemnt (DoE) methods
 
         Parameters
@@ -488,10 +517,25 @@ class BaseBO(ABC):
         List
             a list of sample points
         """
-        DoE = self._search_space.sample(n_point, method="LHS", h=self._h, g=self._g).tolist()
+        fixed = {} if fixed is None else fixed
+        search_space = deepcopy(self._search_space)
+        var_name = set(fixed.keys()) & set(self._search_space.var_name)
+        mask = np.array([v in var_name for v in self._search_space.var_name])
+        for key in var_name:
+            search_space.remove(key)
+
+        DoE = search_space.sample(
+            n_point,
+            method="LHS" if n_point > 1 else "uniform",
+            h=partial_argument(self._h, mask, fixed.values()) if self._h else None,
+            g=partial_argument(self._g, mask, fixed.values()) if self._g else None,
+        ).tolist()
+        DoE = fillin_fixed_value(DoE, fixed, self._search_space)
+
         if len(DoE) != 0:
             DoE = self._search_space.round(DoE)
             DoE = self.pre_eval_check(DoE)
+
         return DoE
 
     @abstractmethod
@@ -541,7 +585,9 @@ class BaseBO(ABC):
         MAPE = mean_absolute_percentage_error(fitness_, fitness_hat)
         self._logger.info(f"model r2: {r2}, MAPE: {MAPE}")
 
-    def arg_max_acquisition(self, n_point: int = None, return_value: bool = False) -> List[list]:
+    def arg_max_acquisition(
+        self, n_point: int = None, return_value: bool = False, fixed: Dict = None
+    ) -> List[list]:
         """Global Optimization of the acqusition function / Infill criterion
 
         Returns
@@ -555,16 +601,18 @@ class BaseBO(ABC):
         t0 = time.time()
         n_point = self.n_point if n_point is None else int(n_point)
         return_dx = self._optimizer == "BFGS"
+        self.__set_argmax(fixed)
 
         if n_point > 1:  # multi-point/batch sequential strategy
             candidates, values = self._batch_arg_max_acquisition(
-                n_point=n_point, return_dx=return_dx
+                n_point=n_point, return_dx=return_dx, fixed=fixed
             )
         else:  # single-point strategy
-            criteria = self._create_acquisition(par={}, return_dx=return_dx)
+            criteria = self._create_acquisition(par={}, return_dx=return_dx, fixed=fixed)
             candidates, values = self._argmax_restart(criteria, logger=self._logger)
             candidates, values = [candidates], [values]
 
+        candidates = fillin_fixed_value(candidates, fixed, self._search_space)
         self._logger.debug("acquisition optimziation takes {:.4f}s".format(time.time() - t0))
         for callback in self._acquisition_callbacks:
             callback()
@@ -572,16 +620,22 @@ class BaseBO(ABC):
         return (candidates, values) if return_value else candidates
 
     def _create_acquisition(
-        self, fun: str = None, par: dict = {}, return_dx: bool = False
+        self, fun: str = None, par: dict = None, return_dx: bool = False, fixed: Dict = None
     ) -> Callable:
+        fixed = {} if fixed is None else fixed
+        mask = np.array([v in fixed.keys() for v in self._search_space.var_name])
         fun = fun if fun is not None else self._acquisition_fun
-        par = copy(self._acquisition_par) if not par else par
+        par = copy(self._acquisition_par) if par else par
         par.update({"model": self.model, "minimize": self.minimize})
-
         criterion = getattr(AcquisitionFunction, fun)(**par)
-        return functools.partial(criterion, return_dx=return_dx)
+        return partial_argument(
+            functools.partial(criterion, return_dx=return_dx),
+            mask,
+            fixed.values(),
+            reduce_output=return_dx,
+        )
 
-    def _batch_arg_max_acquisition(self, n_point: int, return_dx: int):
+    def _batch_arg_max_acquisition(self, n_point: int, return_dx: int, fixed: Dict):
         raise NotImplementedError
 
     def check_stop(self):

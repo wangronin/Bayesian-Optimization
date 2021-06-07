@@ -1,16 +1,75 @@
 import functools
 import time
-from typing import Callable, List
+from typing import Callable, Dict, List
 
 import numpy as np
 
 from .solution import Solution
 
 
+def fillin_fixed_value(X: List[List], fixed: Dict, search_space):
+    if fixed is None:
+        return X
+    if len(X) == 0:
+        return X
+    mask = np.array([v in fixed.keys() for v in search_space.var_name])
+    out = np.empty((len(X), len(mask)), dtype=object)
+    out[:, mask] = list(fixed.values())
+    out[:, ~mask] = X
+    return out.tolist()
+
+
+def partial_argument(
+    func: callable, masks: np.ndarray, values: np.ndarray, reduce_output: bool = False
+):
+    """fill-in the values for inactive variables
+
+    Parameters
+    ----------
+    func : callable
+        the target function to call which is defined on the original search space
+    masks : np.ndarray
+        the mask array indicating which variables are deemed inactive
+    values : np.ndarray
+        the values fixed for the inactive variables
+    """
+    if not isinstance(values, list):
+        values = list(values)
+
+    @functools.wraps(func)
+    def wrapper(X):
+        N = 1 if len(X.shape) == 1 else X.shape[1]
+        X_ = np.empty((N, len(masks)), dtype=object)
+        X_[:, masks] = values
+        X_[:, ~masks] = X
+        out_ = func(X_)
+
+        # TODO: fix this ad-hoc solution for acquisition functions
+        if reduce_output:
+            out = []
+            for v in tuple(out_):
+                if isinstance(v, np.ndarray):
+                    if len(v.shape) == 1 or v.shape[1] == len(masks):
+                        v = v[~masks]
+                    elif v.shape[0] == len(masks):
+                        v = v[~masks, :]
+                elif isinstance(v, list) and len(v) == len(masks):
+                    v = [v[m] for m in ~masks]
+                out.append(v)
+            return tuple(out)
+        return out_
+
+    return wrapper
+
+
 def func_with_list_arg(func, arg_type, var_names):
     @functools.wraps(func)
     def wrapper(X):
-        X = Solution(np.array(X, dtype="object")[np.newaxis, :], var_name=var_names)
+        if isinstance(X, (list, tuple)):
+            X = np.array(X, dtype="object")
+        if len(X.shape) == 1:
+            X = X[np.newaxis, :]
+        X = Solution(X, var_name=var_names)
         if arg_type == "list":
             X = X.tolist()
         elif arg_type == "dict":
@@ -19,17 +78,20 @@ def func_with_list_arg(func, arg_type, var_names):
 
     return wrapper
 
+
 def timeit(func):
     @functools.wraps(func)
     def __func__(ref, *arg, **kwargv):
         t0 = time.time()
         out = func(ref, *arg, **kwargv)
-        if hasattr(ref, 'logger'):
+        if hasattr(ref, "logger"):
             ref.logger.info(f"{func.__name__} takes {time.time() - t0:.4f}s")
         else:
             print(f"{func.__name__} takes {time.time() - t0:.4f}s")
         return out
+
     return __func__
+
 
 def arg_to_int(arg):
     if isinstance(arg, str):

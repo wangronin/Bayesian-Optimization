@@ -15,13 +15,14 @@ __authors__ = ["Hao Wang"]
 class BO(BaseBO):
     """The sequential Bayesian Optimization class"""
 
-    def _create_acquisition(self, fun: Callable = None, par: Dict = {}, return_dx: bool = False):
+    def _create_acquisition(self, fun: Callable = None, par: Dict = None, **kwargv):
         fun = fun if fun is not None else self._acquisition_fun
+        par = {} if par is None else par
         if hasattr(getattr(AcquisitionFunction, fun), "plugin"):
             if "plugin" not in par:
                 par.update({"plugin": self.fmin})
 
-        return super()._create_acquisition(fun, par, return_dx)
+        return super()._create_acquisition(fun, par, **kwargv)
 
     def pre_eval_check(self, X: List) -> List:
         """Check for the duplicated solutions as it is not allowed in noiseless cases"""
@@ -59,8 +60,10 @@ class ParallelBO(BO):
 
     """
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, acquisition_fun: str = "MGFI", acquisition_par: Dict = {"t": 2}, **kwargs):
+        super().__init__(
+            acquisition_fun=acquisition_fun, acquisition_par=acquisition_par, **kwargs
+        )
         assert self.n_point > 1
 
         if self._acquisition_fun == "MGFI":
@@ -83,13 +86,15 @@ class ParallelBO(BO):
         if self._par_name not in self._acquisition_par:
             self._acquisition_par[self._par_name] = getattr(_criterion, self._par_name)
 
-    def _batch_arg_max_acquisition(self, n_point: int, return_dx: bool):
+    def _batch_arg_max_acquisition(self, n_point: int, return_dx: bool, fixed: Dict = None):
         criteria = []
         for _ in range(n_point):
             _par = self._sampler(self._acquisition_par)
             _acquisition_par = copy(self._acquisition_par)
             _acquisition_par.update({self._par_name: _par})
-            criteria.append(self._create_acquisition(par=_acquisition_par, return_dx=return_dx))
+            criteria.append(
+                self._create_acquisition(par=_acquisition_par, return_dx=return_dx, fixed=fixed)
+            )
 
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(
@@ -135,7 +140,7 @@ class SelfAdaptiveBO(ParallelBO):
         super().__init__(*argv, **kwargs)
         assert self.n_point > 1
 
-    def _batch_arg_max_acquisition(self, n_point: int, return_dx: bool):
+    def _batch_arg_max_acquisition(self, n_point: int, return_dx: bool, fixed: Dict = None):
         criteria = []
         _t_list = []
         N = int(n_point / 2)
@@ -145,7 +150,9 @@ class SelfAdaptiveBO(ParallelBO):
             _t_list.append(_t)
             _acquisition_par = copy(self._acquisition_par)
             _acquisition_par.update({"t": _t})
-            criteria.append(self._create_acquisition(par=_acquisition_par, return_dx=return_dx))
+            criteria.append(
+                self._create_acquisition(par=_acquisition_par, return_dx=return_dx, fixed=fixed)
+            )
 
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(
@@ -168,7 +175,8 @@ class NoisyBO(ParallelBO):
             X = Solution(X, var_name=self.var_names)
         return X
 
-    def _create_acquisition(self, fun: Callable = None, par: Dict = {}, return_dx: bool = False):
+    def _create_acquisition(self, fun: Callable = None, par: Dict = None, **kwargv):
+        par = {} if par is None else par
         if hasattr(getattr(AcquisitionFunction, self._acquisition_fun), "plugin"):
             # use the model prediction to determine the plugin under noisy scenarios
             # TODO: add more options for determining the plugin value
@@ -176,4 +184,4 @@ class NoisyBO(ParallelBO):
             plugin = np.min(y_) if self.minimize else np.max(y_)
             par.update({"plugin": plugin})
 
-        return super()._create_acquisition(par=par, return_dx=return_dx)
+        return super()._create_acquisition(fun, par, **kwargv)
