@@ -15,7 +15,5 @@ stages:                                  # 构建阶段配置
           displayName: 'Python Test'
           inputs:                        # 构建输入参数设定
             pythonVersion: 3.7
-            goals: |
-                python -m pip install --upgrade pip
-                pip install pytest
-                pip install -r requirements.txt
+            goals:
+                "pip install -r requirements.txt"
