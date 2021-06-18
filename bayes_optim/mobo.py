@@ -8,6 +8,7 @@ from torch.tensor import Tensor
 
 from .acquisition_optim import argmax_restart
 from .bayes_opt import BO
+from .extra.multi_objective import Hypervolume
 from .extra.multi_objective.box_decompositions import NondominatedPartitioning
 from .multi_objective import EHVI
 from .solution import Solution
@@ -67,6 +68,10 @@ class BaseMOBO(BO):
         idx = is_pareto_efficient(self.data.fitness)
         self._xopt = self.data[idx, :]
         return self._xopt
+
+    @property
+    def ref_point(self):
+        return np.max(self.y, axis=0) * 1.3
 
     def pre_eval_check(self, X: List) -> List:
         """Check for the duplicated solutions as it is not allowed in noiseless cases"""
@@ -156,21 +161,23 @@ class BaseMOBO(BO):
         if self.data_file is not None:
             X.to_csv(self.data_file, header=False, append=True)
         self.data = self.data + X if hasattr(self, "data") else X
+        self.update_model()
         # TODO: to handle unknown and expensive constraints
         # self.data_cstr = self.data_cstr + X_cstr if hasattr(self, "data_cstr") else X_cstr
 
         xopt = self.xopt
+        hv = Hypervolume(ref_point=Tensor(-self.ref_point))
         self._logger.info(f"Efficient set/Pareto front (xopt/fopt):\n{xopt}")
+        self._logger.info(f"Hypervolume indicator value: {hv.compute(Tensor(-xopt.fitness))}")
         if self.h is not None or self.g is not None:
             penalty = np.array(
                 [dynamic_penalty(x, 1, self._h, self._g, minimize=self.minimize) for x in xopt]
             )
             self._logger.info(f"... with corresponding penalty: {penalty}")
 
-        self.update_model()
         if not warm_start:
             self.iter_count += 1
-            self.hist_f.append(self.xopt.fitness)
+            self.hist_f.append(xopt.fitness)
 
     @staticmethod
     def _fit(model, X, y):
@@ -190,8 +197,8 @@ class BaseMOBO(BO):
 
         # Standardization should make it easier to specify the GP prior, compared to
         # rescaling values to the unit interval.
-        _std = np.std(y, axis=0)
-        idx = ~np.isclose(_std, 0)
+        # _std = np.std(y, axis=0)
+        # idx = ~np.isclose(_std, 0)
         self.y = y
         # self.y = (y[:, idx] - np.mean(y[:, idx], axis=0)) / _std[idx]
 
@@ -223,11 +230,10 @@ class MOBO(BaseMOBO):
             )
 
     def _create_acquisition(self, **kwargv):
-        ref_point = np.max(self.y, axis=0) * 1.3
-        partitioning = NondominatedPartitioning(ref_point=Tensor(ref_point), Y=Tensor(self.y))
+        partitioning = NondominatedPartitioning(ref_point=Tensor(self.ref_point), Y=Tensor(self.y))
         return EHVI(
             model=self.model,
-            ref_point=ref_point.tolist(),
+            ref_point=self.ref_point.tolist(),
             partitioning=partitioning,
         )
 

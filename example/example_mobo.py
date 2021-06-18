@@ -35,7 +35,7 @@ opt = MOBO(
     DoE_size=5,
     max_FEs=100,
     verbose=True,
-    n_point=3,
+    # n_point=3,
     acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
 )
 print(opt.run())
