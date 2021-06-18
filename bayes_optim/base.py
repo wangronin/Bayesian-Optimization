@@ -38,7 +38,7 @@ __authors__ = ["Hao Wang"]
 
 
 class BaseBO(ABC):
-    """Bayesian Optimization Base Class, which implements the Ask-Evaluate-Tell interface"""
+    """Bayesian Optimization base class, which implements the Ask-Evaluate-Tell interface"""
 
     def __init__(
         self,
@@ -153,10 +153,6 @@ class BaseBO(ABC):
         self._init_flatfitness_trial = 2
         self._set_aux_vars()
         self.warm_data = warm_data
-
-        # TODO: ad-hoc fix
-        self.xopt = None
-        self.fopt = None
 
     @property
     def acquisition_fun(self):
@@ -357,6 +353,14 @@ class BaseBO(ABC):
         """Test if objecctive value f1 is better than f2"""
         return f1 < f2 if self.minimize else f2 > f1
 
+    @property
+    def xopt(self):
+        if not hasattr(self, "data"):
+            return None
+        fopt = self._get_best(self.data.fitness)
+        self._xopt = self.data[np.where(self.data.fitness == fopt)[0][0]]
+        return self._xopt
+
     def run(self) -> Tuple[List[Solution], dict]:
         while not self.check_stop():
             self.step()
@@ -406,7 +410,11 @@ class BaseBO(ABC):
                 )
                 N = n_point - len(X)
                 # take random samples if the acquisition optimization failed
-                s = self.create_DoE(N, fixed=fixed)
+                while True:
+                    s = self.create_DoE(N, fixed=fixed)
+                    # NOTE: random sampling could generate duplicated points again..
+                    if len(s) != 0:
+                        break
                 X = self._search_space.round(X + s)
         else:  # take the initial DoE
             n_point = self._DoE_size if n_point is None else n_point
@@ -466,25 +474,21 @@ class BaseBO(ABC):
         if self.data_file is not None:
             X.to_csv(self.data_file, header=False, append=True)
 
-        self.fopt = self._get_best(self.data.fitness)
-        self.xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]
-
-        self._logger.info(f"fopt: {self.fopt}")
-        # TODO: to handle the constraints properly
+        xopt = self.xopt
+        self._logger.info(f"fopt: {xopt.fitness}")
+        # show the current penalty value if cheap constraints are present
         if self.h is not None or self.g is not None:
-            _penalty = dynamic_penalty(
-                self.xopt.tolist(), 1, self._h, self._g, minimize=self.minimize
-            )
+            _penalty = dynamic_penalty(xopt.tolist(), 1, self._h, self._g, minimize=self.minimize)
             self._logger.info(f"penalty: {_penalty[0]:.4e}")
-        self._logger.info(f"xopt: {self._to_pheno(self.xopt)}\n")
+        self._logger.info(f"xopt: {self._to_pheno(xopt)}\n")
 
         if not self.model.is_fitted:
-            self._fBest_DoE = copy(self.fopt)  # the best point in the DoE
-            self._xBest_DoE = copy(self._to_pheno(self.xopt))
+            self._fBest_DoE = copy(xopt.fitness)  # the best point in the DoE
+            self._xBest_DoE = copy(self._to_pheno(xopt))
 
         if not warm_start:
             self.iter_count += 1
-            self.hist_f.append(self.fopt)
+            self.hist_f.append(xopt.fitness)
 
     @timeit
     def evaluate(self, X) -> List[float]:
@@ -588,7 +592,7 @@ class BaseBO(ABC):
     def arg_max_acquisition(
         self, n_point: int = None, return_value: bool = False, fixed: Dict = None
     ) -> List[list]:
-        """Global Optimization of the acqusition function / Infill criterion
+        """Global Optimization of the acquisition function / Infill criterion
 
         Returns
         -------

@@ -259,14 +259,20 @@ class Solution(np.ndarray):
         self.n_obj: int = getattr(obj, "n_obj", None)
 
     @classmethod
-    def from_dict(cls, x: Union[List[dict], dict], index: List[int, str] = None) -> Solution:
+    def from_dict(
+        cls,
+        x: Union[List[dict], dict],
+        index: List[int, str] = None,
+        var_name: Union[str, List[str]] = None,
+        **kwargs,
+    ) -> Solution:
         if isinstance(x, dict):
             var_name = list(x.keys())
-            res = cls.__new__(cls, x=list(x.values()), var_name=var_name, index=index)
+            res = cls.__new__(cls, x=list(x.values()), var_name=var_name, index=index, **kwargs)
         elif isinstance(x, list):
             var_name = list(x[0].keys())
             _x = [list(_.values()) for _ in x]
-            res = cls.__new__(cls, x=_x, var_name=var_name, index=index)
+            res = cls.__new__(cls, x=_x, var_name=var_name, index=index, **kwargs)
         return res
 
     def unique(self) -> Solution:

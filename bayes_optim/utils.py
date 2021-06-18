@@ -1,10 +1,44 @@
 import functools
 import time
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Union
 
 import numpy as np
 
 from .solution import Solution
+
+
+def is_pareto_efficient(fitness, return_mask=True) -> Union[List[int], List[bool]]:
+    """get the Pareto efficient subset
+
+    Parameters
+    ----------
+    fitness : np.ndarray of shape (n_points, n_obj)
+        the objective value
+    return_mask : bool, optional
+        if returning a mask, by default True
+
+    Returns
+    -------
+    An array of indices of pareto-efficient points.
+        If return_mask is True, this will be an (n_points, ) boolean array
+        Otherwise it will be a (n_efficient_points, ) integer array of indices.
+    """
+
+    is_efficient = np.arange(fitness.shape[0])
+    n_points = fitness.shape[0]
+    next_point_index = 0  # Next index in the is_efficient array to search for
+    while next_point_index < len(fitness):
+        nondominated_point_mask = np.any(fitness < fitness[next_point_index], axis=1)
+        nondominated_point_mask[next_point_index] = True
+        is_efficient = is_efficient[nondominated_point_mask]  # Remove dominated points
+        fitness = fitness[nondominated_point_mask]
+        next_point_index = np.sum(nondominated_point_mask[:next_point_index]) + 1
+
+    if return_mask:
+        is_efficient_mask = np.zeros(n_points, dtype=bool)
+        is_efficient_mask[is_efficient] = True
+        return is_efficient_mask
+    return is_efficient
 
 
 def fillin_fixed_value(X: List[List], fixed: Dict, search_space):

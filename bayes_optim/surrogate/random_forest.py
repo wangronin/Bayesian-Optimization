@@ -1,11 +1,17 @@
+from __future__ import annotations
+
+from typing import List, Union
+
 import numpy as np
 from joblib import Parallel, delayed
-from numpy import array, atleast_2d, std
+from numpy import array
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble._base import _partition_estimators
 from sklearn.metrics import r2_score
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder
 from sklearn.utils.validation import check_is_fitted
+
+from ..solution import Solution
 
 
 # TODO: implement multi-output/objetive surrogate models, better to model the c
@@ -90,7 +96,7 @@ class RandomForest(RandomForestRegressor):
             # encode categorical variables to binary values
             self._enc = OneHotEncoder(categories=self._categories, sparse=False)
 
-    def _check_X(self, X):
+    def _check_X(self, X) -> Solution:
         X_ = array(X, dtype=object)
         if hasattr(self, "_levels"):
             X_cat = X_[:, self._cat_idx]
@@ -101,14 +107,13 @@ class RandomForest(RandomForestRegressor):
             X = np.c_[np.delete(X_, self._cat_idx, 1).astype(float), X_cat]
         return X
 
-    def fit(self, X, y):
+    def fit(self, X: Union[Solution, List, np.ndarray], y: np.ndarray):
         X = self._check_X(X)
-        y = y.ravel()
         self.y = y
         self.is_fitted = True
-        return super(RandomForest, self).fit(X, y)
+        return super().fit(X, y)
 
-    def predict(self, X, eval_MSE=False):
+    def predict(self, X: Union[Solution, List, np.ndarray], eval_MSE=False) -> np.ndarray:
         """Predict regression target for `X`.
         The predicted regression target of an input sample is computed as the
         mean predicted regression targets of the trees in the forest.
@@ -144,14 +149,11 @@ class RandomForest(RandomForestRegressor):
             delayed(_save_prediction)(e.predict, X, i, y_hat_all)
             for i, e in enumerate(self.estimators_)
         )
-
-        y_hat = np.mean(y_hat_all, axis=1).flatten()
+        y_hat = np.mean(y_hat_all, axis=-1)
         if eval_MSE:
             # TODO: implement the jackknife estimate of variance
-            _MSE_hat = np.std(y_hat_all, axis=1, ddof=1) ** 2.0
-            _MSE_hat = _MSE_hat.flatten()
-
-        return (y_hat, _MSE_hat) if eval_MSE else y_hat
+            MSE_hat = np.std(y_hat_all, axis=-1, ddof=1) ** 2.0
+        return (y_hat, MSE_hat) if eval_MSE else y_hat
 
 
 if __name__ == "__main__":
