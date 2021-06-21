@@ -223,6 +223,7 @@ class MOBO(BaseMOBO):
 
     def __init__(self, *args, **kwargv):
         super().__init__(*args, **kwargv)
+        self.AQ_max_FEs = 1e3 * self.search_space.dim
         if self._acquisition_fun != "EHVI":
             self._acquisition_fun = "EHVI"
             self.logger.warn(
