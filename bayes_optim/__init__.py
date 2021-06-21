@@ -217,6 +217,8 @@ def fmin(
         "Optimization terminated successfully.\n"
         "        Current function value: {}\n"
         "        Iterations: {}\n"
-        "        Function evaluations: {}\n".format(opt.fopt, opt.iter_count, opt.eval_count)
+        "        Function evaluations: {}\n".format(
+            opt.xopt.fitness, opt.iter_count, opt.eval_count
+        )
     )
-    return opt.xopt, opt.fopt, opt.iter_count, opt.eval_count, data_per_iteration
+    return opt.xopt, opt.xopt.fitness, opt.iter_count, opt.eval_count, data_per_iteration
