@@ -219,6 +219,7 @@ class EHVI(MultiObjectiveAnalyticAcquisitionFunction):
         return (upper - lower) * (1 - self.normal.cdf((upper - mu) / sigma))
 
     def forward(self, X: np.ndarray) -> Tensor:
+        X = np.array(X.tolist())
         mean, MSE = self.model.predict(X.reshape(1, -1), eval_MSE=True)
         X = torch.Tensor(X.reshape(1, -1)).unsqueeze(0)
         mean = torch.Tensor(mean).unsqueeze(0)

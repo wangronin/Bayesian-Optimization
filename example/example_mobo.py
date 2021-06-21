@@ -37,6 +37,7 @@ opt = MOBO(
     verbose=True,
     # n_point=3,
     acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
+    # acquisition_optimization={"optimizer": "MIES"},
 )
 print(opt.run())
 # assert np.isclose(opt.fopt, 0.002111536359751477)

@@ -203,7 +203,7 @@ class MIES:
         if len(pop.shape) == 1:  # one solution
             X = [X]
 
-        pop.fitness = np.array(list(map(self.obj_func, X)))
+        pop.fitness = np.array(list(map(self.obj_func, X))).ravel()
         self.eval_count += pop.N
         _penalized_fitness = (
             self._penalty_func(
@@ -264,7 +264,6 @@ class MIES:
         x_ = np.asarray(
             handle_box_constraint(x_, self.bounds_i[:, 0], self.bounds_i[:, 1]), dtype="int"
         )
-
         individual[self.id_i] = x_
         individual[self._id_eta] = eta
 

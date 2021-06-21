@@ -20,8 +20,11 @@ __authors__ = ["Hao Wang"]
 class BaseMOBO(BO):
     """Base class for multi-objective BO"""
 
-    def __init__(self, *args, **kwargv):
-        super().__init__(*args, **kwargv)
+    def __init__(self, n_obj: int = 2, minimize: Union[bool, List[bool]] = True, **kwargv):
+        # NOTE: setting minimize=True to make parent's constructor work
+        super().__init__(minimize=True, **kwargv)
+        self.minimize = minimize
+        self.n_obj = n_obj
         self.iter_count = 0
         self.eval_count = 0
         self._check_obj_fun()
@@ -48,8 +51,15 @@ class BaseMOBO(BO):
 
     def _check_obj_fun(self):
         """check the objective functions"""
+        if self.obj_fun is None:
+            return
         assert hasattr(self.obj_fun, "__iter__")
         assert all([hasattr(f, "__call__") for f in self.obj_fun])
+        if len(self.obj_fun) != self.n_obj:
+            self.logger.warn(
+                f"len(obj_fun) ({self.obj_fun}) != n_obj ({self.n_obj})."
+                "Setting n_obj according to the former."
+            )
         self.n_obj = len(self.obj_fun)
         assert self.n_obj > 1
 
@@ -116,7 +126,8 @@ class BaseMOBO(BO):
                 func_vals.append(Parallel(n_jobs=self.n_job)(delayed(f)(x) for x in X))
             else:  # or sequential execution
                 func_vals.append([f(x) for x in X])
-        return func_vals
+
+        return list(zip(*func_vals))
 
     @timeit
     def recommend(self) -> List[Solution]:
@@ -145,16 +156,16 @@ class BaseMOBO(BO):
         X = self._to_geno(X, index)
         self._logger.info(f"observing {len(X)} points:")
 
-        if h_vals is not None or g_vals is not None:
-            raise NotImplementedError("will be implemented soon :)")
+        # if h_vals is not None or g_vals is not None:
+        # raise NotImplementedError("will be implemented soon :)")
 
         for i, _ in enumerate(X):
             X[i].n_eval += 1
             for k in range(self.n_obj):
-                X[i].fitness[k] = func_vals[k][i]
+                X[i].fitness[k] = func_vals[i][k]
                 if not warm_start:
                     self.eval_count += 1
-            _fitness = ", ".join([f"f{_ + 1}: {func_vals[_][i]}" for _ in range(self.n_obj)])
+            _fitness = ", ".join([f"f{_ + 1}: {func_vals[i][_]}" for _ in range(self.n_obj)])
             self._logger.info(f"#{i + 1} - {_fitness}, solution: {self._to_pheno(X[i])}")
 
         X = self.post_eval_check(X)
@@ -192,14 +203,15 @@ class BaseMOBO(BO):
         self.fmin, self.fmax = np.min(y, axis=0), np.max(y, axis=0)
         self.frange = self.fmax - self.fmin
 
-        if any(np.isclose(self.frange, 0)):
+        if any(np.isclose(self.frange, 0)) and len(y) > 1:
             raise Exception("flat objective value!")
 
+        # TODO: to normalize the objective values
         # Standardization should make it easier to specify the GP prior, compared to
         # rescaling values to the unit interval.
         # _std = np.std(y, axis=0)
         # idx = ~np.isclose(_std, 0)
-        self.y = y
+        self.y = y * (-1) ** (~self.minimize)
         # self.y = (y[:, idx] - np.mean(y[:, idx], axis=0)) / _std[idx]
 
         # TODO: the first case is not needed
@@ -215,7 +227,9 @@ class BaseMOBO(BO):
             self.model, r2, MAPE = BaseMOBO._fit(self.model, X, self.y)
 
         for i in range(self.n_obj):
-            self._logger.info(f"model of f{i + 1} r2: {r2[i]}, MAPE: {MAPE[i]}")
+            _r2 = r2[i] if not isinstance(r2, float) else r2
+            _mape = MAPE[i] if not isinstance(MAPE, float) else MAPE
+            self._logger.info(f"model of f{i + 1} r2: {_r2}, MAPE: {_mape}")
 
 
 class MOBO(BaseMOBO):

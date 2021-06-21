@@ -26,7 +26,6 @@ def argmax_restart(
     xopt, fopt = [], []
     best = -np.inf
     wait_count = 0
-
     if not isinstance(search_space, RealSpace) and optimizer == "BFGS":
         optimizer = "MIES"
         logger.warn("L-BFGS-B cannot be applied on continuous search space")
