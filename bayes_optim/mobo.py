@@ -244,12 +244,18 @@ class MOBO(BaseMOBO):
                 "MOBO only allows using `EHIV` acquisition function. Ignore user's argument."
             )
 
-    def _create_acquisition(self, **kwargv):
+    def _create_acquisition(self, fixed: Dict = None, **kwargv):
+        fixed = {} if fixed is None else fixed
+        mask = np.array([v in fixed.keys() for v in self._search_space.var_name])
         partitioning = NondominatedPartitioning(ref_point=Tensor(self.ref_point), Y=Tensor(self.y))
-        return EHVI(
-            model=self.model,
-            ref_point=self.ref_point.tolist(),
-            partitioning=partitioning,
+        criterion = EHVI(
+            model=self.model, ref_point=self.ref_point.tolist(), partitioning=partitioning
+        )
+        return partial_argument(
+            functools.partial(criterion),
+            mask,
+            fixed.values(),
+            reduce_output=False,
         )
 
     # def _batch_arg_max_acquisition(
