@@ -60,9 +60,18 @@ class ParallelBO(BO):
 
     """
 
-    def __init__(self, acquisition_fun: str = "MGFI", acquisition_par: Dict = {"t": 2}, **kwargs):
+    def __init__(
+        self,
+        n_point: int = 3,
+        acquisition_fun: str = "MGFI",
+        acquisition_par: Dict = {"t": 2},
+        **kwargs,
+    ):
         super().__init__(
-            acquisition_fun=acquisition_fun, acquisition_par=acquisition_par, **kwargs
+            n_point=n_point,
+            acquisition_fun=acquisition_fun,
+            acquisition_par=acquisition_par,
+            **kwargs,
         )
         assert self.n_point > 1
 

@@ -64,6 +64,7 @@ class BaseBO(ABC):
         random_seed: Optional[int] = None,
         logger: Optional[str] = None,
         instance_name: Optional[str] = None,
+        **kwargs,
     ):
         """The base class for Bayesian Optimization
 
@@ -410,12 +411,12 @@ class BaseBO(ABC):
                 )
                 N = n_point - len(X)
                 # take random samples if the acquisition optimization failed
-                while True:
+                while N:
                     s = self.create_DoE(N, fixed=fixed)
-                    # NOTE: random sampling could generate duplicated points again..
-                    if len(s) != 0:
-                        break
-                X = self._search_space.round(X + s)
+                    # NOTE: random sampling could generate duplicated points again
+                    # keep sampling until getting enough points TODO: add a timeout
+                    N -= len(s)
+                    X += s
         else:  # take the initial DoE
             n_point = self._DoE_size if n_point is None else n_point
             msg = f"asking {n_point} points (using DoE):"

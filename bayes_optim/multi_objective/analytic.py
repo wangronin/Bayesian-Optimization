@@ -97,6 +97,8 @@ class MultiObjectiveAnalyticAcquisitionFunction(AcquisitionFunction):
 
 
 class EHVI(MultiObjectiveAnalyticAcquisitionFunction):
+    """Expected Hypervolume Improvement"""
+
     def __init__(
         self,
         model,
@@ -219,16 +221,20 @@ class EHVI(MultiObjectiveAnalyticAcquisitionFunction):
         return (upper - lower) * (1 - self.normal.cdf((upper - mu) / sigma))
 
     def forward(self, X: np.ndarray) -> Tensor:
-        X = np.array(X.tolist())
-        mean, MSE = self.model.predict(X.reshape(1, -1), eval_MSE=True)
-        X = torch.Tensor(X.reshape(1, -1)).unsqueeze(0)
+        # convert the input if its shape it not correct
+        if isinstance(X, list):
+            X = np.array(X, dtype=object)
+        if len(X.shape) == 1:
+            X = X.reshape(1, -1)
+        # get the mean and variance
+        mean, MSE = self.model.predict(X, eval_MSE=True)
         mean = torch.Tensor(mean).unsqueeze(0)
         variance = torch.Tensor(MSE).unsqueeze(0)
         mu, sigma = mean, variance.clamp_min(1e-9).sqrt()
         # clamp here, since upper_bounds will contain `inf`s, which
         # are not differentiable
         cell_upper_bounds = self.cell_upper_bounds.clamp_max(
-            1e10 if X.dtype == torch.double else 1e8
+            1e10 if X.dtype == np.float64 else 1e8
         )
         # Compute psi(lower_i, upper_i, mu_i, sigma_i) for i=0, ... m-2
         psi_lu = self.psi(
