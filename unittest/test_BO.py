@@ -1,4 +1,7 @@
 import os
+import sys
+
+sys.path.insert(0, "./")
 
 import numpy as np
 import pytest

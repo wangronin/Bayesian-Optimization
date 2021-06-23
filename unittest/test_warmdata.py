@@ -1,3 +1,6 @@
+import sys
+
+sys.path.insert(0, "./")
 import numpy as np
 from bayes_optim import BO, DiscreteSpace, IntegerSpace, RealSpace
 from bayes_optim.surrogate import GaussianProcess, RandomForest

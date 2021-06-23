@@ -1,18 +1,13 @@
-import json
+import sys
+
+sys.path.insert(0, "./")
 import re
 
 import numpy as np
 import pytest
-from bayes_optim.search_space import (
-    Discrete,
-    DiscreteSpace,
-    Integer,
-    IntegerSpace,
-    Real,
-    RealSpace,
-    SearchSpace,
-    Variable,
-)
+from bayes_optim.search_space import (Discrete, DiscreteSpace, Integer,
+                                      IntegerSpace, Real, RealSpace,
+                                      SearchSpace, Variable)
 from bayes_optim.solution import Solution
 
 

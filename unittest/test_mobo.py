@@ -1,4 +1,6 @@
-from sys import excepthook
+import sys
+
+sys.path.insert(0, "./")
 
 import numpy as np
 from bayes_optim import MOBO
