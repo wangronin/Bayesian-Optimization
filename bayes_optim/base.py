@@ -1,9 +1,8 @@
 import functools
 import logging
 import sys
-import time
 from abc import ABC, abstractmethod
-from copy import copy, deepcopy
+from copy import copy
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import dill
@@ -330,14 +329,11 @@ class BaseBO(ABC):
     def __set_argmax(self, fixed: Dict = None):
         """Set ``self._argmax_restart`` for optimizing the acquisition function"""
         fixed = {} if fixed is None else fixed
-        mask = np.array([v in fixed.keys() for v in self._search_space.var_name])
-        values = [fixed[k] for i, k in enumerate(self._search_space.var_name) if mask[i]]
-        idx = np.nonzero(~mask)[0]
         self._argmax_restart = functools.partial(
             argmax_restart,
-            search_space=self._search_space[idx],
-            h=partial_argument(self._h, mask, values) if self._h else None,
-            g=partial_argument(self._g, mask, values) if self._g else None,
+            search_space=self.search_space.filter(fixed.keys(), invert=True),
+            h=partial_argument(self._h, self.search_space.var_name, fixed) if self._h else None,
+            g=partial_argument(self._g, self.search_space.var_name, fixed) if self._g else None,
             eval_budget=self.AQ_max_FEs,
             n_restart=self.AQ_n_restart,
             wait_iter=self.AQ_wait_iter,
@@ -406,7 +402,7 @@ class BaseBO(ABC):
             X = self._search_space.round(X)  # round to precision if specified
             X = self.pre_eval_check(X)  # validate the new candidate solutions
             if len(X) < n_point:
-                self._logger.warning(
+                self.logger.warning(
                     f"iteration {self.iter_count}: duplicated solution found "
                     "by optimization! New points is taken from random design."
                 )
@@ -431,9 +427,9 @@ class BaseBO(ABC):
             index += len(self.data)
 
         X = Solution(X, index=index, var_name=self.var_names)
-        self._logger.info(msg)
+        self.logger.info(msg)
         for i, _ in enumerate(X):
-            self._logger.info(f"#{i + 1} - {self._to_pheno(X[i])}")
+            self.logger.info(f"#{i + 1} - {self._to_pheno(X[i])}")
 
         return self._to_pheno(X)
 
@@ -458,14 +454,14 @@ class BaseBO(ABC):
         """
         # TODO: implement method to handle known, expensive constraints `h_vals` and `g_vals`
         X = self._to_geno(X, index)
-        self._logger.info(f"observing {len(X)} points:")
+        self.logger.info(f"observing {len(X)} points:")
         for i, _ in enumerate(X):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
             if not warm_start:
                 self.eval_count += 1
 
-            self._logger.info(
+            self.logger.info(
                 f"#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])}"
             )
 
@@ -477,12 +473,12 @@ class BaseBO(ABC):
             X.to_csv(self.data_file, header=False, append=True)
 
         xopt = self.xopt
-        self._logger.info(f"fopt: {xopt.fitness}")
+        self.logger.info(f"fopt: {xopt.fitness}")
         # show the current penalty value if cheap constraints are present
         if self.h is not None or self.g is not None:
             _penalty = dynamic_penalty(xopt.tolist(), 1, self._h, self._g, minimize=self.minimize)
-            self._logger.info(f"penalty: {_penalty[0]:.4e}")
-        self._logger.info(f"xopt: {self._to_pheno(xopt)}\n")
+            self.logger.info(f"penalty: {_penalty[0]:.4e}")
+        self.logger.info(f"xopt: {self._to_pheno(xopt)}\n")
 
         if not self.model.is_fitted:
             self._fBest_DoE = copy(xopt.fitness)  # the best point in the DoE
@@ -524,23 +520,17 @@ class BaseBO(ABC):
             a list of sample points
         """
         fixed = {} if fixed is None else fixed
-        search_space = deepcopy(self._search_space)
-        var_name = set(fixed.keys()) & set(self._search_space.var_name)
-        mask = np.array([v in var_name for v in self._search_space.var_name])
-        values = [fixed[k] for i, k in enumerate(self._search_space.var_name) if mask[i]]
-        for key in var_name:
-            search_space.remove(key)
-
+        search_space = self.search_space.filter(fixed.keys(), invert=True)
         DoE = search_space.sample(
             n_point,
             method="LHS" if n_point > 1 else "uniform",
-            h=partial_argument(self._h, mask, values) if self._h else None,
-            g=partial_argument(self._g, mask, values) if self._g else None,
+            h=partial_argument(self._h, self.search_space.var_name, fixed) if self._h else None,
+            g=partial_argument(self._g, self.search_space.var_name, fixed) if self._g else None,
         ).tolist()
-        DoE = fillin_fixed_value(DoE, fixed, self._search_space)
+        DoE = fillin_fixed_value(DoE, fixed, self.search_space)
 
         if len(DoE) != 0:
-            DoE = self._search_space.round(DoE)
+            DoE = self.search_space.round(DoE)
             DoE = self.pre_eval_check(DoE)
 
         return DoE
@@ -560,7 +550,7 @@ class BaseBO(ABC):
     def post_eval_check(self, X: Solution) -> Solution:
         _ = np.isnan(X.fitness) | np.isinf(X.fitness)
         if np.any(_):
-            self._logger.warn(
+            self.logger.warning(
                 f"{sum(_)} candidate solutions are removed "
                 f"due to falied fitness evaluation: \n{str(X[_, :])}"
             )
@@ -590,8 +580,9 @@ class BaseBO(ABC):
 
         r2 = r2_score(fitness_, fitness_hat)
         MAPE = mean_absolute_percentage_error(fitness_, fitness_hat)
-        self._logger.info(f"model r2: {r2}, MAPE: {MAPE}")
+        self.logger.info(f"model r2: {r2}, MAPE: {MAPE}")
 
+    @timeit
     def arg_max_acquisition(
         self, n_point: int = None, return_value: bool = False, fixed: Dict = None
     ) -> List[list]:
@@ -604,8 +595,7 @@ class BaseBO(ABC):
             values: tuple,
                 criterion value of the candidate solution
         """
-        self._logger.debug("acquisition optimziation...")
-        t0 = time.time()
+        self.logger.debug("acquisition optimziation...")
         n_point = self.n_point if n_point is None else int(n_point)
         return_dx = self._optimizer == "BFGS"
         self.__set_argmax(fixed)
@@ -616,11 +606,10 @@ class BaseBO(ABC):
             )
         else:  # single-point strategy
             criteria = self._create_acquisition(par={}, return_dx=return_dx, fixed=fixed)
-            candidates, values = self._argmax_restart(criteria, logger=self._logger)
+            candidates, values = self._argmax_restart(criteria, logger=self.logger)
             candidates, values = [candidates], [values]
 
-        candidates = fillin_fixed_value(candidates, fixed, self._search_space)
-        self._logger.debug("acquisition optimziation takes {:.4f}s".format(time.time() - t0))
+        candidates = fillin_fixed_value(candidates, fixed, self.search_space)
         for callback in self._acquisition_callbacks:
             callback()
 
@@ -629,17 +618,14 @@ class BaseBO(ABC):
     def _create_acquisition(
         self, fun: str = None, par: dict = None, return_dx: bool = False, fixed: Dict = None
     ) -> Callable:
-        fixed = {} if fixed is None else fixed
-        mask = np.array([v in fixed.keys() for v in self._search_space.var_name])
-        values = [fixed[k] for i, k in enumerate(self._search_space.var_name) if mask[i]]
         fun = fun if fun is not None else self._acquisition_fun
         par = copy(self._acquisition_par) if par else par
         par.update({"model": self.model, "minimize": self.minimize})
         criterion = getattr(AcquisitionFunction, fun)(**par)
         return partial_argument(
-            functools.partial(criterion, return_dx=return_dx),
-            mask,
-            values,
+            func=functools.partial(criterion, return_dx=return_dx),
+            var_name=self.search_space.var_name,
+            fixed=fixed,
             reduce_output=return_dx,
         )
 
@@ -663,21 +649,21 @@ class BaseBO(ABC):
             if hasattr(self, "data"):
                 self.data = dill.dumps(self.data)
 
-            FHs = list(filter(lambda h: isinstance(h, logging.FileHandler), self._logger.handlers))
+            FHs = list(filter(lambda h: isinstance(h, logging.FileHandler), self.logger.handlers))
             if len(FHs) == 0:
                 _logger = None
             else:
                 _logger = FHs[0].baseFilename  # Only take the first log file
 
-            logger = self._logger
-            self._logger = _logger
+            logger = self.logger
+            self.logger = _logger
 
             dill.dump(self, f)
 
-            self._logger = logger
+            self.logger = logger
             if hasattr(self, "data"):
                 self.data = dill.loads(self.data)
-            self._logger.info(f"save to file {filename}...")
+            self.logger.info(f"save to file {filename}...")
 
     @classmethod
     def load(cls, filename):

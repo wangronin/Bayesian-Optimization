@@ -119,10 +119,10 @@ class MultiAcquisitionBO(BO):
 
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(
-                delayed(self._argmax_restart)(c, logger=self._logger) for c in criteria
+                delayed(self._argmax_restart)(c, logger=self.logger) for c in criteria
             )
         else:
-            __ = [list(self._argmax_restart(_, logger=self._logger)) for _ in criteria]
+            __ = [list(self._argmax_restart(_, logger=self.logger)) for _ in criteria]
 
         return tuple(zip(*__))
 

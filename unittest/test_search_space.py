@@ -4,7 +4,9 @@ import re
 import numpy as np
 import pytest
 from bayes_optim.search_space import (
+    Discrete,
     DiscreteSpace,
+    Integer,
     IntegerSpace,
     Real,
     RealSpace,
@@ -162,6 +164,22 @@ def test_SearchSpace_slice():
     assert isinstance(cs[[0]], RealSpace)
     assert isinstance(cs[[1]], IntegerSpace)
     assert isinstance(cs[[2]], DiscreteSpace)
+
+    assert isinstance(cs[0], Real)
+    assert isinstance(cs[1], Integer)
+    assert isinstance(cs[2], Discrete)
+    assert isinstance(cs["z"], Discrete)
+
+    cs = (
+        RealSpace([1, 5], "x", 2, scale="log") * 2
+        + IntegerSpace([-10, 10], "y")
+        + DiscreteSpace(["A", "B", "C"], "z")
+    )
+    assert isinstance(cs[:2], RealSpace)
+    assert isinstance(cs[["x0", "x1"]], RealSpace)
+    assert isinstance(cs[[False, False, True, False]], IntegerSpace)
+
+    assert isinstance(cs.filter(["x0", "x1"]), RealSpace)
 
 
 def test_sample():

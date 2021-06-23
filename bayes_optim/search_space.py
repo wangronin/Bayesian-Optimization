@@ -11,7 +11,6 @@ from itertools import chain
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from numpy.lib.arraysetops import isin
 from numpy.random import rand, randint
 from pyDOE import lhs
 from scipy.special import logit
@@ -500,10 +499,13 @@ class SearchSpace:
         if isinstance(index, (int, slice)):
             data = self.data[index]
         elif hasattr(index, "__iter__") and not isinstance(index, str):
-            if isinstance(index[0], str):
+            index = np.array(index)
+            if index.dtype.type is np.str_:  # list of variable names
                 index = [np.nonzero(np.array(self.var_name) == i)[0][0] for i in index]
+            elif index.dtype == bool:  # mask array
+                index = np.nonzero(index)[0]
             data = [self.data[i] for i in index]
-        elif isinstance(index, str):
+        elif isinstance(index, str):  # slicing one variable by name
             index = np.nonzero(np.array(self.var_name) == index)[0][0]
             data = self.data[index]
         else:
@@ -623,6 +625,24 @@ class SearchSpace:
         for var in self.data:
             msg += str(var) + "\n"
         return msg
+
+    def filter(self, keys: List[str], invert=False) -> SearchSpace:
+        """filter a search space based on a list of variable names
+
+        Parameters
+        ----------
+        keys : List[str]
+            the list of variable names to keep
+
+        Returns
+        -------
+        Union[Variable, SearchSpace]
+            the resulting subspace
+        """
+        masks = [v in keys for v in self.var_name]
+        if invert:
+            masks = np.bitwise_not(masks)
+        return self[masks]
 
     @classmethod
     def concat(cls, *args: Tuple[SearchSpace]):

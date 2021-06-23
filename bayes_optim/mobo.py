@@ -56,7 +56,7 @@ class BaseMOBO(BO):
         assert hasattr(self.obj_fun, "__iter__")
         assert all([hasattr(f, "__call__") for f in self.obj_fun])
         if len(self.obj_fun) != self.n_obj:
-            self.logger.warn(
+            self.logger.warning(
                 f"len(obj_fun) ({self.obj_fun}) != n_obj ({self.n_obj})."
                 "Setting n_obj according to the former."
             )
@@ -117,7 +117,7 @@ class BaseMOBO(BO):
         Returns
         -------
         List[Tuple[float]]
-            of the shape [[f1(x1),...,fm(x1)], [f1(x2),...,fm(x2)], ..., [f1(xn),...,fm(xn)]]
+            of the shape [[f1(x1),...,fm(x1)], [f1(x2),...,fm(x2)],...,[f1(xn),...,fm(xn)]]
         """
         # TODO: fix for `self.parallel_obj_fun`
         func_vals = []
@@ -154,7 +154,7 @@ class BaseMOBO(BO):
         # TODO: implement method to handle known, expensive constraints `h_vals` and `g_vals`
         # add extra columns h_vals, g_vals to the `Solution` object
         X = self._to_geno(X, index)
-        self._logger.info(f"observing {len(X)} points:")
+        self.logger.info(f"observing {len(X)} points:")
 
         # if h_vals is not None or g_vals is not None:
         # raise NotImplementedError("will be implemented soon :)")
@@ -166,7 +166,7 @@ class BaseMOBO(BO):
                 if not warm_start:
                     self.eval_count += 1
             _fitness = ", ".join([f"f{_ + 1}: {func_vals[i][_]}" for _ in range(self.n_obj)])
-            self._logger.info(f"#{i + 1} - {_fitness}, solution: {self._to_pheno(X[i])}")
+            self.logger.info(f"#{i + 1} - {_fitness}, solution: {self._to_pheno(X[i])}")
 
         X = self.post_eval_check(X)
         if self.data_file is not None:
@@ -178,13 +178,13 @@ class BaseMOBO(BO):
 
         xopt = self.xopt
         hv = Hypervolume(ref_point=Tensor(-self.ref_point))
-        self._logger.info(f"Efficient set/Pareto front (xopt/fopt):\n{xopt}")
-        self._logger.info(f"Hypervolume indicator value: {hv.compute(Tensor(-xopt.fitness))}")
+        self.logger.info(f"Efficient set/Pareto front (xopt/fopt):\n{xopt}")
+        self.logger.info(f"Hypervolume indicator value: {hv.compute(Tensor(-xopt.fitness))}")
         if self.h is not None or self.g is not None:
             penalty = np.array(
                 [dynamic_penalty(x, 1, self._h, self._g, minimize=self.minimize) for x in xopt]
             )
-            self._logger.info(f"... with corresponding penalty: {penalty}")
+            self.logger.info(f"... with corresponding penalty: {penalty}")
 
         if not warm_start:
             self.iter_count += 1
@@ -199,6 +199,7 @@ class BaseMOBO(BO):
         return model, r2, MAPE
 
     def update_model(self):
+        # TODO: unify this model the one from the parent class
         X, y = self.data, self.data.fitness
         self.fmin, self.fmax = np.min(y, axis=0), np.max(y, axis=0)
         self.frange = self.fmax - self.fmin
@@ -230,7 +231,7 @@ class BaseMOBO(BO):
         for i in range(self.n_obj):
             _r2 = r2[i] if not isinstance(r2, float) else r2
             _mape = MAPE[i] if not isinstance(MAPE, float) else MAPE
-            self._logger.info(f"model of f{i + 1} r2: {_r2}, MAPE: {_mape}")
+            self.logger.info(f"model of f{i + 1} r2: {_r2}, MAPE: {_mape}")
 
 
 class MOBO(BaseMOBO):
@@ -241,7 +242,7 @@ class MOBO(BaseMOBO):
         self.AQ_max_FEs = 1e3 * self.search_space.dim
         if self._acquisition_fun != "EHVI":
             self._acquisition_fun = "EHVI"
-            self.logger.warn(
+            self.logger.warning(
                 "MOBO only allows using `EHIV` acquisition function. Ignore user's argument."
             )
 
@@ -279,21 +280,21 @@ class MOBO_qEHVI(BaseMOBO):
         super().__init__(*args, **kwargv)
         if self._acquisition_fun != "qEHVI":
             self._acquisition_fun = "qEHVI"
-            self.logger.warn(
+            self.logger.warning(
                 "MOBO only allows using `qEHIV` acquisition function. Ignore user's argument."
             )
 
-    def _create_acquisition(
-        self, fun: str = None, par: dict = None, return_dx: bool = False, fixed: Dict = None
-    ):
-        ref_point = np.max(self.y, axis=0) * 1.3
-        partitioning = NondominatedPartitioning(ref_point=Tensor(ref_point), Y=Tensor(self.y))
-        return qEHVI(
-            model=par["model"],
-            ref_point=ref_point.tolist(),
-            n_point=par["n_point"],
-            partitioning=partitioning,
-        )
+    # def _create_acquisition(
+    #     self, fun: str = None, par: dict = None, return_dx: bool = False, fixed: Dict = None
+    # ):
+    #     ref_point = np.max(self.y, axis=0) * 1.3
+    #     partitioning = NondominatedPartitioning(ref_point=Tensor(ref_point), Y=Tensor(self.y))
+    #     return qEHVI(
+    #         model=par["model"],
+    #         ref_point=ref_point.tolist(),
+    #         n_point=par["n_point"],
+    #         partitioning=partitioning,
+    #     )
 
     def _batch_arg_max_acquisition(
         self, n_point: int, return_dx: bool, fixed: Dict = None

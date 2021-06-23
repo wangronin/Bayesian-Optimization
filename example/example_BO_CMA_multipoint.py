@@ -106,13 +106,13 @@ class _CMA(CMAEvolutionStrategy):
 
     @property
     def logger(self):
-        return self._logger
+        return self.logger
 
     @logger.setter
     def logger(self, logger):
         if isinstance(logger, logging.Logger):
-            self._logger = logger
-            self._logger.propagate = False
+            self.logger = logger
+            self.logger.propagate = False
             return
 
     def ask(self, n_point=None):
@@ -121,7 +121,7 @@ class _CMA(CMAEvolutionStrategy):
     def tell(self, X, y):
         super().tell(X, y)
         x, f, _ = self.best.get()
-        self._logger.info("iteration {}, fopt: {}, xopt: {}".format(self.countiter, f, x))
+        self.logger.info("iteration {}, fopt: {}, xopt: {}".format(self.countiter, f, x))
 
     def check_stop(self):
         _, f, __ = self.best.get()

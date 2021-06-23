@@ -55,7 +55,10 @@ def fillin_fixed_value(X: List[List], fixed: Dict, search_space):
 
 
 def partial_argument(
-    func: callable, masks: np.ndarray, values: np.ndarray, reduce_output: bool = False
+    func: callable,
+    var_name: List[str],
+    fixed: Dict[str, Union[str, float, int, object, bool]] = None,
+    reduce_output: bool = False,
 ):
     """fill-in the values for inactive variables
 
@@ -68,8 +71,9 @@ def partial_argument(
     values : np.ndarray
         the values fixed for the inactive variables
     """
-    if not isinstance(values, list):
-        values = list(values)
+    fixed = {} if fixed is None else fixed
+    masks = np.array([v in fixed.keys() for v in var_name])
+    values = [fixed[k] for i, k in enumerate(var_name) if masks[i]]
 
     @functools.wraps(func)
     def wrapper(X):
