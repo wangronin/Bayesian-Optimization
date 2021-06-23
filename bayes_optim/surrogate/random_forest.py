@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import List, Union
 
 import numpy as np
@@ -16,6 +17,8 @@ from ..solution import Solution
 # TODO: implement multi-output/objetive surrogate models, better to model the c
 # orrelation among targets
 class SurrogateAggregation(object):
+    """Linear aggregation of surrogate models used for multi-obvjective optimization"""
+
     def __init__(self, surrogates, aggregation="WS", **kwargs):
         self.surrogates = surrogates
         self.N = len(self.surrogates)
@@ -47,7 +50,7 @@ class SurrogateAggregation(object):
         return (y_hat, MSE) if eval_MSE else y_hat
 
     def gradient(self, X):
-        # TODO: implement
+        # TODO: this model is not differentiable?
         pass
 
 
@@ -88,10 +91,9 @@ class RandomForest(RandomForestRegressor):
         # in the future, maybe implement binary/multi-value split
         if levels is not None:
             assert isinstance(levels, dict)
-            self._levels = levels
+            self._levels = OrderedDict(sorted(levels.items()))
             self._cat_idx = list(self._levels.keys())
-            self._categories = [list(l) for l in self._levels.values()]
-
+            self._categories = list(self._levels.values())
             # encode categorical variables to binary values
             self._enc = OneHotEncoder(categories=self._categories, sparse=False)
 
@@ -153,9 +155,3 @@ class RandomForest(RandomForestRegressor):
             # TODO: implement the jackknife estimate of variance
             MSE_hat = np.std(y_hat_all, axis=-1, ddof=1) ** 2.0
         return (y_hat, MSE_hat) if eval_MSE else y_hat
-
-    # TODO: those settings should be in test file as inputs to surroagtes
-    # leaf_size = max(1, int(n_sample / 20.))
-    # ntree=100,
-    # mtry=ceil(self.n_feature * 5 / 6.),
-    # nodesize=leaf_size

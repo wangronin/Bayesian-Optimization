@@ -331,12 +331,13 @@ class BaseBO(ABC):
         """Set ``self._argmax_restart`` for optimizing the acquisition function"""
         fixed = {} if fixed is None else fixed
         mask = np.array([v in fixed.keys() for v in self._search_space.var_name])
+        values = [fixed[k] for i, k in enumerate(self._search_space.var_name) if mask[i]]
         idx = np.nonzero(~mask)[0]
         self._argmax_restart = functools.partial(
             argmax_restart,
             search_space=self._search_space[idx],
-            h=partial_argument(self._h, mask, fixed.values()) if self._h else None,
-            g=partial_argument(self._g, mask, fixed.values()) if self._g else None,
+            h=partial_argument(self._h, mask, values) if self._h else None,
+            g=partial_argument(self._g, mask, values) if self._g else None,
             eval_budget=self.AQ_max_FEs,
             n_restart=self.AQ_n_restart,
             wait_iter=self.AQ_wait_iter,
@@ -526,14 +527,15 @@ class BaseBO(ABC):
         search_space = deepcopy(self._search_space)
         var_name = set(fixed.keys()) & set(self._search_space.var_name)
         mask = np.array([v in var_name for v in self._search_space.var_name])
+        values = [fixed[k] for i, k in enumerate(self._search_space.var_name) if mask[i]]
         for key in var_name:
             search_space.remove(key)
 
         DoE = search_space.sample(
             n_point,
             method="LHS" if n_point > 1 else "uniform",
-            h=partial_argument(self._h, mask, fixed.values()) if self._h else None,
-            g=partial_argument(self._g, mask, fixed.values()) if self._g else None,
+            h=partial_argument(self._h, mask, values) if self._h else None,
+            g=partial_argument(self._g, mask, values) if self._g else None,
         ).tolist()
         DoE = fillin_fixed_value(DoE, fixed, self._search_space)
 
@@ -629,6 +631,7 @@ class BaseBO(ABC):
     ) -> Callable:
         fixed = {} if fixed is None else fixed
         mask = np.array([v in fixed.keys() for v in self._search_space.var_name])
+        values = [fixed[k] for i, k in enumerate(self._search_space.var_name) if mask[i]]
         fun = fun if fun is not None else self._acquisition_fun
         par = copy(self._acquisition_par) if par else par
         par.update({"model": self.model, "minimize": self.minimize})
@@ -636,7 +639,7 @@ class BaseBO(ABC):
         return partial_argument(
             functools.partial(criterion, return_dx=return_dx),
             mask,
-            fixed.values(),
+            values,
             reduce_output=return_dx,
         )
 

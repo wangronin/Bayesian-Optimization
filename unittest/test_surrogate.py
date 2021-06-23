@@ -1,10 +1,6 @@
-import sys
-
 import numpy as np
-from sklearn.metrics import r2_score
-
-sys.insert(0, "./")
 from bayes_optim.surrogate import RandomForest, SurrogateAggregation
+from sklearn.metrics import r2_score
 
 np.random.seed(12)
 

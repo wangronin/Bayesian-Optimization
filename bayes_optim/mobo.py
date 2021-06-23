@@ -117,7 +117,7 @@ class BaseMOBO(BO):
         Returns
         -------
         List[Tuple[float]]
-            of the shape [[f1(x1),...,f1(xn)], [f2(x1),...,f2(xn)], ..., [fm(x1),...,fm(xn)]]
+            of the shape [[f1(x1),...,fm(x1)], [f1(x2),...,fm(x2)], ..., [f1(xn),...,fm(xn)]]
         """
         # TODO: fix for `self.parallel_obj_fun`
         func_vals = []
@@ -203,15 +203,16 @@ class BaseMOBO(BO):
         self.fmin, self.fmax = np.min(y, axis=0), np.max(y, axis=0)
         self.frange = self.fmax - self.fmin
 
-        if any(np.isclose(self.frange, 0)) and len(y) > 1:
-            raise Exception("flat objective value!")
+        # TODO: double check if this is still needed for GPRs
+        # if any(np.isclose(self.frange, 0)) and len(y) > 1:
+        # raise Exception("flat objective value!")
 
         # TODO: to normalize the objective values
         # Standardization should make it easier to specify the GP prior, compared to
         # rescaling values to the unit interval.
         # _std = np.std(y, axis=0)
         # idx = ~np.isclose(_std, 0)
-        self.y = y * (-1) ** (~self.minimize)
+        self.y = y * (-1) ** np.bitwise_not(self.minimize)
         # self.y = (y[:, idx] - np.mean(y[:, idx], axis=0)) / _std[idx]
 
         # TODO: the first case is not needed
@@ -245,8 +246,10 @@ class MOBO(BaseMOBO):
             )
 
     def _create_acquisition(self, fixed: Dict = None, **kwargv):
+        # TODO: implement the Kriging believer strategy
         fixed = {} if fixed is None else fixed
         mask = np.array([v in fixed.keys() for v in self._search_space.var_name])
+        values = [fixed[k] for i, k in enumerate(self._search_space.var_name) if mask[i]]
         partitioning = NondominatedPartitioning(ref_point=Tensor(self.ref_point), Y=Tensor(self.y))
         criterion = EHVI(
             model=self.model, ref_point=self.ref_point.tolist(), partitioning=partitioning
@@ -254,7 +257,7 @@ class MOBO(BaseMOBO):
         return partial_argument(
             functools.partial(criterion),
             mask,
-            fixed.values(),
+            values,
             reduce_output=False,
         )
 
@@ -298,17 +301,14 @@ class MOBO_qEHVI(BaseMOBO):
         """Set ``self._argmax_restart`` for optimizing the acquisition function"""
         fixed = {} if fixed is None else fixed
         mask = np.array([v in fixed.keys() for v in self._search_space.var_name])
+        values = [fixed[k] for i, k in enumerate(self._search_space.var_name) if mask[i]]
         idx = np.nonzero(~mask)[0]
         _argmax_restart = functools.partial(
             argmax_restart,
             search_space=self._search_space[idx] * n_point,
-            h=(
-                partial_argument(self._h, np.repeat(mask, n_point), list(fixed.values()) * n_point)
-                if self._h
-                else None
-            ),
+            h=((self._h, np.repeat(mask, n_point), values * n_point) if self._h else None),
             g=(
-                partial_argument(self._g, np.repeat(mask, n_point), list(fixed.values()) * n_point)
+                partial_argument(self._g, np.repeat(mask, n_point), values * n_point)
                 if self._g
                 else None
             ),
