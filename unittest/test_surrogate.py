@@ -1,6 +1,6 @@
 import sys
 
-sys.path.insert(0, "./")
+sys.path.insert(0, "../")
 import numpy as np
 from bayes_optim.surrogate import RandomForest, SurrogateAggregation
 from sklearn.metrics import r2_score

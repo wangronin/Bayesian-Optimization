@@ -1,6 +1,6 @@
 import sys
 
-sys.path.insert(0, "./")
+sys.path.insert(0, "../")
 import numpy as np
 from bayes_optim.acquisition_optim import MIES, OnePlusOne_Cholesky_CMA
 from bayes_optim.search_space import Bool, Discrete, Integer, Ordinal, Real, SearchSpace
