@@ -248,17 +248,14 @@ class MOBO(BaseMOBO):
 
     def _create_acquisition(self, fixed: Dict = None, **kwargv):
         # TODO: implement the Kriging believer strategy
-        fixed = {} if fixed is None else fixed
-        mask = np.array([v in fixed.keys() for v in self._search_space.var_name])
-        values = [fixed[k] for i, k in enumerate(self._search_space.var_name) if mask[i]]
         partitioning = NondominatedPartitioning(ref_point=Tensor(self.ref_point), Y=Tensor(self.y))
         criterion = EHVI(
             model=self.model, ref_point=self.ref_point.tolist(), partitioning=partitioning
         )
         return partial_argument(
             functools.partial(criterion),
-            mask,
-            values,
+            self.search_space.var_name,
+            fixed,
             reduce_output=False,
         )
 
