@@ -619,7 +619,7 @@ class BaseBO(ABC):
         self, fun: str = None, par: dict = None, return_dx: bool = False, fixed: Dict = None
     ) -> Callable:
         fun = fun if fun is not None else self._acquisition_fun
-        par = copy(self._acquisition_par) if par else par
+        par = par if par is not None else copy(self._acquisition_par)
         par.update({"model": self.model, "minimize": self.minimize})
         criterion = getattr(AcquisitionFunction, fun)(**par)
         return partial_argument(
