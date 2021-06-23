@@ -5,7 +5,7 @@ import numpy as np
 from numpy import exp, sqrt
 from scipy.stats import norm
 
-__authors__ = ['Hao Wang']
+__authors__ = ["Hao Wang"]
 
 # TODO: add annotations
 # TODO: implement noisy handling infill criteria, e.g., EQI (expected quantile improvement)
@@ -18,8 +18,9 @@ def penalized_acquisition(x, acquisition_func, X_mean, pca, bounds, return_dx):
     bounds = np.asarray(bounds)
     idx_lower = x_ < bounds[:, 0]
     idx_upper = x_ > bounds[:, 1]
-    penalty = np.sum([bounds[i, 0] - x_[i] for i in idx_lower]) + \
-        np.sum([x_[i] - bounds[i, 1] for i in idx_upper])
+    penalty = np.sum([bounds[i, 0] - x_[i] for i in idx_lower]) + np.sum(
+        [x_[i] - bounds[i, 1] for i in idx_upper]
+    )
     penalty *= -1
 
     if penalty == 0:
@@ -32,6 +33,7 @@ def penalized_acquisition(x, acquisition_func, X_mean, pca, bounds, return_dx):
             return penalty, g
         else:
             return penalty
+
 
 class AcquisitionFunction(ABC):
     def __init__(self, model=None, minimize=True):
@@ -46,7 +48,7 @@ class AcquisitionFunction(ABC):
     def model(self, model):
         if model is not None:
             self._model = model
-            assert hasattr(self._model, 'predict')
+            assert hasattr(self._model, "predict")
         else:
             self._model = None
 
@@ -62,18 +64,19 @@ class AcquisitionFunction(ABC):
         return y_hat, sd
 
     def _gradient(self, X):
-        y_dx, sd2_dx = self._model.gradient(X)
+        X_ = np.array(X, dtype=float)
+        y_dx, sd2_dx = self._model.gradient(X_)
         if not self.minimize:
             y_dx = -y_dx
         return y_dx, sd2_dx
 
     def check_X(self, X):
-        """Keep input as '2D' object
-        """
+        """Keep input as '2D' object"""
         return np.atleast_2d(X)
 
+
 class ImprovementBased(AcquisitionFunction):
-    def  __init__(self, plugin=None, **kwargs):
+    def __init__(self, plugin=None, **kwargs):
         super().__init__(**kwargs)
         self.plugin = plugin
 
@@ -85,17 +88,18 @@ class ImprovementBased(AcquisitionFunction):
     def plugin(self, plugin):
         if plugin is None:
             if self._model is not None:
-                self._plugin = np.min(self._model.y) if self.minimize \
-                    else -1.0 * np.max(self._model.y)
+                self._plugin = (
+                    np.min(self._model.y) if self.minimize else -1.0 * np.max(self._model.y)
+                )
             else:
                 self._plugin = None
         else:
             self._plugin = plugin if self.minimize else -1.0 * plugin
 
+
 class UCB(AcquisitionFunction):
     def __init__(self, alpha=0.5, **kwargs):
-        """Upper Confidence Bound
-        """
+        """Upper Confidence Bound"""
         super().__init__(**kwargs)
         self.alpha = alpha
 
@@ -117,18 +121,19 @@ class UCB(AcquisitionFunction):
             f_value = y_hat + self.alpha * sd
             if n_sample == 1:
                 f_value = sum(f_value)
-        except Exception: # in case of numerical errors
+        except Exception:  # in case of numerical errors
             f_value = 0
 
         if return_dx:
             y_dx, sd2_dx = self._gradient(X)
-            sd_dx = sd2_dx / (2. * sd)
+            sd_dx = sd2_dx / (2.0 * sd)
             try:
                 f_dx = y_dx + self.alpha * sd_dx
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
             return f_value, f_dx
         return f_value
+
 
 class EI(ImprovementBased):
     def __call__(self, X, return_dx=False):
@@ -138,7 +143,7 @@ class EI(ImprovementBased):
 
         # if the Kriging variance is to small
         # TODO: check the rationale of 1e-6 and why the ratio if intended
-        if hasattr(self._model, 'sigma2'):
+        if hasattr(self._model, "sigma2"):
             if sd / np.sqrt(self._model.sigma2) < 1e-6:
                 return (0, np.zeros((len(X[0]), 1))) if return_dx else 0
         else:
@@ -153,19 +158,20 @@ class EI(ImprovementBased):
             f_value = xcr_ * xcr_prob + sd * xcr_dens
             if n_sample == 1:
                 f_value = sum(f_value)
-        except Exception: # in case of numerical errors
+        except Exception:  # in case of numerical errors
             # IMPORTANT: always keep the output in the same type
             f_value = 0
 
         if return_dx:
             y_dx, sd2_dx = self._gradient(X)
-            sd_dx = sd2_dx / (2. * sd)
+            sd_dx = sd2_dx / (2.0 * sd)
             try:
                 f_dx = -y_dx * xcr_prob + sd_dx * xcr_dens
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
             return f_value, f_dx
         return f_value
+
 
 class EpsilonPI(ImprovementBased):
     def __init__(self, epsilon=1e-10, **kwargs):
@@ -194,11 +200,11 @@ class EpsilonPI(ImprovementBased):
             xcr = xcr_ / sd
             f_value = norm.cdf(xcr)
         except Exception:
-            f_value = 0.
+            f_value = 0.0
 
         if return_dx:
             y_dx, sd2_dx = self._gradient(X)
-            sd_dx = sd2_dx / (2. * sd)
+            sd_dx = sd2_dx / (2.0 * sd)
             try:
                 f_dx = -(coef * y_dx + xcr * sd_dx) * norm.pdf(xcr) / sd
             except Exception:
@@ -206,17 +212,17 @@ class EpsilonPI(ImprovementBased):
             return f_value, f_dx
         return f_value
 
+
 class PI(EpsilonPI):
     def __init__(self, **kwargs):
-        """Probability of Improvement
-        """
-        kwargs.update({'epsilon' : 0})
+        """Probability of Improvement"""
+        kwargs.update({"epsilon": 0})
         super().__init__(**kwargs)
+
 
 class MGFI(ImprovementBased):
     def __init__(self, t=1, **kwargs):
-        """Moment-Generating Function of Improvement proposed in SMC'17 paper
-        """
+        """Moment-Generating Function of Improvement proposed in SMC'17 paper"""
         super().__init__(**kwargs)
         self.t = t
 
@@ -238,43 +244,45 @@ class MGFI(ImprovementBased):
         # if the Kriging variance is to small
         # TODO: check the rationale of 1e-6 and why the ratio if intended
         if np.isclose(sd, 0):
-            return (np.array([0.]), np.zeros((len(X[0]), 1))) if return_dx else 0.
+            return (np.array([0.0]), np.zeros((len(X[0]), 1))) if return_dx else 0.0
 
         with warnings.catch_warnings():
-            warnings.filterwarnings('error')
+            warnings.filterwarnings("error")
             try:
-                y_hat_p = y_hat - self._t * sd ** 2.
+                y_hat_p = y_hat - self._t * sd ** 2.0
                 beta_p = (self._plugin - y_hat_p) / sd
                 term = self._t * (self._plugin - y_hat - 1)
-                f_ = norm.cdf(beta_p) * exp(term + self._t ** 2. * sd ** 2. / 2.)
+                f_ = norm.cdf(beta_p) * exp(term + self._t ** 2.0 * sd ** 2.0 / 2.0)
                 if n_sample == 1:
                     f_ = sum(f_)
-            except Exception: # in case of numerical errors
-                f_ = 0.
+            except Exception:  # in case of numerical errors
+                f_ = 0.0
 
         if np.isinf(f_):
-            f_ = 0.
+            f_ = 0.0
 
         if return_dx:
             y_dx, sd2_dx = self._gradient(X)
-            sd_dx = sd2_dx / (2. * sd)
+            sd_dx = sd2_dx / (2.0 * sd)
 
             try:
-                term = exp(self._t * (self._plugin + self._t * sd ** 2. / 2 - y_hat - 1))
-                m_prime_dx = y_dx - 2. * self._t * sd * sd_dx
+                term = exp(self._t * (self._plugin + self._t * sd ** 2.0 / 2 - y_hat - 1))
+                m_prime_dx = y_dx - 2.0 * self._t * sd * sd_dx
                 beta_p_dx = -(m_prime_dx + beta_p * sd_dx) / sd
 
-                f_dx = term * (norm.pdf(beta_p) * beta_p_dx + \
-                    norm.cdf(beta_p) * ((self._t ** 2) * sd * sd_dx - self._t * y_dx))
+                f_dx = term * (
+                    norm.pdf(beta_p) * beta_p_dx
+                    + norm.cdf(beta_p) * ((self._t ** 2) * sd * sd_dx - self._t * y_dx)
+                )
             except Exception:
                 f_dx = np.zeros((len(X[0]), 1))
             return f_, f_dx
         return f_
 
+
 class GEI(ImprovementBased):
     def __init__(self, g=1, **kwargs):
-        """Generalized Expected Improvement
-        """
+        """Generalized Expected Improvement"""
         super().__init__(**kwargs)
         self.g = g
 

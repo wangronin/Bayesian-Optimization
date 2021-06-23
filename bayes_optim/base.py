@@ -1,10 +1,9 @@
 import functools
 import logging
 import sys
-import time
 from abc import ABC, abstractmethod
 from copy import copy
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import dill
 import numpy as np
@@ -21,32 +20,24 @@ from .acquisition_optim.option import (
 from .misc import LoggerFormatter
 from .search_space import SearchSpace
 from .solution import Solution
-from .utils import arg_to_int, dynamic_penalty
+from .utils import (
+    arg_to_int,
+    dynamic_penalty,
+    fillin_fixed_value,
+    func_with_list_arg,
+    partial_argument,
+    timeit,
+)
 
 __authors__ = ["Hao Wang"]
 
 
-def wrap_func(func, kind, var_names):
-    @functools.wraps(func)
-    def wrapper(X):
-        if not isinstance(X, Solution):
-            X = Solution(X, var_name=var_names)
-        if kind == "list":
-            return func(X.tolist())
-        if kind == "dict":
-            X = X.to_dict()
-            return [func(_) for _ in X]
-
-    return wrapper
-
-
-# TODO: inherit from `BaseOptimizer`
-# TODO: `ask` -> suggest, `tell` -> observe, implement `recommend`
+# TODO: `ask` -> suggest, `tell` -> observe
 # TODO: implement `verbose` levels
 
 
 class BaseBO(ABC):
-    """Bayesian Optimization Base Class, which implements the Ask-Evaluate-Tell interface"""
+    """Bayesian Optimization base class, which implements the Ask-Evaluate-Tell interface"""
 
     def __init__(
         self,
@@ -72,6 +63,7 @@ class BaseBO(ABC):
         random_seed: Optional[int] = None,
         logger: Optional[str] = None,
         instance_name: Optional[str] = None,
+        **kwargs,
     ):
         """The base class for Bayesian Optimization
 
@@ -295,10 +287,11 @@ class BaseBO(ABC):
             self._to_pheno = lambda x: x.tolist()
             self._to_geno = lambda x, index=None: Solution(x, var_name=self.var_names, index=index)
         elif self._eval_type == "dict":
-            self._to_pheno = lambda x: x.to_dict(space=self._search_space)
+            self._to_pheno = lambda x: x.to_dict()
             self._to_geno = lambda x, index=None: Solution.from_dict(x, index=index)
 
     def _set_internal_optimization(self, **kwargs):
+        # TODO: turn this into an Option Class
         if "optimizer" in kwargs:
             self._optimizer = kwargs["optimizer"]
         else:
@@ -326,17 +319,21 @@ class BaseBO(ABC):
             default_AQ_wait_iter if "wait_iter" not in kwargs else arg_to_int(kwargs["wait_iter"])
         )
 
+        # NOTE: `_h` and `_g` are wrappers of `h` and `g`, which always take lists as input
         self._h, self._g = self.h, self.g
         if self._h is not None:
-            self._h = wrap_func(self._h, self._eval_type, self.search_space.var_name)
+            self._h = func_with_list_arg(self._h, self._eval_type, self.search_space.var_name)
         if self._g is not None:
-            self._g = wrap_func(self._g, self._eval_type, self.search_space.var_name)
+            self._g = func_with_list_arg(self._g, self._eval_type, self.search_space.var_name)
 
+    def __set_argmax(self, fixed: Dict = None):
+        """Set ``self._argmax_restart`` for optimizing the acquisition function"""
+        fixed = {} if fixed is None else fixed
         self._argmax_restart = functools.partial(
             argmax_restart,
-            search_space=self._search_space,
-            h=self._h,
-            g=self._g,
+            search_space=self.search_space.filter(fixed.keys(), invert=True),
+            h=partial_argument(self._h, self.search_space.var_name, fixed) if self._h else None,
+            g=partial_argument(self._g, self.search_space.var_name, fixed) if self._g else None,
             eval_budget=self.AQ_max_FEs,
             n_restart=self.AQ_n_restart,
             wait_iter=self.AQ_wait_iter,
@@ -350,59 +347,93 @@ class BaseBO(ABC):
 
         assert hasattr(AcquisitionFunction, self._acquisition_fun)
 
-    def _compare(self, f1, f2):
+    def _compare(self, f1: float, f2: float) -> bool:
         """Test if objecctive value f1 is better than f2"""
         return f1 < f2 if self.minimize else f2 > f1
 
-    def run(self):
+    @property
+    def xopt(self):
+        if not hasattr(self, "data"):
+            return None
+        fopt = self._get_best(self.data.fitness)
+        self._xopt = self.data[np.where(self.data.fitness == fopt)[0][0]]
+        return self._xopt
+
+    def run(self) -> Tuple[List[Solution], dict]:
         while not self.check_stop():
             self.step()
-        return self.xopt, self.fopt, self.stop_dict
+        return self._to_pheno(self.xopt), self.xopt.fitness, self.stop_dict
 
     def step(self):
+        self.logger.info(f"iteration {self.iter_count} starts...")
         X = self.ask()
-
-        t0 = time.time()
+        if len(X) == 0:
+            # TODO: customize exception classes
+            raise Exception(
+                "Ask yields empty solutions. "
+                "Please check the search space/constraints are feasible"
+            )
         func_vals = self.evaluate(X)
-        self._logger.info("evaluation takes {:.4f}s".format(time.time() - t0))
-
         self.tell(X, func_vals)
 
-    def ask(self, n_point: int = None):
-        if self.model.is_fitted:
-            msg = f"Ask {n_point} points:"
-            n_point = self.n_point if n_point is None else n_point
-            X = self.arg_max_acquisition(n_point=n_point)
-            X = self._search_space.round(X)  # round to precision if specified
-            # validate the new candidate solutions
-            X = self.pre_eval_check(X)
+    @timeit
+    def ask(
+        self, n_point: int = None, fixed: Dict[str, Union[float, int, str]] = None
+    ) -> Union[List[list], List[dict]]:
+        """suggest a list of candidate solutions
 
+        Parameters
+        ----------
+        n_point : int, optional
+            the number of candidates to request, by default None
+        fixed : Dict[str, Union[float, int, str]], optional
+            a dictionary specifies the decision variables fixed and the value to which those
+            are fixed, by default None
+
+        Returns
+        -------
+        Union[List[list], List[dict]]
+            the suggested candidates
+        """
+        if self.model.is_fitted:
+            n_point = self.n_point if n_point is None else n_point
+            msg = f"asking {n_point} points:"
+            X = self.arg_max_acquisition(n_point=n_point, fixed=fixed)
+            X = self._search_space.round(X)  # round to precision if specified
+            X = self.pre_eval_check(X)  # validate the new candidate solutions
             if len(X) < n_point:
-                self._logger.warning(
+                self.logger.warning(
                     f"iteration {self.iter_count}: duplicated solution found "
                     "by optimization! New points is taken from random design."
                 )
                 N = n_point - len(X)
-                method = "LHS" if N > 1 else "uniform"
-                s = self._search_space.sample(N=N, method=method, h=self._h, g=self._g).tolist()
-                X = self._search_space.round(X + s)
-        else:  # initial DoE
-            msg = f"Ask {n_point} points (DoE):"
-            if not n_point:
-                n_point = self._DoE_size
-            X = self._search_space.round(self.create_DoE(n_point))
+                # take random samples if the acquisition optimization failed
+                while N:
+                    s = self.create_DoE(N, fixed=fixed)
+                    # NOTE: random sampling could generate duplicated points again
+                    # keep sampling until getting enough points TODO: add a timeout
+                    N -= len(s)
+                    X += s
+        else:  # take the initial DoE
+            n_point = self._DoE_size if n_point is None else n_point
+            msg = f"asking {n_point} points (using DoE):"
+            X = self.create_DoE(n_point, fixed=fixed)
+
+        if len(X) == 0:  # NOTE: this would happen if the constraints are too restrict
+            return []
 
         index = np.arange(len(X))
         if hasattr(self, "data"):
             index += len(self.data)
 
-        # make a `Solution` object
         X = Solution(X, index=index, var_name=self.var_names)
-        self._logger.info(msg)
+        self.logger.info(msg)
         for i, _ in enumerate(X):
-            self._logger.info(f"#{i + 1} - {self._to_pheno(X[i])[0]}")
+            self.logger.info(f"#{i + 1} - {self._to_pheno(X[i])}")
+
         return self._to_pheno(X)
 
+    @timeit
     def tell(
         self,
         X: List[Union[list, dict]],
@@ -421,17 +452,17 @@ class BaseBO(ABC):
         func_vals : List/np.ndarray of reals
             The corresponding function values
         """
-
+        # TODO: implement method to handle known, expensive constraints `h_vals` and `g_vals`
         X = self._to_geno(X, index)
-        self._logger.info(f"iteration {self.iter_count}, observing {len(X)} points:")
+        self.logger.info(f"observing {len(X)} points:")
         for i, _ in enumerate(X):
             X[i].fitness = func_vals[i]
             X[i].n_eval += 1
             if not warm_start:
                 self.eval_count += 1
 
-            self._logger.info(
-                f"#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])[0]}"
+            self.logger.info(
+                f"#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])}"
             )
 
         X = self.post_eval_check(X)
@@ -441,43 +472,24 @@ class BaseBO(ABC):
         if self.data_file is not None:
             X.to_csv(self.data_file, header=False, append=True)
 
-        self.fopt = self._get_best(self.data.fitness)
-        self._xopt = self.data[np.where(self.data.fitness == self.fopt)[0][0]]
-        self.xopt = self._to_pheno(self._xopt)  # the pheno type
-
-        # FIXME: this is an ad-hoc solution
-        if self._eval_type == "dict":
-            self.xopt = self.xopt[0]
-
-        self._logger.info(f"fopt: {self.fopt}")
-        # TODO: to handle the constraints properly
+        xopt = self.xopt
+        self.logger.info(f"fopt: {xopt.fitness}")
+        # show the current penalty value if cheap constraints are present
         if self.h is not None or self.g is not None:
-            _penalty = dynamic_penalty(
-                self._xopt.tolist(), 1, self._h, self._g, minimize=self.minimize
-            )
-            self._logger.info(f"penalty: {_penalty[0]:.4e}")
-        self._logger.info(f"xopt: {self.xopt}\n")
+            _penalty = dynamic_penalty(xopt.tolist(), 1, self._h, self._g, minimize=self.minimize)
+            self.logger.info(f"penalty: {_penalty[0]:.4e}")
+        self.logger.info(f"xopt: {self._to_pheno(xopt)}\n")
 
         if not self.model.is_fitted:
-            self._fBest_DoE = copy(self.fopt)  # the best point in the DoE
-            self._xBest_DoE = copy(self.xopt)
+            self._fBest_DoE = copy(xopt.fitness)  # the best point in the DoE
+            self._xBest_DoE = copy(self._to_pheno(xopt))
 
         if not warm_start:
             self.iter_count += 1
-            self.hist_f.append(self.fopt)
+            self.hist_f.append(xopt.fitness)
 
-    def create_DoE(self, n_point: int) -> List:
-        DoE = []
-        while len(DoE) < n_point:
-            DoE += self._search_space.sample(
-                n_point - len(DoE),
-                method="LHS"
-                # h=self._h, g=self._g
-            ).tolist()
-            DoE = self.pre_eval_check(DoE)
-        return DoE
-
-    def evaluate(self, X):
+    @timeit
+    def evaluate(self, X) -> List[float]:
         """Evaluate the candidate points and update evaluation info in the dataframe"""
         # Parallelization is handled by the objective function itself
         if self.parallel_obj_fun is not None:
@@ -489,8 +501,42 @@ class BaseBO(ABC):
                 func_vals = [self.obj_fun(x) for x in X]
         return func_vals
 
+    def recommend(self) -> List[Solution]:
+        if self.xopt is None:
+            return []
+        return [self.xopt]
+
+    def create_DoE(self, n_point: int, fixed: Dict = None) -> List:
+        """get the initial sample points using Design of Experiemnt (DoE) methods
+
+        Parameters
+        ----------
+        n_point : int
+            the number of sample points to draw
+
+        Returns
+        -------
+        List
+            a list of sample points
+        """
+        fixed = {} if fixed is None else fixed
+        search_space = self.search_space.filter(fixed.keys(), invert=True)
+        DoE = search_space.sample(
+            n_point,
+            method="LHS" if n_point > 1 else "uniform",
+            h=partial_argument(self._h, self.search_space.var_name, fixed) if self._h else None,
+            g=partial_argument(self._g, self.search_space.var_name, fixed) if self._g else None,
+        ).tolist()
+        DoE = fillin_fixed_value(DoE, fixed, self.search_space)
+
+        if len(DoE) != 0:
+            DoE = self.search_space.round(DoE)
+            DoE = self.pre_eval_check(DoE)
+
+        return DoE
+
     @abstractmethod
-    def pre_eval_check(self, X: Solution):
+    def pre_eval_check(self, X: Solution) -> Solution:
         """This function is meant for checking validaty of the solutions prior to the evaluation
 
         Parameters
@@ -501,10 +547,10 @@ class BaseBO(ABC):
         """
         raise NotImplementedError
 
-    def post_eval_check(self, X):
+    def post_eval_check(self, X: Solution) -> Solution:
         _ = np.isnan(X.fitness) | np.isinf(X.fitness)
         if np.any(_):
-            self._logger.warn(
+            self.logger.warning(
                 f"{sum(_)} candidate solutions are removed "
                 f"due to falied fitness evaluation: \n{str(X[_, :])}"
             )
@@ -534,10 +580,13 @@ class BaseBO(ABC):
 
         r2 = r2_score(fitness_, fitness_hat)
         MAPE = mean_absolute_percentage_error(fitness_, fitness_hat)
-        self._logger.info(f"model r2: {r2}, MAPE: {MAPE}")
+        self.logger.info(f"model r2: {r2}, MAPE: {MAPE}")
 
-    def arg_max_acquisition(self, n_point=None, return_value=False):
-        """Global Optimization of the acqusition function / Infill criterion
+    @timeit
+    def arg_max_acquisition(
+        self, n_point: int = None, return_value: bool = False, fixed: Dict = None
+    ) -> List[list]:
+        """Global Optimization of the acquisition function / Infill criterion
 
         Returns
         -------
@@ -546,35 +595,41 @@ class BaseBO(ABC):
             values: tuple,
                 criterion value of the candidate solution
         """
-        self._logger.debug("acquisition optimziation...")
-        t0 = time.time()
+        self.logger.debug("acquisition optimziation...")
         n_point = self.n_point if n_point is None else int(n_point)
         return_dx = self._optimizer == "BFGS"
+        self.__set_argmax(fixed)
 
         if n_point > 1:  # multi-point/batch sequential strategy
             candidates, values = self._batch_arg_max_acquisition(
-                n_point=n_point, return_dx=return_dx
+                n_point=n_point, return_dx=return_dx, fixed=fixed
             )
         else:  # single-point strategy
-            criteria = self._create_acquisition(par={}, return_dx=return_dx)
-            candidates, values = self._argmax_restart(criteria, logger=self._logger)
+            criteria = self._create_acquisition(par={}, return_dx=return_dx, fixed=fixed)
+            candidates, values = self._argmax_restart(criteria, logger=self.logger)
             candidates, values = [candidates], [values]
 
-        self._logger.debug("acquisition optimziation takes {:.4f}s".format(time.time() - t0))
+        candidates = fillin_fixed_value(candidates, fixed, self.search_space)
         for callback in self._acquisition_callbacks:
             callback()
 
         return (candidates, values) if return_value else candidates
 
-    def _create_acquisition(self, fun=None, par={}, return_dx=False):
+    def _create_acquisition(
+        self, fun: str = None, par: dict = None, return_dx: bool = False, fixed: Dict = None
+    ) -> Callable:
         fun = fun if fun is not None else self._acquisition_fun
-        par = copy(self._acquisition_par) if not par else par
+        par = copy(self._acquisition_par) if par else par
         par.update({"model": self.model, "minimize": self.minimize})
-
         criterion = getattr(AcquisitionFunction, fun)(**par)
-        return functools.partial(criterion, return_dx=return_dx)
+        return partial_argument(
+            func=functools.partial(criterion, return_dx=return_dx),
+            var_name=self.search_space.var_name,
+            fixed=fixed,
+            reduce_output=return_dx,
+        )
 
-    def _batch_arg_max_acquisition(self, n_point, return_dx):
+    def _batch_arg_max_acquisition(self, n_point: int, return_dx: int, fixed: Dict):
         raise NotImplementedError
 
     def check_stop(self):
@@ -594,21 +649,21 @@ class BaseBO(ABC):
             if hasattr(self, "data"):
                 self.data = dill.dumps(self.data)
 
-            FHs = list(filter(lambda h: isinstance(h, logging.FileHandler), self._logger.handlers))
+            FHs = list(filter(lambda h: isinstance(h, logging.FileHandler), self.logger.handlers))
             if len(FHs) == 0:
                 _logger = None
             else:
                 _logger = FHs[0].baseFilename  # Only take the first log file
 
-            logger = self._logger
-            self._logger = _logger
+            logger = self.logger
+            self.logger = _logger
 
             dill.dump(self, f)
 
-            self._logger = logger
+            self.logger = logger
             if hasattr(self, "data"):
                 self.data = dill.loads(self.data)
-            self._logger.info(f"save to file {filename}...")
+            self.logger.info(f"save to file {filename}...")
 
     @classmethod
     def load(cls, filename):

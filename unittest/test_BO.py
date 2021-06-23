@@ -108,6 +108,41 @@ def test_homogenous(var_type):
     print(opt.run())
 
 
+def test_fixed_var():
+    def obj_fun(x):
+        return (
+            x["continuous"] ** 2
+            + abs(x["ordinal"] - 10) / 123.0
+            + (x["nominal"] != "OK") * 2
+            + int(x["bool"]) * 3
+        )
+
+    search_space = (
+        BoolSpace(var_name="bool")
+        + IntegerSpace([5, 15], var_name="ordinal")
+        + RealSpace([-5, 5], var_name="continuous")
+        + DiscreteSpace(["OK", "A", "B", "C", "D", "E", "F", "G"], var_name="nominal")
+    )
+    opt = ParallelBO(
+        search_space=search_space,
+        obj_fun=obj_fun,
+        model=RandomForest(levels=search_space.levels),
+        max_FEs=100,
+        DoE_size=3,  # the initial DoE size
+        eval_type="dict",
+        acquisition_fun="MGFI",
+        acquisition_par={"t": 2},
+        n_job=1,  # number of processes
+        n_point=3,  # number of the candidate solution proposed in each iteration
+        verbose=True,  # turn this off, if you prefer no output
+    )
+    X = opt.ask(3, fixed={"ordinal": 5, "continuous": 3.2})
+    assert all([x["ordinal"] == 5 and x["continuous"] == 3.2 for x in X])
+    opt.tell(X, [obj_fun(x) for x in X])
+    X = opt.ask(3, fixed={"nominal": "OK", "bool": False})
+    assert all([x["nominal"] == "OK" and not x["bool"] for x in X])
+
+
 def test_flat_continuous():
     dim = 5
     lb, ub = -1, 5
@@ -136,8 +171,6 @@ def test_flat_continuous():
         likelihood="concentrated",
         eval_budget=100 * dim,
     )
-
-    # model = RandomForest(levels=space.levels)
     opt = BO(
         search_space=space,
         obj_fun=fitness,
@@ -150,9 +183,34 @@ def test_flat_continuous():
     print(opt.run())
 
 
-# @pytest.mark.parametrize("", ["list", "dict"])
-# def test_homogeneous():
-#     pass
+def test_infeasible_constraints():
+    dim = 5
+    lb, ub = -5, 5
+
+    def fitness(_):
+        return 1
+
+    space = RealSpace([lb, ub]) * dim
+    model = RandomForest(levels=space.levels)
+    opt = BO(
+        search_space=space,
+        obj_fun=fitness,
+        model=model,
+        DoE_size=5,
+        ineq_fun=lambda x: x[0] + 5.1,
+        max_FEs=10,
+        verbose=True,
+        n_point=1,
+    )
+    X = opt.ask()
+    assert len(X) == 0
+
+    try:
+        opt.run()
+    except Exception as e:
+        assert str(e) == (
+            "Ask yields empty solutions. Please check the search space/constraints are feasible"
+        )
 
 
 @pytest.mark.parametrize("eval_type", ["list", "dict"])  # type: ignore
@@ -197,7 +255,7 @@ def test_mix_space(eval_type):
         eval_type=eval_type,
         acquisition_fun="MGFI",
         acquisition_par={"t": 2},
-        n_job=3,  # number of processes
+        n_job=1,  # number of processes
         n_point=3,  # number of the candidate solution proposed in each iteration
         verbose=True,  # turn this off, if you prefer no output
     )

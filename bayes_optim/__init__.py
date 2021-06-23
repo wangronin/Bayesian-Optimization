@@ -6,7 +6,18 @@ import numpy as np
 
 from .acquisition_fun import EI, MGFI, PI, UCB
 from .bayes_opt import BO, AnnealingBO, NoisyBO, ParallelBO
-from .search_space import DiscreteSpace, IntegerSpace, RealSpace, SearchSpace
+from .mobo import MOBO
+from .search_space import (
+    Bool,
+    Discrete,
+    DiscreteSpace,
+    Integer,
+    IntegerSpace,
+    Ordinal,
+    Real,
+    RealSpace,
+    SearchSpace,
+)
 from .solution import Solution
 from .surrogate import GaussianProcess, RandomForest, trend
 
@@ -15,6 +26,7 @@ __all__ = [
     "ParallelBO",
     "NoisyBO",
     "AnnealingBO",
+    "MOBO",
     "Solution",
     "RandomForest",
     "GaussianProcess",
@@ -29,6 +41,11 @@ __all__ = [
     "MGFI",
     "RandomForest",
     "fmin",
+    "Integer",
+    "Ordinal",
+    "Real",
+    "Bool",
+    "Discrete",
 ]
 
 # To use `dill` for the pickling, which works for
@@ -55,7 +72,7 @@ def fmin(
     verbose: Optional[bool] = False,
     callback: Optional[Callable] = None,
     seed: Optional[int] = None,
-    **kwargs
+    **kwargs,
 ) -> Tuple[Vector, float, int, int, List[np.ndarray]]:
     """Minimize a function using the Bayesian Optimization algorithm, which only uses
     function values, not derivatives or second derivatives. This function maintains an
@@ -202,6 +219,8 @@ def fmin(
         "Optimization terminated successfully.\n"
         "        Current function value: {}\n"
         "        Iterations: {}\n"
-        "        Function evaluations: {}\n".format(opt.fopt, opt.iter_count, opt.eval_count)
+        "        Function evaluations: {}\n".format(
+            opt.xopt.fitness, opt.iter_count, opt.eval_count
+        )
     )
-    return opt.xopt, opt.fopt, opt.iter_count, opt.eval_count, data_per_iteration
+    return opt.xopt, opt.xopt.fitness, opt.iter_count, opt.eval_count, data_per_iteration

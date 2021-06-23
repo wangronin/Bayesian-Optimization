@@ -26,15 +26,14 @@ def argmax_restart(
     xopt, fopt = [], []
     best = -np.inf
     wait_count = 0
-
     if not isinstance(search_space, RealSpace) and optimizer == "BFGS":
         optimizer = "MIES"
-        logger.warn("L-BFGS-B cannot be applied on continuous search space")
+        logger.warning("L-BFGS-B cannot be applied on continuous search space")
 
     if (h is not None or g is not None) and optimizer == "BFGS":
         optimizer = "OnePlusOne_Cholesky_CMA"
         # TODO: add constraint handling for BFGS
-        logger.warn("L-BFGS-B cannot be applied with constraints at this moment")
+        logger.warning("L-BFGS-B cannot be applied with constraints at this moment")
 
     for iteration in range(n_restart):
         x0 = search_space.sample(N=1, method="uniform")[0]

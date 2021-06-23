@@ -3,7 +3,16 @@ import re
 
 import numpy as np
 import pytest
-from bayes_optim.search_space import DiscreteSpace, IntegerSpace, Real, RealSpace, SearchSpace
+from bayes_optim.search_space import (
+    Discrete,
+    DiscreteSpace,
+    Integer,
+    IntegerSpace,
+    Real,
+    RealSpace,
+    SearchSpace,
+    Variable,
+)
 from bayes_optim.solution import Solution
 
 
@@ -16,6 +25,11 @@ def test_Variable():
     x = IntegerSpace([[5, 10]] * 3, ["x", "y", "z"])
     assert all(np.asarray(x.var_name) == np.asarray(["x", "y", "z"]))
     assert all(np.asarray(x.var_type) == np.asarray(["Integer"] * 3))
+
+
+def test_real_warning():
+    x = Real([-np.inf, 5], "x", 2, scale="log10")
+    assert x.bounds[0] == 1e-300
 
 
 def test_SearchSpace_var_name():
@@ -51,10 +65,25 @@ def test_contains():
     assert RealSpace([1e-10, 1e-1], "x", 0.01, scale="log") in cs
 
 
+def test_in():
+    cs = (
+        IntegerSpace([-10, 10], "y")
+        + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
+        + RealSpace([1e-10, 1e-1], "x", 0.01, scale="log")
+    )
+    x = Solution(cs.sample(1)[0], var_name=cs.var_name)
+    assert RealSpace([1e-10, 1e-1], "x", 0.01, scale="log") in cs
+    assert "x" in cs
+    assert "xx" not in cs
+    assert x.tolist() in cs
+    assert x.to_dict() in cs
+
+
 def test_sample_with_constraints():
+    g = lambda x: x - 0.1
     cs = RealSpace([1e-10, 1e-1], "x", 0.01, scale="log")
-    # NOTE: `h` and `g` are ineffective now
-    cs.sample(10, method="LHS", h=lambda x: x == 0.05, g=lambda x: x > 0.05)
+    X = cs.sample(10, method="LHS", g=g)
+    assert all(list(map(lambda x: g(x) <= 0, X)))
 
 
 def test_SearchSpace_remove():
@@ -65,7 +94,7 @@ def test_SearchSpace_remove():
     )
 
     cs.remove(0)
-    assert isinstance(cs[0], IntegerSpace)
+    assert isinstance(cs[[0]], IntegerSpace)
 
     cs.remove("z")
     assert isinstance(cs, IntegerSpace)
@@ -132,9 +161,25 @@ def test_SearchSpace_slice():
         + IntegerSpace([-10, 10], "y")
         + DiscreteSpace(["A", "B", "C"], "z")
     )
-    assert isinstance(cs[0], RealSpace)
-    assert isinstance(cs[1], IntegerSpace)
-    assert isinstance(cs[2], DiscreteSpace)
+    assert isinstance(cs[[0]], RealSpace)
+    assert isinstance(cs[[1]], IntegerSpace)
+    assert isinstance(cs[[2]], DiscreteSpace)
+
+    assert isinstance(cs[0], Real)
+    assert isinstance(cs[1], Integer)
+    assert isinstance(cs[2], Discrete)
+    assert isinstance(cs["z"], Discrete)
+
+    cs = (
+        RealSpace([1, 5], "x", 2, scale="log") * 2
+        + IntegerSpace([-10, 10], "y")
+        + DiscreteSpace(["A", "B", "C"], "z")
+    )
+    assert isinstance(cs[:2], RealSpace)
+    assert isinstance(cs[["x0", "x1"]], RealSpace)
+    assert isinstance(cs[[False, False, True, False]], IntegerSpace)
+
+    assert isinstance(cs.filter(["x0", "x1"]), RealSpace)
 
 
 def test_sample():
@@ -148,6 +193,16 @@ def test_sample():
     cs.sample(5, method="LHS")
     X = cs.sample(5, method="uniform")
     cs.to_linear_scale(X)
+
+
+def test_constraints():
+    cs = RealSpace([-5, 5], "x") * 2
+    g = lambda x: x[0] + x[1] - 5
+    X = cs.sample(10, g=g)
+    assert all([g(x) <= 0 for x in X])
+
+    X = cs.sample(10, g=lambda x: x[0] + 5.1)
+    assert len(X) == 0
 
 
 def test_scale():
@@ -208,33 +263,8 @@ def test_iter():
     )
     cs *= 2
 
-    for _cs in iter(cs):
-        assert _cs.dim == 1
-
-
-def test_from_dict():
-    cs = SearchSpace.from_dict(
-        {
-            "activation": {
-                "type": "c",
-                "range": [
-                    "elu",
-                    "selu",
-                    "softplus",
-                    "softsign",
-                    "relu",
-                    "tanh",
-                    "sigmoid",
-                    "hard_sigmoid",
-                    "linear",
-                ],
-                "N": 3,
-            }
-        }
-    )
-
-    assert cs.dim == 3
-    assert cs.var_name[0] == "activation0"
+    for var in iter(cs):
+        assert isinstance(var, Variable)
 
 
 def test_update():
@@ -242,5 +272,5 @@ def test_update():
     cs2 = RealSpace([-100, 100], "x1") + IntegerSpace([0, 10], "y")
     cs.update(cs2)
     assert "y" in cs.var_name
-    assert cs[1].data[0].bounds[0] == -100
-    assert cs[1].data[0].bounds[1] == 100
+    assert cs[[1]].data[0].bounds[0] == -100
+    assert cs[[1]].data[0].bounds[1] == 100

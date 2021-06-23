@@ -296,7 +296,7 @@ class OnePlusOne_CMA(object):
 
     def restart(self):
         if self._restart:
-            self._logger.info("restarting... ")
+            self.logger.info("restarting... ")
             self.x = None
             self.sigma = self.sigma0
             self.pc = np.zeros(self.dim)
@@ -328,7 +328,7 @@ class OnePlusOne_CMA(object):
 
     def tell(self, x: np.ndarray, y: np.ndarray, penalty: float = 0):
         if self._stop:
-            self._logger.info("The optimizer is stopped and `tell` should not be called.")
+            self.logger.info("The optimizer is stopped and `tell` should not be called.")
             return
 
         # TODO: this might not be uncessary
@@ -363,13 +363,13 @@ class OnePlusOne_CMA(object):
 
         # TODO: should this be part of the logging function?
         if self.verbose:
-            self._logger.info(f"iteration {self.iter_count}")
-            self._logger.info(f"fopt: {self.fopt}")
+            self.logger.info(f"iteration {self.iter_count}")
+            self.logger.info(f"fopt: {self.fopt}")
             if self.h is not None or self.g is not None:
                 _penalty = (self.fopt - self.fopt_penalized) * (-1) ** self.minimize
-                self._logger.info(f"penalty: {_penalty:.4e}")
-            self._logger.info(f"xopt: {self.xopt.tolist()}")
-            self._logger.info(f"sigma: {self._sigma}\n")
+                self.logger.info(f"penalty: {_penalty:.4e}")
+            self.logger.info(f"xopt: {self.xopt.tolist()}")
+            self.logger.info(f"sigma: {self._sigma}\n")
 
     def logging(self):
         self.hist_fopt += [self.fopt]
