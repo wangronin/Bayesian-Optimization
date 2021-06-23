@@ -15,14 +15,16 @@ __authors__ = ["Hao Wang"]
 class BO(BaseBO):
     """The sequential Bayesian Optimization class"""
 
-    def _create_acquisition(self, fun: Callable = None, par: Dict = None, **kwargv):
+    def _create_acquisition(
+        self, fun: str = None, par: dict = None, return_dx: bool = False, fixed: Dict = None
+    ):
         fun = fun if fun is not None else self._acquisition_fun
         par = {} if par is None else par
         if hasattr(getattr(AcquisitionFunction, fun), "plugin"):
             if "plugin" not in par:
                 par.update({"plugin": self.fmin})
 
-        return super()._create_acquisition(fun, par, **kwargv)
+        return super()._create_acquisition(fun, par, return_dx, fixed)
 
     def pre_eval_check(self, X: List) -> List:
         """Check for the duplicated solutions as it is not allowed in noiseless cases"""

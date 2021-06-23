@@ -1,6 +1,6 @@
 import functools
 from copy import copy
-from typing import Union
+from typing import Dict, Union
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -9,7 +9,7 @@ from sklearn.decomposition import PCA, KernelPCA
 
 from . import acquisition_fun as AcquisitionFunction
 from .acquisition_fun import penalized_acquisition
-from .bayes_opt import BO, ParallelBO
+from .bayes_opt import ParallelBO
 from .search_space import RealSpace
 
 
@@ -79,8 +79,8 @@ class PCABO(ParallelBO):
         super().tell(X_, func_vals)
 
 
-class MultiAcquisitionBO(BO):
-    """Using multiple acqusition functions for parallelization"""
+class MultiAcquisitionBO(ParallelBO):
+    """Using multiple acquisition functions for parallelization"""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -101,9 +101,8 @@ class MultiAcquisitionBO(BO):
             if _n not in self._acquisition_par_list[i]:
                 self._acquisition_par_list[i][_n] = getattr(_criterion, _n)
 
-    def _batch_arg_max_acquisition(self, n_point, return_dx):
+    def _batch_arg_max_acquisition(self, n_point: int, return_dx: bool, fixed: Dict = None):
         criteria = []
-
         for i in range(n_point):
             k = i % self._N_acquisition
             _acquisition_fun = self._acquisition_fun_list[k]
@@ -113,7 +112,7 @@ class MultiAcquisitionBO(BO):
             _acquisition_par.update({self._par_name_list[k]: _par})
             criteria.append(
                 self._create_acquisition(
-                    fun=_acquisition_fun, par=_acquisition_par, return_dx=return_dx
+                    fun=_acquisition_fun, par=_acquisition_par, return_dx=return_dx, fixed=fixed
                 )
             )
 
@@ -125,15 +124,3 @@ class MultiAcquisitionBO(BO):
             __ = [list(self._argmax_restart(_, logger=self.logger)) for _ in criteria]
 
         return tuple(zip(*__))
-
-
-class ParallelBO2(ParallelBO):
-    # TODO: add other Parallelization options:
-    # 1) niching-based approach (my EVOLVE paper),
-    # 2) bi-objective Pareto-front (PI vs. EI) (my WCCI '16 paper), and
-    # 3) maybe QEI?
-    pass
-
-
-class RacingBO(ParallelBO):
-    pass
