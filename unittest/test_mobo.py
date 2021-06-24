@@ -72,3 +72,24 @@ def test_recommend():
         verbose=True,  # turn this off, if you prefer no output
     )
     assert opt.recommend() is None
+
+
+def test_constraint():
+    search_space = (
+        BoolSpace(var_name="bool")
+        + IntegerSpace([5, 15], var_name="ordinal")
+        + RealSpace([-5, 5], var_name="continuous")
+        + DiscreteSpace(["OK", "A", "B", "C", "D", "E", "F", "G"], var_name="nominal")
+    )
+    opt = MOBO(
+        search_space=search_space,
+        obj_fun=(f1, f2),
+        model=RandomForest(levels=search_space.levels),
+        ineq_fun=lambda x: x["continuous"],
+        max_FEs=10,
+        DoE_size=3,  # the initial DoE size
+        eval_type="dict",
+        n_job=1,  # number of processes
+        verbose=True,  # turn this off, if you prefer no output
+    )
+    opt.run()

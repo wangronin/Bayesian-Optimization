@@ -217,5 +217,5 @@ def dynamic_penalty(
         v[v <= 0] = 0
         p += np.sum(np.abs(v) ** beta, axis=1)
 
-    p = (-1) ** (not minimize) * (C * t) ** alpha * p
+    p = (C * t) ** alpha * p * (-1) ** (not minimize)
     return p

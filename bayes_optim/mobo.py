@@ -60,6 +60,7 @@ class BaseMOBO(BO):
 
     @property
     def ref_point(self):
+        """reference point for computing the hypervolumne"""
         # NOTE: assume maximization
         return np.min(self.y, axis=0) * 0.8
 
@@ -153,8 +154,8 @@ class BaseMOBO(BO):
 
         if self.h is not None or self.g is not None:
             penalty = np.array(
-                [dynamic_penalty(x, 1, self._h, self._g, minimize=self.minimize) for x in xopt]
-            )
+                [dynamic_penalty(x, 1, self._h, self._g, minimize=False) for x in xopt]
+            ).ravel()
             self.logger.info(f"... with corresponding penalty: {penalty}")
 
         if not warm_start:
