@@ -126,8 +126,9 @@ class BaseBO(ABC):
         self.parallel_obj_fun = parallel_obj_fun
         self.h = eq_fun
         self.g = ineq_fun
-        self.n_job = max(1, int(n_job))
-        self.n_point = max(1, int(n_point))
+        self.n_obj: int = 1
+        self.n_job: int = max(1, int(n_job))
+        self.n_point: int = max(1, int(n_point))
         self.ftarget = ftarget
         self.minimize = minimize
         self.verbose = verbose
@@ -285,10 +286,14 @@ class BaseBO(ABC):
 
         if self._eval_type == "list":
             self._to_pheno = lambda x: x.tolist()
-            self._to_geno = lambda x, index=None: Solution(x, var_name=self.var_names, index=index)
+            self._to_geno = lambda x, index=None: Solution(
+                x, var_name=self.var_names, index=index, n_obj=self.n_obj
+            )
         elif self._eval_type == "dict":
             self._to_pheno = lambda x: x.to_dict()
-            self._to_geno = lambda x, index=None: Solution.from_dict(x, index=index)
+            self._to_geno = lambda x, index=None: Solution.from_dict(
+                x, index=index, n_obj=self.n_obj
+            )
 
     def _set_internal_optimization(self, **kwargs):
         # TODO: turn this into an Option Class
@@ -552,7 +557,7 @@ class BaseBO(ABC):
         if np.any(_):
             self.logger.warning(
                 f"{sum(_)} candidate solutions are removed "
-                f"due to falied fitness evaluation: \n{str(X[_, :])}"
+                f"due to failed fitness evaluation: \n{str(X[_, :])}"
             )
             X = X[~_, :]
         return X
