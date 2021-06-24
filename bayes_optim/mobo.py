@@ -4,15 +4,16 @@ from typing import Dict, List, Tuple, Union
 import numpy as np
 from joblib import Parallel, delayed
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
+from sklearn.preprocessing import StandardScaler
 from torch.tensor import Tensor
 
 from .acquisition_optim import argmax_restart
 from .bayes_opt import BO
-from .extra.multi_objective import Hypervolume
+from .extra.multi_objective import Hypervolume, is_non_dominated
 from .extra.multi_objective.box_decompositions import NondominatedPartitioning
 from .multi_objective import EHVI
 from .solution import Solution
-from .utils import dynamic_penalty, is_pareto_efficient, partial_argument, timeit
+from .utils import dynamic_penalty, partial_argument, timeit
 
 __authors__ = ["Hao Wang"]
 
@@ -21,94 +22,63 @@ class BaseMOBO(BO):
     """Base class for multi-objective BO"""
 
     def __init__(self, n_obj: int = 2, minimize: Union[bool, List[bool]] = True, **kwargv):
-        # NOTE: setting minimize=True to make parent's constructor work
+        # NOTE: setting `minimize=True` to make parent's constructor work
         super().__init__(minimize=True, **kwargv)
+        self._check_obj_fun(n_obj)
+        self._check_minimize(minimize)
+
+    def _check_minimize(self, minimize):
         self.minimize = minimize
-        self.n_obj = n_obj
-        self.iter_count = 0
-        self.eval_count = 0
-        self._check_obj_fun()
-        self._check_minimize()
-        self._check_model()
-
-        if self._eval_type == "list":
-            self._to_pheno = lambda x: x.tolist()
-            self._to_geno = lambda x, index=None: Solution(
-                x, var_name=self.var_names, index=index, n_obj=self.n_obj
-            )
-        elif self._eval_type == "dict":
-            self._to_pheno = lambda x: x.to_dict()
-            self._to_geno = lambda x, index=None: Solution.from_dict(
-                x, index=index, n_obj=self.n_obj
-            )
-
-    def _check_minimize(self):
         if isinstance(self.minimize, bool):
             self.minimize = [self.minimize] * self.n_obj
         elif hasattr(self.minimize, "__iter__"):
             assert len(self.minimize) == self.n_obj
         self.minimize = np.asarray(self.minimize)
 
-    def _check_obj_fun(self):
+    def _check_obj_fun(self, n_obj):
         """check the objective functions"""
+        self.n_obj = n_obj
         if self.obj_fun is None:
             return
         assert hasattr(self.obj_fun, "__iter__")
         assert all([hasattr(f, "__call__") for f in self.obj_fun])
-        if len(self.obj_fun) != self.n_obj:
+        if len(self.obj_fun) != n_obj:
             self.logger.warning(
-                f"len(obj_fun) ({self.obj_fun}) != n_obj ({self.n_obj})."
+                f"len(obj_fun) ({self.obj_fun}) != n_obj ({n_obj})."
                 "Setting n_obj according to the former."
             )
-        self.n_obj = len(self.obj_fun)
+            self.n_obj = len(self.obj_fun)
         assert self.n_obj > 1
-
-    def _check_model(self):
-        pass
-        # TODO: assert the model can handle multiple tasks
-        # if not hasattr(self.model, "__iter__"):
-        #     # TODO: we need to assert that self.model does not have multi-output
-        #     self.model = [deepcopy(self.model)] * self.n_obj
-        # else:
-        #     assert len(self.model) == self.n_obj
 
     @property
     def xopt(self):
         """get the non-dominated subset of solutions"""
-        idx = is_pareto_efficient(self.data.fitness)
-        self._xopt = self.data[idx, :]
-        return self._xopt
+        if self.y is None:
+            return None
+        idx = is_non_dominated(Tensor(self.y)).detach().cpu().numpy()
+        return self.data[idx, :]
 
     @property
     def ref_point(self):
-        return np.max(self.y, axis=0) * 1.3
+        """reference point for computing the hypervolumne"""
+        # NOTE: assume maximization
+        return np.min(self.y, axis=0) * 0.8
 
-    def pre_eval_check(self, X: List) -> List:
-        """Check for the duplicated solutions as it is not allowed in noiseless cases"""
-        if not isinstance(X, Solution):
-            X = Solution(X, var_name=self.var_names, n_obj=self.n_obj)
+    @property
+    def y(self):
+        """The transformed objective value for the internal use"""
+        # TODO: double check if this is still needed for GPRs
+        # if any(np.isclose(self.frange, 0)) and len(y) > 1:
+        # raise Exception("flat objective value!")
+        if not hasattr(self, "data"):
+            return None
 
-        N = X.N
-        if hasattr(self, "data"):
-            X = X + self.data
-
-        _ = []
-        for i in range(N):
-            x = X[i]
-            idx = np.arange(len(X)) != i
-            CON = np.all(
-                np.isclose(
-                    np.asarray(X[idx][:, self.r_index], dtype="float"),
-                    np.asarray(x[self.r_index], dtype="float"),
-                ),
-                axis=1,
-            )
-            INT = np.all(X[idx][:, self.i_index] == x[self.i_index], axis=1)
-            CAT = np.all(X[idx][:, self.d_index] == x[self.d_index], axis=1)
-            if not any(CON & INT & CAT):
-                _ += [i]
-
-        return X[_].tolist()
+        # Standardization should make the GP prior less mis-specified
+        # self._scaler = StandardScaler()
+        # y = self._scaler.fit_transform(self.data.fitness)
+        y = self.data.fitness
+        # convert to maximization problem
+        return y * (-1) ** self.minimize
 
     @timeit
     def evaluate(self, X) -> List[Tuple[float]]:
@@ -130,7 +100,7 @@ class BaseMOBO(BO):
         return list(zip(*func_vals))
 
     @timeit
-    def recommend(self) -> List[Solution]:
+    def recommend(self) -> Union[None, List[Solution]]:
         return self.xopt
 
     def tell(
@@ -172,61 +142,33 @@ class BaseMOBO(BO):
         if self.data_file is not None:
             X.to_csv(self.data_file, header=False, append=True)
         self.data = self.data + X if hasattr(self, "data") else X
-        self.update_model()
-        # TODO: to handle unknown and expensive constraints
-        # self.data_cstr = self.data_cstr + X_cstr if hasattr(self, "data_cstr") else X_cstr
 
+        # update the surrogate models
+        self.update_model()
+        # compute the hypervolume indicator value of the incumbent
         xopt = self.xopt
-        hv = Hypervolume(ref_point=Tensor(-self.ref_point))
+        pf = self.xopt.fitness * (-1) ** self.minimize
+        hv = Hypervolume(ref_point=Tensor(self.ref_point))
         self.logger.info(f"Efficient set/Pareto front (xopt/fopt):\n{xopt}")
-        self.logger.info(f"Hypervolume indicator value: {hv.compute(Tensor(-xopt.fitness))}")
+        self.logger.info(f"Hypervolume indicator value: {hv.compute(Tensor(pf))}")
+
         if self.h is not None or self.g is not None:
             penalty = np.array(
-                [dynamic_penalty(x, 1, self._h, self._g, minimize=self.minimize) for x in xopt]
-            )
+                [dynamic_penalty(x, 1, self._h, self._g, minimize=False) for x in xopt]
+            ).ravel()
             self.logger.info(f"... with corresponding penalty: {penalty}")
 
         if not warm_start:
             self.iter_count += 1
             self.hist_f.append(xopt.fitness)
 
-    @staticmethod
-    def _fit(model, X, y):
-        model.fit(X, y)
-        y_ = model.predict(X)
+    def update_model(self):
+        # TODO: add model selection
+        X, y = self.data, self.y
+        self.model.fit(X, y)
+        y_ = self.model.predict(X)
         r2 = r2_score(y, y_, multioutput="raw_values")
         MAPE = mean_absolute_percentage_error(y, y_, multioutput="raw_values")
-        return model, r2, MAPE
-
-    def update_model(self):
-        # TODO: unify this model the one from the parent class
-        X, y = self.data, self.data.fitness
-        self.fmin, self.fmax = np.min(y, axis=0), np.max(y, axis=0)
-        self.frange = self.fmax - self.fmin
-
-        # TODO: double check if this is still needed for GPRs
-        # if any(np.isclose(self.frange, 0)) and len(y) > 1:
-        # raise Exception("flat objective value!")
-
-        # TODO: to normalize the objective values
-        # Standardization should make it easier to specify the GP prior, compared to
-        # rescaling values to the unit interval.
-        # _std = np.std(y, axis=0)
-        # idx = ~np.isclose(_std, 0)
-        self.y = y * (-1) ** np.bitwise_not(self.minimize)
-        # self.y = (y[:, idx] - np.mean(y[:, idx], axis=0)) / _std[idx]
-
-        # TODO: the first case is not needed
-        if isinstance(self.model, (list, tuple)):  # a list of single output model
-            if self.n_job > 1:  # or by ourselves..
-                fitted = Parallel(n_jobs=self.n_job)(
-                    delayed(BaseMOBO._fit)(self.model[i], X, y[:, [i]]) for i in range(self.n_obj)
-                )
-            else:  # or sequential execution
-                fitted = [BaseMOBO._fit(self.model[i], X, y[:, [i]]) for i in range(self.n_obj)]
-            self.model, r2, MAPE = list(zip(fitted))
-        else:  # multi-output model TODO: finish this part
-            self.model, r2, MAPE = BaseMOBO._fit(self.model, X, self.y)
 
         for i in range(self.n_obj):
             _r2 = r2[i] if not isinstance(r2, float) else r2
