@@ -21,4 +21,5 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Test with pytest
         run: |
-          cd unittest && pytest -v
+          export PYTHONPATH=.
+          pytest -v unittest
