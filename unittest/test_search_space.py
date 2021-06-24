@@ -1,6 +1,4 @@
-import sys
-
-sys.path.insert(0, "../")
+import json
 import re
 
 import numpy as np
@@ -267,6 +265,31 @@ def test_iter():
 
     for var in iter(cs):
         assert isinstance(var, Variable)
+
+
+def test_from_dict():
+    cs = SearchSpace.from_dict(
+        {
+            "activation": {
+                "type": "c",
+                "range": [
+                    "elu",
+                    "selu",
+                    "softplus",
+                    "softsign",
+                    "relu",
+                    "tanh",
+                    "sigmoid",
+                    "hard_sigmoid",
+                    "linear",
+                ],
+                "N": 3,
+            }
+        }
+    )
+
+    assert cs.dim == 3
+    assert cs.var_name[0] == "activation0"
 
 
 def test_update():
