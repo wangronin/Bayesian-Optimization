@@ -5,7 +5,7 @@ import numpy as np
 from joblib import Parallel, delayed
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 from sklearn.preprocessing import StandardScaler
-from torch.tensor import Tensor
+from torch import Tensor
 
 from .acquisition_optim import argmax_restart
 from .bayes_opt import BO
