@@ -1,19 +1,19 @@
 import functools
 from copy import copy
-from typing import Dict, Union
+from typing import Callable, Dict, List, Tuple, Union
 
 import numpy as np
 from joblib import Parallel, delayed
-from scipy.stats import norm, rankdata
-from sklearn.decomposition import PCA, KernelPCA
+from scipy.stats import rankdata
+from sklearn.decomposition import PCA
 
 from . import acquisition_fun as AcquisitionFunction
 from .acquisition_fun import penalized_acquisition
-from .bayes_opt import ParallelBO
-from .search_space import RealSpace
+from .bayes_opt import BO, ParallelBO
+from .search_space import RealSpace, SearchSpace
 
 
-class PCABO(ParallelBO):
+class PCABO(BO):
     """Dimensionality reduction using Principle Component Decomposition (PCA)"""
 
     def __init__(self, kernel_pca: bool = False, n_components: Union[float, int] = None, **kwargs):
@@ -24,29 +24,39 @@ class PCABO(ParallelBO):
         self.kernel_pca = kernel_pca
         self._n_components = n_components
 
-    def _scale_X(self, X, func_vals):
+    def _scale_Xy(
+        self, new_X: List[List[float]], new_y: List[float]
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        if hasattr(self, "data"):
+            X = np.r_[self.data.astype(float), new_X]
+            y = np.r_[self.data.fitness, new_y]
+        else:
+            X = np.atleast_2d(new_X).astype(float)
+            y = np.array(new_y)
+
         self._X_mean = X.mean(axis=0)
-        X_ = X - self._X_mean
+        X -= self._X_mean
+        y_ = -1 * y if not self.minimize else y
 
-        if not self.minimize:
-            func_vals = -1 * func_vals
-
-        r = rankdata(func_vals)
-        N = len(func_vals)
+        r = rankdata(y_)
+        N = len(y_)
         w = np.log(N) - np.log(r)
         w /= np.sum(w)
-        return X_ * w.reshape(-1, 1)
+        return X * w.reshape(-1, 1), y
 
-    def _compute_bounds(self, pca, search_space):
+    def _compute_bounds(self, pca, search_space: SearchSpace):
         C = np.array([(l + u) / 2 for l, u in search_space.bounds])
-        radius = norm(np.np.array([l for l, _ in search_space.bounds]) - C)
+        radius = np.sqrt(np.sum((np.array([l for l, _ in search_space.bounds]) - C) ** 2))
         C = C - pca.mean_ - self._X_mean
         C_ = C.dot(pca.components_.T)
         return [(_ - radius, _ + radius) for _ in C_]
 
-    def _create_acquisition(self, fun=None, par={}, return_dx=False):
-        acquisition_func = super()._create_acquisition(fun, par, return_dx)
-        fun = functools.partial(
+    def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
+        par = {} if par is None else par
+        acquisition_func = super()._create_acquisition(
+            fun=fun, par=par, return_dx=return_dx, **kwargs
+        )
+        return functools.partial(
             penalized_acquisition,
             acquisition_func=acquisition_func,
             X_mean=self._X_mean,
@@ -54,29 +64,46 @@ class PCABO(ParallelBO):
             bounds=self.__search_space.bounds,
             return_dx=return_dx,
         )
-        return fun
 
-    def ask(self, n_point=None):
+    @property
+    def xopt(self):
+        if not hasattr(self, "data"):
+            return None
+        fopt = self._get_best(self.data.fitness)
+        self._xopt = self.data[np.where(self.data.fitness == fopt)[0][0]]
+        return self._xopt
+
+    def ask(self, n_point: int = None) -> List[List[float]]:
         X = super().ask(n_point)
         if hasattr(self, "_pca"):
             X = self._pca.inverse_transform(X) + self._X_mean
         return X
 
-    def tell(self, X, func_vals):
-        X_ = self._scale_X(X, func_vals)
+    def tell(self, new_X, new_y):
+        self.logger.info(f"observing {len(new_X)} points:")
+        for i, x in enumerate(new_X):
+            self.eval_count += 1
+            self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x}")
 
+        X, y = self._scale_Xy(new_X, new_y)
         if self.kernel_pca:
             # TODO: finish the kernel PCA part..
-            self._pca = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=10)
+            # self._pca = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=10)
+            raise NotImplementedError
         else:
             self._pca = PCA(n_components=self._n_components, svd_solver="full")
 
-        X_ = self._pca.fit_transform(X_, func_vals)
+        X = self._pca.fit_transform(X)
         bounds = self._compute_bounds(self._pca, self.__search_space)
 
         # set the search space in the reduced (feature) space
         self._search_space = RealSpace(bounds)
-        super().tell(X_, func_vals)
+        X = self._to_geno(X)
+        for i, _ in enumerate(X):
+            X[i].fitness = y[i]
+        self.data = self.post_eval_check(X)
+        self.update_model()
+        self.logger.info(f"xopt/fopt:\n{self.xopt}\n")
 
 
 class MultiAcquisitionBO(ParallelBO):

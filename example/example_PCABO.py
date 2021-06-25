@@ -2,9 +2,9 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "../")
+sys.path.insert(0, "./")
 
-from bayes_optim import BO, RealSpace
+from bayes_optim.extension import PCABO, RealSpace
 from bayes_optim.surrogate import GaussianProcess, trend
 
 np.random.seed(123)
@@ -37,7 +37,7 @@ model = GaussianProcess(
     eval_budget=100 * dim,
 )
 
-opt = BO(
+opt = PCABO(
     search_space=space,
     obj_fun=fitness,
     model=model,
@@ -45,7 +45,6 @@ opt = BO(
     max_FEs=50,
     verbose=True,
     n_point=1,
-    acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
+    acquisition_optimization={"optimizer": "BFGS"},
 )
 print(opt.run())
-# assert np.isclose(opt.fopt, 0.002111536359751477)
