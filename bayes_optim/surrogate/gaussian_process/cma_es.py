@@ -6,43 +6,43 @@ Created on Tue Jan 29 11:26:41 2013
 """
 
 import numpy as np
+from numpy import (
+    add,
+    append,
+    arange,
+    argsort,
+    array,
+    atleast_2d,
+    ceil,
+    diag,
+    dot,
+    exp,
+    eye,
+    floor,
+    inf,
+    inner,
+    isinf,
+    isreal,
+    linspace,
+    log,
+    mod,
+    newaxis,
+    ones,
+    outer,
+    power,
+    r_,
+    real,
+    size,
+    sqrt,
+    triu,
+    zeros,
+)
+from numpy.linalg import LinAlgError, cond, eigh, qr
+from numpy.random import rand, randn, shuffle
+from scipy.stats import chi
 
 # import hello as h
 from .boundary_handling import boundary_handling
-from scipy.stats import chi
-from numpy.linalg import eigh, LinAlgError, qr, cond
-from numpy.random import randn, rand, shuffle
-from numpy import (
-    sqrt,
-    eye,
-    exp,
-    dot,
-    add,
-    inf,
-    triu,
-    isreal,
-    isinf,
-    ones,
-    power,
-    log,
-    floor,
-    ceil,
-    outer,
-    zeros,
-    array,
-    mod,
-    newaxis,
-    arange,
-    append,
-    real,
-    argsort,
-    size,
-    diag,
-    inner,
-    r_,
-    linspace,
-    atleast_2d,
-)
 
 # My fast routines...
 abs = np.abs
@@ -93,9 +93,9 @@ class cma_es(object):
             self.restart_budget = opts["restart_budget"] if "restart_budget" in opts else int(20)
 
         # Initialize internal strategy parameters
-        self.wcm = eval(init_wcm) if isinstance(init_wcm, basestring) else init_wcm
-        self.lb = eval(opts["lb"]) if isinstance(opts["lb"], basestring) else opts["lb"]
-        self.ub = eval(opts["ub"]) if isinstance(opts["ub"], basestring) else opts["ub"]
+        self.wcm = eval(init_wcm) if isinstance(init_wcm, str) else init_wcm
+        self.lb = eval(opts["lb"]) if isinstance(opts["lb"], str) else opts["lb"]
+        self.ub = eval(opts["ub"]) if isinstance(opts["ub"], str) else opts["ub"]
         self.lb = atleast_2d(self.lb)
         self.ub = atleast_2d(self.ub)
 
@@ -106,7 +106,7 @@ class cma_es(object):
 
         self.eval_budget = (
             int(eval(opts["eval_budget"]))
-            if isinstance(opts["eval_budget"], basestring)
+            if isinstance(opts["eval_budget"], str)
             else int(opts["eval_budget"])
         )
 
@@ -117,12 +117,12 @@ class cma_es(object):
         self.f_target = opts["f_target"] if self.is_minimize else -opts["f_target"]
 
         # Strategy parameters: Selection
-        self._lambda = opts["_lambda"] if opts.has_key("_lambda") else int(4 + floor(3 * log(dim)))
-        if isinstance(self._lambda, basestring):
+        self._lambda = opts["_lambda"] if "_lambda" in opts else int(4 + floor(3 * log(dim)))
+        if isinstance(self._lambda, str):
             self._lambda = eval(self._lambda)
         _mu_prime = (self._lambda - 1) / 2.0
-        self._mu = opts["_mu"] if opts.has_key("_mu") else int(ceil(_mu_prime))
-        if isinstance(self._mu, basestring):
+        self._mu = opts["_mu"] if "_mu" in opts else int(ceil(_mu_prime))
+        if isinstance(self._mu, str):
             self._mu = eval(self._mu)
 
         # TODO : new weight setting weighted recombination
@@ -165,7 +165,7 @@ class cma_es(object):
         #    cs = (mueff+2.) / (dim+mueff+3.)
 
         # damps parameter tuning
-        if opts.has_key("damps"):
+        if "damps" in opts:
             self.damps = opts["damps"]
         else:
             # TODO: Parameter setting for mirrored orthogonal sampling
@@ -431,7 +431,7 @@ class cma_es(object):
         else:
             try:
                 w, e_vector = eigh(C)
-                e_value = sqrt(map(complex, w)).reshape(-1, 1)
+                e_value = sqrt(list(map(complex, w))).reshape(-1, 1)
                 if any(~isreal(e_value)) or any(isinf(e_value)):
                     if self.is_stop_on_warning:
                         self.stop_dict["EigenvalueError"] = True
@@ -485,7 +485,7 @@ class cma_es(object):
                 self.flg_warning = True
 
             diagC = diag(self.C).reshape(-1, 1)
-            self.histfunval[mod(evalcount / _lambda - 1, self.nbin)] = fitness[self.sel[0]]
+            self.histfunval[int(mod(evalcount / _lambda - 1, self.nbin))] = fitness[self.sel[0]]
             if (
                 mod(evalcount, _lambda) == self.nbin
                 and max(self.histfunval) - min(self.histfunval) < self.tolfun
@@ -518,7 +518,7 @@ class cma_es(object):
                     self.flg_warning = True
 
             # No effective axis
-            a = mod(evalcount / _lambda - 1, self.dim)
+            a = int(mod(evalcount / _lambda - 1, self.dim))
             if all(0.1 * sigma * self.e_value[a, 0] * self.e_vector[:, a] + self.wcm == self.wcm):
                 if is_stop_on_warning:
                     self.stop_dict["noeffectaxis"] = True

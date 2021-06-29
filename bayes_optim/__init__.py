@@ -9,6 +9,7 @@ from .bayes_opt import BO, AnnealingBO, NoisyBO, ParallelBO
 from .mobo import MOBO
 from .search_space import (
     Bool,
+    BoolSpace,
     Discrete,
     DiscreteSpace,
     Integer,
@@ -34,6 +35,7 @@ __all__ = [
     "SearchSpace",
     "IntegerSpace",
     "RealSpace",
+    "BoolSpace",
     "DiscreteSpace",
     "EI",
     "UCB",
