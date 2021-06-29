@@ -6,6 +6,9 @@ import numpy as np
 from joblib import Parallel, delayed
 from scipy.stats import rankdata
 from sklearn.decomposition import PCA
+from sklearn.metrics import mean_absolute_percentage_error, r2_score
+
+from bayes_optim.solution import Solution
 
 from . import acquisition_fun as AcquisitionFunction
 from .acquisition_fun import penalized_acquisition
@@ -21,19 +24,23 @@ class PCABO(BO):
         assert isinstance(self._search_space, RealSpace)
 
         self.__search_space = self._search_space  # the original search space
-        self.kernel_pca = kernel_pca
-        self._n_components = n_components
+        self.kernel_pca = kernel_pca  # whether to perform kernel PCA or not
+        self._n_components = n_components  # the number of principal components or the
 
-    def _scale_Xy(
-        self, new_X: List[List[float]], new_y: List[float]
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        if hasattr(self, "data"):
-            X = np.r_[self.data.astype(float), new_X]
-            y = np.r_[self.data.fitness, new_y]
-        else:
-            X = np.atleast_2d(new_X).astype(float)
-            y = np.array(new_y)
+    def _get_scaled_Xy(self, data: Solution) -> Tuple[np.ndarray, np.ndarray]:
+        """center the data matrix and scale the data points with respect to the objective values
 
+        Parameters
+        ----------
+        data : Solution
+            the data matrix to scale
+
+        Returns
+        -------
+        Tuple[np.ndarray, np.ndarray]
+            the scaled data matrix, the objective value
+        """
+        X, y = np.array(data), data.fitness
         self._X_mean = X.mean(axis=0)
         X -= self._X_mean
         y_ = -1 * y if not self.minimize else y
@@ -44,7 +51,7 @@ class PCABO(BO):
         w /= np.sum(w)
         return X * w.reshape(-1, 1), y
 
-    def _compute_bounds(self, pca, search_space: SearchSpace):
+    def _compute_bounds(self, pca: PCA, search_space: SearchSpace) -> List[float]:
         C = np.array([(l + u) / 2 for l, u in search_space.bounds])
         radius = np.sqrt(np.sum((np.array([l for l, _ in search_space.bounds]) - C) ** 2))
         C = C - pca.mean_ - self._X_mean
@@ -52,10 +59,10 @@ class PCABO(BO):
         return [(_ - radius, _ + radius) for _ in C_]
 
     def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
-        par = {} if par is None else par
         acquisition_func = super()._create_acquisition(
-            fun=fun, par=par, return_dx=return_dx, **kwargs
+            fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
         )
+        # wrap the penalized acquisition function for handling the box constraints
         return functools.partial(
             penalized_acquisition,
             acquisition_func=acquisition_func,
@@ -81,11 +88,19 @@ class PCABO(BO):
 
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
+        new_X = self._to_geno(new_X)
         for i, x in enumerate(new_X):
             self.eval_count += 1
-            self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x}")
+            new_X[i].fitness = new_y[i]
+            new_X[i].n_eval = 1
+            self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x.tolist()}")
 
-        X, y = self._scale_Xy(new_X, new_y)
+        new_X = self.post_eval_check(new_X)
+        self.data = self.data + new_X if hasattr(self, "data") else new_X
+        X, y = self._get_scaled_Xy(self.data)
+        # update the surrogate model
+        self.update_model(X, y)
+
         if self.kernel_pca:
             # TODO: finish the kernel PCA part..
             # self._pca = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=10)
@@ -93,17 +108,26 @@ class PCABO(BO):
         else:
             self._pca = PCA(n_components=self._n_components, svd_solver="full")
 
+        # re-fit the PCA transformation
         X = self._pca.fit_transform(X)
         bounds = self._compute_bounds(self._pca, self.__search_space)
-
-        # set the search space in the reduced (feature) space
+        # re-set the search space in the reduced (feature) space
         self._search_space = RealSpace(bounds)
-        X = self._to_geno(X)
-        for i, _ in enumerate(X):
-            X[i].fitness = y[i]
-        self.data = self.post_eval_check(X)
-        self.update_model()
         self.logger.info(f"xopt/fopt:\n{self.xopt}\n")
+
+    def update_model(self, X: np.ndarray, y: np.ndarray):
+        _std = np.std(y)
+        y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
+
+        self.fmin, self.fmax = np.min(y_), np.max(y_)
+        self.frange = self.fmax - self.fmin
+
+        self.model.fit(X, y_)
+        y_hat = self.model.predict(X)
+
+        r2 = r2_score(y_, y_hat)
+        MAPE = mean_absolute_percentage_error(y_, y_hat)
+        self.logger.info(f"model r2: {r2}, MAPE: {MAPE}")
 
 
 class MultiAcquisitionBO(ParallelBO):
