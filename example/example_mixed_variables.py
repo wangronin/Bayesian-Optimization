@@ -2,7 +2,7 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "../")
+sys.path.insert(0, "./")
 
 from bayes_optim import BO, DiscreteSpace, IntegerSpace, RealSpace
 from bayes_optim.surrogate import RandomForest
