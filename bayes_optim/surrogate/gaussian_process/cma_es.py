@@ -6,43 +6,43 @@ Created on Tue Jan 29 11:26:41 2013
 """
 
 import numpy as np
+from numpy import (
+    add,
+    append,
+    arange,
+    argsort,
+    array,
+    atleast_2d,
+    ceil,
+    diag,
+    dot,
+    exp,
+    eye,
+    floor,
+    inf,
+    inner,
+    isinf,
+    isreal,
+    linspace,
+    log,
+    mod,
+    newaxis,
+    ones,
+    outer,
+    power,
+    r_,
+    real,
+    size,
+    sqrt,
+    triu,
+    zeros,
+)
+from numpy.linalg import LinAlgError, cond, eigh, qr
+from numpy.random import rand, randn, shuffle
+from scipy.stats import chi
 
 # import hello as h
 from .boundary_handling import boundary_handling
-from scipy.stats import chi
-from numpy.linalg import eigh, LinAlgError, qr, cond
-from numpy.random import randn, rand, shuffle
-from numpy import (
-    sqrt,
-    eye,
-    exp,
-    dot,
-    add,
-    inf,
-    triu,
-    isreal,
-    isinf,
-    ones,
-    power,
-    log,
-    floor,
-    ceil,
-    outer,
-    zeros,
-    array,
-    mod,
-    newaxis,
-    arange,
-    append,
-    real,
-    argsort,
-    size,
-    diag,
-    inner,
-    r_,
-    linspace,
-    atleast_2d,
-)
 
 # My fast routines...
 abs = np.abs
@@ -93,9 +93,9 @@ class cma_es(object):
             self.restart_budget = opts["restart_budget"] if "restart_budget" in opts else int(20)
 
         # Initialize internal strategy parameters
-        self.wcm = eval(init_wcm) if isinstance(init_wcm, basestring) else init_wcm
-        self.lb = eval(opts["lb"]) if isinstance(opts["lb"], basestring) else opts["lb"]
-        self.ub = eval(opts["ub"]) if isinstance(opts["ub"], basestring) else opts["ub"]
+        self.wcm = eval(init_wcm) if isinstance(init_wcm, str) else init_wcm
+        self.lb = eval(opts["lb"]) if isinstance(opts["lb"], str) else opts["lb"]
+        self.ub = eval(opts["ub"]) if isinstance(opts["ub"], str) else opts["ub"]
         self.lb = atleast_2d(self.lb)
         self.ub = atleast_2d(self.ub)
 
@@ -106,7 +106,7 @@ class cma_es(object):
 
         self.eval_budget = (
             int(eval(opts["eval_budget"]))
-            if isinstance(opts["eval_budget"], basestring)
+            if isinstance(opts["eval_budget"], str)
             else int(opts["eval_budget"])
         )
 
@@ -118,11 +118,11 @@ class cma_es(object):
 
         # Strategy parameters: Selection
         self._lambda = opts["_lambda"] if opts.has_key("_lambda") else int(4 + floor(3 * log(dim)))
-        if isinstance(self._lambda, basestring):
+        if isinstance(self._lambda, str):
             self._lambda = eval(self._lambda)
         _mu_prime = (self._lambda - 1) / 2.0
         self._mu = opts["_mu"] if opts.has_key("_mu") else int(ceil(_mu_prime))
-        if isinstance(self._mu, basestring):
+        if isinstance(self._mu, str):
             self._mu = eval(self._mu)
 
         # TODO : new weight setting weighted recombination

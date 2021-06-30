@@ -400,7 +400,7 @@ class BaseBO(ABC):
         Union[List[list], List[dict]]
             the suggested candidates
         """
-        if self.model.is_fitted:
+        if self.model is not None and self.model.is_fitted:
             n_point = self.n_point if n_point is None else n_point
             msg = f"asking {n_point} points:"
             X = self.arg_max_acquisition(n_point=n_point, fixed=fixed)
@@ -431,7 +431,7 @@ class BaseBO(ABC):
         if hasattr(self, "data"):
             index += len(self.data)
 
-        X = Solution(X, index=index, var_name=self.var_names)
+        X = Solution(X, index=index, var_name=self._search_space.var_name)
         self.logger.info(msg)
         for i, _ in enumerate(X):
             self.logger.info(f"#{i + 1} - {self._to_pheno(X[i])}")

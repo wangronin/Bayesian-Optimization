@@ -14,6 +14,7 @@ from . import acquisition_fun as AcquisitionFunction
 from .acquisition_fun import penalized_acquisition
 from .bayes_opt import BO, ParallelBO
 from .search_space import RealSpace, SearchSpace
+from .surrogate import GaussianProcess
 
 
 class PCABO(BO):
@@ -21,13 +22,17 @@ class PCABO(BO):
 
     def __init__(self, kernel_pca: bool = False, n_components: Union[float, int] = None, **kwargs):
         super().__init__(**kwargs)
+        if self.model is not None:
+            self.logger.warn(
+                "The surrogate model will be created automatically by PCA-BO."
+                "The input argument `model` will be ignored"
+            )
         assert isinstance(self._search_space, RealSpace)
-
         self.__search_space = self._search_space  # the original search space
         self.kernel_pca = kernel_pca  # whether to perform kernel PCA or not
         self._n_components = n_components  # the number of principal components or the
 
-    def _get_scaled_Xy(self, data: Solution) -> Tuple[np.ndarray, np.ndarray]:
+    def _get_scaled_Xy(self, data: Solution) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """center the data matrix and scale the data points with respect to the objective values
 
         Parameters
@@ -38,7 +43,7 @@ class PCABO(BO):
         Returns
         -------
         Tuple[np.ndarray, np.ndarray]
-            the scaled data matrix, the objective value
+            the scaled data matrix, the center data matrix, and the objective value
         """
         X, y = np.array(data), data.fitness
         self._X_mean = X.mean(axis=0)
@@ -49,7 +54,7 @@ class PCABO(BO):
         N = len(y_)
         w = np.log(N) - np.log(r)
         w /= np.sum(w)
-        return X * w.reshape(-1, 1), y
+        return X * w.reshape(-1, 1), X, y
 
     def _compute_bounds(self, pca: PCA, search_space: SearchSpace) -> List[float]:
         C = np.array([(l + u) / 2 for l, u in search_space.bounds])
@@ -66,11 +71,12 @@ class PCABO(BO):
         return functools.partial(
             penalized_acquisition,
             acquisition_func=acquisition_func,
-            X_mean=self._X_mean,
-            pca=self._pca,
-            bounds=self.__search_space.bounds,
+            bounds=self._search_space.bounds,
             return_dx=return_dx,
         )
+
+    def pre_eval_check(self, X: List) -> List:
+        return X
 
     @property
     def xopt(self):
@@ -89,17 +95,16 @@ class PCABO(BO):
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
         new_X = self._to_geno(new_X)
+        self.iter_count += 1
         for i, x in enumerate(new_X):
             self.eval_count += 1
             new_X[i].fitness = new_y[i]
             new_X[i].n_eval = 1
             self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x.tolist()}")
 
-        new_X = self.post_eval_check(new_X)
+        new_X = self.post_eval_check(new_X)  # remove NaN's
         self.data = self.data + new_X if hasattr(self, "data") else new_X
-        X, y = self._get_scaled_Xy(self.data)
-        # update the surrogate model
-        self.update_model(X, y)
+        scaled_X, X, y = self._get_scaled_Xy(self.data)
 
         if self.kernel_pca:
             # TODO: finish the kernel PCA part..
@@ -108,14 +113,37 @@ class PCABO(BO):
         else:
             self._pca = PCA(n_components=self._n_components, svd_solver="full")
 
-        # re-fit the PCA transformation
-        X = self._pca.fit_transform(X)
+        self._pca.fit(scaled_X)  # re-fit the PCA transformation on the scaled data matrix
+        X = self._pca.transform(X)  # transform the centered data matrix
         bounds = self._compute_bounds(self._pca, self.__search_space)
-        # re-set the search space in the reduced (feature) space
+        # re-set the search space object for the reduced (feature) space
         self._search_space = RealSpace(bounds)
+        # update the surrogate model
+        self.update_model(X, y)
         self.logger.info(f"xopt/fopt:\n{self.xopt}\n")
 
     def update_model(self, X: np.ndarray, y: np.ndarray):
+        # create the GPR model
+        dim = self._search_space.dim
+        bounds = np.array(self._search_space.bounds)
+        _range = bounds[:, 1] - bounds[:, 0]
+        thetaL, thetaU = (
+            1e-8 * _range,
+            10 * _range,
+        )
+        self.model = GaussianProcess(
+            theta0=np.random.rand(dim) * (thetaU - thetaL) + thetaL,
+            thetaL=thetaL,
+            thetaU=thetaU,
+            nugget=0,
+            noise_estim=False,
+            optimizer="BFGS",
+            wait_iter=3,
+            random_start=dim,
+            likelihood="concentrated",
+            eval_budget=100 * dim,
+        )
+
         _std = np.std(y)
         y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
 

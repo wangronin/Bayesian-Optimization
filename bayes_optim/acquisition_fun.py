@@ -13,13 +13,12 @@ __authors__ = ["Hao Wang"]
 # TODO: multi-objective extension
 
 
-def penalized_acquisition(x, acquisition_func, X_mean, pca, bounds, return_dx):
-    x_ = pca.inverse_transform(x) + X_mean
+def penalized_acquisition(x, acquisition_func, bounds, return_dx):
     bounds = np.asarray(bounds)
-    idx_lower = np.nonzero(x_ < bounds[:, 0])[0]
-    idx_upper = np.nonzero(x_ > bounds[:, 1])[0]
-    penalty = np.sum([bounds[i, 0] - x_[i] for i in idx_lower]) + np.sum(
-        [x_[i] - bounds[i, 1] for i in idx_upper]
+    idx_lower = np.nonzero(x < bounds[:, 0])[0]
+    idx_upper = np.nonzero(x > bounds[:, 1])[0]
+    penalty = np.sum([bounds[i, 0] - x[i] for i in idx_lower]) + np.sum(
+        [x[i] - bounds[i, 1] for i in idx_upper]
     )
     penalty *= -1
 

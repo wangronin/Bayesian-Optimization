@@ -5,46 +5,26 @@ import numpy as np
 sys.path.insert(0, "./")
 
 from bayes_optim.extension import PCABO, RealSpace
-from bayes_optim.surrogate import GaussianProcess, trend
 
 np.random.seed(123)
-dim = 5
-lb, ub = -1, 5
+dim = 20
+lb, ub = -5, 5
 
 
 def fitness(x):
     x = np.asarray(x)
-    return np.sum(x ** 2)
+    return np.sum((np.arange(1, dim + 1) * x) ** 2)
 
 
 space = RealSpace([lb, ub]) * dim
-
-mean = trend.constant_trend(dim, beta=None)
-thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-thetaU = 10 * (ub - lb) * np.ones(dim)
-theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
-model = GaussianProcess(
-    theta0=theta0,
-    thetaL=thetaL,
-    thetaU=thetaU,
-    nugget=0,
-    noise_estim=False,
-    optimizer="BFGS",
-    wait_iter=3,
-    random_start=dim,
-    likelihood="concentrated",
-    eval_budget=100 * dim,
-)
-
 opt = PCABO(
     search_space=space,
     obj_fun=fitness,
-    model=model,
     DoE_size=5,
-    max_FEs=50,
+    max_FEs=100,
     verbose=True,
     n_point=1,
+    n_components=0.95,
     acquisition_optimization={"optimizer": "BFGS"},
 )
 print(opt.run())
