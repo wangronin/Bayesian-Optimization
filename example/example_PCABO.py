@@ -7,13 +7,13 @@ sys.path.insert(0, "./")
 from bayes_optim.extension import PCABO, RealSpace
 
 np.random.seed(123)
-dim = 20
+dim = 5
 lb, ub = -5, 5
 
 
 def fitness(x):
     x = np.asarray(x)
-    return np.sum((np.arange(1, dim + 1) * x) ** 2)
+    return np.sum(x ** 2) #np.sum((np.arange(1, dim + 1) * x) ** 2)
 
 
 space = RealSpace([lb, ub]) * dim

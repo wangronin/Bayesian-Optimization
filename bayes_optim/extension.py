@@ -94,7 +94,12 @@ class PCABO(BO):
 
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
-        new_X = self._to_geno(new_X)
+
+        index = np.arange(len(new_X))
+        if hasattr(self, "data"):
+            index += len(self.data)
+
+        new_X = self._to_geno(new_X, index)
         self.iter_count += 1
         for i, x in enumerate(new_X):
             self.eval_count += 1
