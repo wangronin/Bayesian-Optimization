@@ -210,6 +210,7 @@ def dynamic_penalty(
     if not hasattr(X[0], "__iter__") or isinstance(X[0], str):
         X = [X]
 
+    X = np.array(X, dtype=object)
     N = len(X)
     p = np.zeros(N)
 

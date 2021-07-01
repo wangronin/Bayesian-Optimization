@@ -283,9 +283,7 @@ class OnePlusOne_CMA(object):
         x : np.ndarray
             the trial point to check against the constraints
         """
-        return dynamic_penalty(
-            x.tolist(), self.iter_count + 1, self.h, self.g, minimize=self.minimize
-        )
+        return dynamic_penalty(x, self.iter_count + 1, self.h, self.g, minimize=self.minimize)
 
     def evaluate(self, x):
         self.eval_count += 1
