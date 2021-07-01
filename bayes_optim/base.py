@@ -11,7 +11,7 @@ from joblib import Parallel, delayed
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
 from . import acquisition_fun as AcquisitionFunction
-from ._exception import AskEmptyError
+from ._exception import AskEmptyError, FlatFitnessError, RecommendationUnavailableError
 from .acquisition_optim import argmax_restart
 from .acquisition_optim.option import (
     default_AQ_max_FEs,
@@ -419,8 +419,6 @@ class BaseBO(ABC):
             msg = f"asking {n_point} points (using DoE):"
             X = self.create_DoE(n_point, fixed=fixed)
 
-        # NOTE: this would happen if the constraints are too restrict
-        # Or, the search space is enumerated
         if len(X) == 0:
             raise AskEmptyError()
 
@@ -503,10 +501,10 @@ class BaseBO(ABC):
                 func_vals = [self.obj_fun(x) for x in X]
         return func_vals
 
-    def recommend(self) -> List[Solution]:
-        if self.xopt is None:
-            return []
-        return [self.xopt]
+    def recommend(self) -> Solution:
+        if self.xopt is None or len(self.xopt) == 0:
+            raise RecommendationUnavailableError()
+        return self.xopt
 
     def create_DoE(self, n_point: int, fixed: Dict = None) -> List:
         """get the initial sample points using Design of Experiemnt (DoE) methods
@@ -570,10 +568,12 @@ class BaseBO(ABC):
         # Standardization should make it easier to specify the GP prior, compared to
         # rescaling values to the unit interval.
         _std = np.std(fitness)
+        if len(fitness) > 5 and np.isclose(_std, 0):
+            raise FlatFitnessError()
+
         fitness_ = (
             fitness if np.isclose(_std, 0) else (fitness - np.mean(fitness)) / np.std(fitness)
         )
-
         self.fmin, self.fmax = np.min(fitness_), np.max(fitness_)
         self.frange = self.fmax - self.fmin
 

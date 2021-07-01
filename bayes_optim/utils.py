@@ -88,10 +88,13 @@ def partial_argument(
             out = []
             for v in tuple(out_):
                 if isinstance(v, np.ndarray):
-                    if len(v.shape) == 1 or v.shape[1] == len(masks):
+                    if len(v.shape) == 1 and len(v) > 1:
                         v = v[~masks]
-                    elif v.shape[0] == len(masks):
-                        v = v[~masks, :]
+                    elif len(v.shape) == 2:
+                        if v.shape[0] == len(masks):
+                            v = v[~masks, :]
+                        elif v.shape[1] == len(masks):
+                            v = v[:, ~masks]
                 elif isinstance(v, list) and len(v) == len(masks):
                     v = [v[m] for m in ~masks]
                 out.append(v)

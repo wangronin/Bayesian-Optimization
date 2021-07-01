@@ -1,6 +1,3 @@
-# Author: Hao Wang
-# Email: wangronin@gmail.com
-
 import warnings
 
 import numpy as np
@@ -280,7 +277,8 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     def _check_data(self, X, y):
         # Force data to 2D numpy.array
         X, y = check_X_y(X, y, multi_output=True, y_numeric=True)
-        # y = y.reshape(-1, 1)
+        if len(y.shape) == 1:
+            y = y.reshape(-1, 1)
         n_samples, _ = X.shape
         self.X, self.y = X, y
 

@@ -12,7 +12,6 @@ from .bayes_opt import BO
 from .extra.multi_objective import Hypervolume, is_non_dominated
 from .extra.multi_objective.box_decompositions import NondominatedPartitioning
 from .multi_objective import EHVI
-from .solution import Solution
 from .utils import dynamic_penalty, partial_argument, timeit
 
 __authors__ = ["Hao Wang"]
@@ -93,10 +92,6 @@ class BaseMOBO(BO):
                 func_vals.append([f(x) for x in X])
 
         return list(zip(*func_vals))
-
-    @timeit
-    def recommend(self) -> Union[None, List[Solution]]:
-        return self.xopt
 
     def tell(
         self,

@@ -127,10 +127,7 @@ class PCABO(BO):
         dim = self._search_space.dim
         bounds = np.array(self._search_space.bounds)
         _range = bounds[:, 1] - bounds[:, 0]
-        thetaL, thetaU = (
-            1e-8 * _range,
-            10 * _range,
-        )
+        thetaL, thetaU = 1e-8 * _range, 10 * _range
         self.model = GaussianProcess(
             theta0=np.random.rand(dim) * (thetaU - thetaL) + thetaL,
             thetaL=thetaL,
