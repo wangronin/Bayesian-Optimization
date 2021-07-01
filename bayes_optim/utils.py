@@ -76,7 +76,10 @@ def partial_argument(
     values = [fixed[k] for i, k in enumerate(var_name) if masks[i]]
 
     @functools.wraps(func)
-    def wrapper(X):
+    def wrapper(X: Union[np.ndarray, Solution, list]):
+        if not isinstance(X, np.ndarray):
+            X = np.array(X, dtype=object)
+
         N = 1 if len(X.shape) == 1 else X.shape[1]
         X_ = np.empty((N, len(masks)), dtype=object)
         X_[:, masks] = values

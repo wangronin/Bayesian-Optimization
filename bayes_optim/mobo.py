@@ -93,6 +93,7 @@ class BaseMOBO(BO):
 
         return list(zip(*func_vals))
 
+    @timeit
     def tell(
         self,
         X: List[Union[list, dict]],
@@ -116,8 +117,6 @@ class BaseMOBO(BO):
 
         # TODO: implement method to handle known, expensive constraints `h_vals` and `g_vals`
         # add extra columns h_vals, g_vals to the `Solution` object
-        # if h_vals is not None or g_vals is not None:
-        # raise NotImplementedError("will be implemented soon :)")
 
         for i, _ in enumerate(X):
             X[i].n_eval += 1
@@ -140,8 +139,8 @@ class BaseMOBO(BO):
         xopt = self.xopt
         pf = self._scaler.transform(self.xopt.fitness) * (-1) ** self.minimize
         hv = Hypervolume(ref_point=Tensor(self.ref_point))
-        self.logger.info(f"Efficient set/Pareto front (xopt/fopt):\n{xopt}")
-        self.logger.info(f"Hypervolume of normalized fitness: {hv.compute(Tensor(pf))}")
+        self.logger.info(f"efficient set/Pareto front (xopt/fopt):\n{xopt}")
+        self.logger.info(f"hypervolume of normalized fitness: {hv.compute(Tensor(pf))}")
 
         if self.h is not None or self.g is not None:
             penalty = np.array(

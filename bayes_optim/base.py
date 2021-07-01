@@ -19,7 +19,7 @@ from .acquisition_optim.option import (
     default_AQ_wait_iter,
 )
 from .misc import LoggerFormatter
-from .search_space import SearchSpace
+from .search_space import RealSpace, SearchSpace
 from .solution import Solution
 from .utils import (
     arg_to_int,
@@ -297,8 +297,11 @@ class BaseBO(ABC):
         if "optimizer" in kwargs:
             self._optimizer = kwargs["optimizer"]
         else:
-            if self.N_d + self.N_i == 0 and hasattr(self.model, "gradient"):
-                self._optimizer = "BFGS"
+            if isinstance(self.search_space, RealSpace):
+                if hasattr(self.model, "gradient") and self.n_obj == 1:
+                    self._optimizer = "BFGS"
+                else:
+                    self._optimizer = "OnePlusOne_Cholesky_CMA"
             else:
                 self._optimizer = "MIES"
 

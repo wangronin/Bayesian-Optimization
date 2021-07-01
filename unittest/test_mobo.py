@@ -1,7 +1,8 @@
 import numpy as np
 from bayes_optim import MOBO
+from bayes_optim._exception import RecommendationUnavailableError
 from bayes_optim.search_space import BoolSpace, DiscreteSpace, IntegerSpace, RealSpace
-from bayes_optim.surrogate import RandomForest
+from bayes_optim.surrogate import GaussianProcess, RandomForest
 
 np.random.seed(123)
 
@@ -22,6 +23,98 @@ def f2(x):
         + (x["nominal"] != "G") * 2
         + int(not x["bool"]) * 3
     )
+
+
+def test_3D():
+    search_space = (
+        RealSpace([0, 100], var_name="Kp", precision=8)
+        + RealSpace([0, 100], var_name="Ki", precision=8)
+        + RealSpace([0, 100], var_name="Kd", precision=8)
+    )
+    f1 = lambda x: x["Kp"] ** 2 + x["Ki"] + x["Kd"] ** 2
+    f2 = lambda x: x["Kp"] + x["Ki"] ** 2 + x["Kd"] ** 2
+    f3 = lambda x: x["Kp"] ** 2 + x["Ki"] + x["Kd"]
+    dim = search_space.dim
+    thetaL = 1e-10 * 100 * np.ones(dim)
+    thetaU = 10 * 100 * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
+    model = GaussianProcess(
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=0,
+        noise_estim=False,
+        likelihood="concentrated",
+    )
+    opt = MOBO(
+        search_space=search_space,
+        obj_fun=(f1, f2, f3),
+        model=model,
+        max_FEs=100,
+        DoE_size=1,  # the initial DoE size
+        eval_type="dict",
+        n_job=1,  # number of processes
+        verbose=True,  # turn this off, if you prefer no output
+        minimize=True,
+        acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
+    )
+    for _ in range(100):
+        X = opt.ask(1)
+        opt.tell(X, [(f1(x), f2(x), f3(x)) for x in X])
+
+    opt.recommend()
+    try:
+        X = opt.ask(3)
+    except NotImplementedError:
+        pass
+
+
+def test_with_constraints():
+    search_space = (
+        RealSpace([0, 100], var_name="left", precision=2)
+        + RealSpace([0, 100], var_name="up", precision=2)
+        + RealSpace([0, 100], var_name="right", precision=2)
+    )
+    f1 = lambda x: x["left"] ** 2 + x["up"] + x["right"] ** 2
+    f2 = lambda x: 10 * x["left"] - x["up"] ** 2 + x["right"]
+    g = lambda x: x["left"] + x["up"] + x["right"] - 100
+    dim = search_space.dim
+    thetaL = 1e-10 * 100 * np.ones(dim)
+    thetaU = 10 * 100 * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
+    model = GaussianProcess(
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=0,
+        noise_estim=False,
+        likelihood="concentrated",
+    )
+    opt = MOBO(
+        search_space=search_space,
+        obj_fun=(f1, f2),
+        ineq_fun=g,
+        model=model,
+        # model=RandomForest(),
+        max_FEs=100,
+        DoE_size=1,  # the initial DoE size
+        eval_type="dict",
+        n_job=1,  # number of processes
+        verbose=True,  # turn this off, if you prefer no output
+        acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
+    )
+    for _ in range(50):
+        X = opt.ask(1)
+        opt.tell(X, [(f1(x), f2(x)) for x in X])
+        assert g(X[0]) <= 0
+
+    opt.recommend()
+    try:
+        X = opt.ask(3)
+    except NotImplementedError:
+        pass
 
 
 def test_fixed_var():
@@ -71,7 +164,10 @@ def test_recommend():
         n_job=1,  # number of processes
         verbose=True,  # turn this off, if you prefer no output
     )
-    assert opt.recommend() is None
+    try:
+        opt.recommend()
+    except RecommendationUnavailableError:
+        pass
 
 
 def test_constraint():
