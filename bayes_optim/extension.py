@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import functools
-from copy import copy
-from typing import Callable, Dict, List, Tuple, Union
+from copy import copy, deepcopy
+from typing import Callable, Dict, List, Union
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -8,31 +10,18 @@ from scipy.stats import rankdata
 from sklearn.decomposition import PCA
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
-from bayes_optim.solution import Solution
-
 from . import acquisition_fun as AcquisitionFunction
-from .acquisition_fun import penalized_acquisition
 from .bayes_opt import BO, ParallelBO
 from .search_space import RealSpace, SearchSpace
 from .surrogate import GaussianProcess
 
 
-class PCABO(BO):
-    """Dimensionality reduction using Principle Component Decomposition (PCA)"""
-
-    def __init__(self, kernel_pca: bool = False, n_components: Union[float, int] = None, **kwargs):
+class LinearTransform(PCA):
+    def __init__(self, minimize: bool = True, **kwargs):
         super().__init__(**kwargs)
-        if self.model is not None:
-            self.logger.warn(
-                "The surrogate model will be created automatically by PCA-BO."
-                "The input argument `model` will be ignored"
-            )
-        assert isinstance(self._search_space, RealSpace)
-        self.__search_space = self._search_space  # the original search space
-        self.kernel_pca = kernel_pca  # whether to perform kernel PCA or not
-        self._n_components = n_components  # the number of principal components or the
+        self.minimize = minimize
 
-    def _get_scaled_Xy(self, data: Solution) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def fit(self, X: np.ndarray, y: np.ndarray) -> LinearTransform:
         """center the data matrix and scale the data points with respect to the objective values
 
         Parameters
@@ -45,21 +34,87 @@ class PCABO(BO):
         Tuple[np.ndarray, np.ndarray]
             the scaled data matrix, the center data matrix, and the objective value
         """
-        X, y = np.array(data), data.fitness
-        self._X_mean = X.mean(axis=0)
-        X -= self._X_mean
+        self.center = X.mean(axis=0)
+        X_centered = X - self.center
         y_ = -1 * y if not self.minimize else y
-
         r = rankdata(y_)
         N = len(y_)
         w = np.log(N) - np.log(r)
         w /= np.sum(w)
-        return X * w.reshape(-1, 1), X, y
+        X_scaled = X_centered * w.reshape(-1, 1)
+        return super().fit(X_scaled)  # fit the PCA transformation on the scaled data matrix
 
-    def _compute_bounds(self, pca: PCA, search_space: SearchSpace) -> List[float]:
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return super().transform(X - self.center)  # transform the centered data matrix
+
+    def fit_transform(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        self.fit(X, y)
+        return self.transform(X)
+
+    def inverse_transform(self, X: np.ndarray) -> np.ndarray:
+        if not hasattr(self, "components_"):
+            return X
+        return super().inverse_transform(X) + self.center
+
+
+def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
+    bounds_ = np.atleast_2d(bounds)
+    # map back the candidate point to check if it falls inside the original domain
+    x_ = pca.inverse_transform(x)
+    idx_lower = np.nonzero(x_ < bounds_[:, 0])[0]
+    idx_upper = np.nonzero(x_ > bounds_[:, 1])[0]
+    penalty = -1 * (
+        np.sum([bounds_[i, 0] - x_[i] for i in idx_lower])
+        + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
+    )
+
+    if penalty == 0:
+        out = acquisition_func(x)
+    else:
+        if return_dx:
+            # gradient of the penalty in the original space
+            g_ = np.zeros((len(x_), 1))
+            g_[idx_lower, :] = 1
+            g_[idx_upper, :] = -1
+            # get the gradient of the penalty in the reduced space
+            g = pca.components_.dot(g_)
+            out = (penalty, g)
+        else:
+            out = penalty
+    return out
+
+
+class PCABO(BO):
+    """Dimensionality reduction using Principle Component Decomposition (PCA)
+
+    References
+
+    [RaponiWB+20]
+        Raponi, Elena, Hao Wang, Mariusz Bujny, Simonetta Boria, and Carola Doerr.
+        "High dimensional bayesian optimization assisted by principal component analysis."
+        In International Conference on Parallel Problem Solving from Nature, pp. 169-183.
+        Springer, Cham, 2020.
+
+    """
+
+    def __init__(self, n_components: Union[float, int] = None, **kwargs):
+        super().__init__(**kwargs)
+        if self.model is not None:
+            self.logger.warn(
+                "The surrogate model will be created automatically by PCA-BO. "
+                "The input argument `model` will be ignored"
+            )
+        assert isinstance(self._search_space, RealSpace)
+        self.__search_space = deepcopy(self._search_space)  # the original search space
+        self._pca = LinearTransform(
+            n_components=n_components, svd_solver="full", minimize=self.minimize
+        )
+
+    @staticmethod
+    def _compute_bounds(pca: PCA, search_space: SearchSpace) -> List[float]:
         C = np.array([(l + u) / 2 for l, u in search_space.bounds])
         radius = np.sqrt(np.sum((np.array([l for l, _ in search_space.bounds]) - C) ** 2))
-        C = C - pca.mean_ - self._X_mean
+        C = C - pca.mean_ - pca.center
         C_ = C.dot(pca.components_.T)
         return [(_ - radius, _ + radius) for _ in C_]
 
@@ -67,11 +122,13 @@ class PCABO(BO):
         acquisition_func = super()._create_acquisition(
             fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
         )
+        # TODO: make this more general for other acquisition functions
         # wrap the penalized acquisition function for handling the box constraints
         return functools.partial(
             penalized_acquisition,
             acquisition_func=acquisition_func,
-            bounds=self._search_space.bounds,
+            bounds=self.__search_space.bounds,  # hyperbox in the original space
+            pca=self._pca,
             return_dx=return_dx,
         )
 
@@ -87,43 +144,35 @@ class PCABO(BO):
         return self._xopt
 
     def ask(self, n_point: int = None) -> List[List[float]]:
-        X = super().ask(n_point)
-        if hasattr(self, "_pca"):
-            X = self._pca.inverse_transform(X) + self._X_mean
-        return X
+        return self._pca.inverse_transform(super().ask(n_point))
 
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
-        new_X = self._to_geno(new_X)
-        self.iter_count += 1
         for i, x in enumerate(new_X):
-            self.eval_count += 1
-            new_X[i].fitness = new_y[i]
-            new_X[i].n_eval = 1
-            self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x.tolist()}")
+            self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x}")
+
+        index = np.arange(len(new_X))
+        if hasattr(self, "data"):
+            index += len(self.data)
+        # convert `new_X` to a `Solution` object
+        new_X = self._to_geno(new_X, index=index, n_eval=1, fitness=new_y)
+        self.iter_count += 1
+        self.eval_count += len(new_X)
 
         new_X = self.post_eval_check(new_X)  # remove NaN's
         self.data = self.data + new_X if hasattr(self, "data") else new_X
-        scaled_X, X, y = self._get_scaled_Xy(self.data)
-
-        if self.kernel_pca:
-            # TODO: finish the kernel PCA part..
-            # self._pca = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=10)
-            raise NotImplementedError
-        else:
-            self._pca = PCA(n_components=self._n_components, svd_solver="full")
-
-        self._pca.fit(scaled_X)  # re-fit the PCA transformation on the scaled data matrix
-        X = self._pca.transform(X)  # transform the centered data matrix
+        # re-fit the PCA transformation
+        X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
         bounds = self._compute_bounds(self._pca, self.__search_space)
         # re-set the search space object for the reduced (feature) space
         self._search_space = RealSpace(bounds)
         # update the surrogate model
-        self.update_model(X, y)
+        self.update_model(X, self.data.fitness)
         self.logger.info(f"xopt/fopt:\n{self.xopt}\n")
 
     def update_model(self, X: np.ndarray, y: np.ndarray):
-        # create the GPR model
+        # NOTE: the GPR model will be created since the effective search space (the reduced space
+        # is dynamic)
         dim = self._search_space.dim
         bounds = np.array(self._search_space.bounds)
         _range = bounds[:, 1] - bounds[:, 0]
@@ -132,12 +181,9 @@ class PCABO(BO):
             theta0=np.random.rand(dim) * (thetaU - thetaL) + thetaL,
             thetaL=thetaL,
             thetaU=thetaU,
-            nugget=0,
+            nugget=1e-8,
             noise_estim=False,
-            optimizer="BFGS",
-            wait_iter=3,
             random_start=dim,
-            likelihood="concentrated",
             eval_budget=100 * dim,
         )
 

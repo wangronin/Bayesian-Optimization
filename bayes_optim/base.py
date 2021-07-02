@@ -1,5 +1,6 @@
 import functools
 import logging
+import os
 import sys
 from abc import ABC, abstractmethod
 from copy import copy
@@ -283,8 +284,13 @@ class BaseBO(ABC):
 
         if self._eval_type == "list":
             self._to_pheno = lambda x: x.tolist()
-            self._to_geno = lambda x, index=None: Solution(
-                x, var_name=self.var_names, index=index, n_obj=self.n_obj
+            self._to_geno = lambda x, index=None, n_eval=1, fitness=None: Solution(
+                x,
+                var_name=self.var_names,
+                n_obj=self.n_obj,
+                index=index,
+                n_eval=n_eval,
+                fitness=fitness,
             )
         elif self._eval_type == "dict":
             self._to_pheno = lambda x: x.to_dict()
@@ -642,12 +648,14 @@ class BaseBO(ABC):
             self.stop_dict["max_FEs"] = self.eval_count
 
         if self.ftarget is not None and hasattr(self, "xopt"):
-            if self._compare(self.fopt, self.ftarget):
-                self.stop_dict["ftarget"] = self.fopt
+            if self._compare(self.xopt.fitness[0], self.ftarget):
+                self.stop_dict["ftarget"] = self.xopt.fitness[0]
 
         return bool(self.stop_dict)
 
-    def save(self, filename):
+    def save(self, filename: str):
+        # creat the folder if not exist
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
         with open(filename, "wb") as f:
             # NOTE: we need to dump `self.data` first. Otherwise, some
             # attributes of it will be lost
