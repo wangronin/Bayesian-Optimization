@@ -19,8 +19,6 @@ def fitness(x):
 
 
 space = RealSpace([lb, ub]) * dim
-
-mean = trend.constant_trend(dim, beta=None)
 thetaL = 1e-10 * (ub - lb) * np.ones(dim)
 thetaU = 10 * (ub - lb) * np.ones(dim)
 theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
@@ -29,8 +27,8 @@ model = GaussianProcess(
     theta0=theta0,
     thetaL=thetaL,
     thetaU=thetaU,
-    nugget=0,
-    noise_estim=False,
+    nugget=1e-3,
+    noise_estim=True,
     optimizer="BFGS",
     wait_iter=3,
     random_start=dim,
@@ -43,10 +41,9 @@ opt = BO(
     obj_fun=fitness,
     model=model,
     DoE_size=5,
-    max_FEs=50,
+    max_FEs=20,
     verbose=True,
     n_point=1,
     acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
 )
 print(opt.run())
-# assert np.isclose(opt.fopt, 0.002111536359751477)
