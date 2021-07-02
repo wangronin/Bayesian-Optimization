@@ -728,8 +728,8 @@ class SearchSpace:
         """
         # NOTE: simple Monte Carlo sampling, which will take an exponential running time when
         # the feasible space diminishes exponentially
-        # TODO: implement more efficient sampling method
-        X, n, max_trial = [], N, 1e3
+        # TODO: implement more efficient sampling method, e.g., SCMC
+        X, n, max_trial = [], N, 1e2
         while True:
             S = self._sample(N, method)
             if h:

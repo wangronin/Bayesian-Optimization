@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple, Union
 import numpy as np
 from joblib import Parallel, delayed
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
 from torch import Tensor
 
 from .acquisition_optim import argmax_restart
@@ -12,7 +12,6 @@ from .bayes_opt import BO
 from .extra.multi_objective import Hypervolume, is_non_dominated
 from .extra.multi_objective.box_decompositions import NondominatedPartitioning
 from .multi_objective import EHVI
-from .solution import Solution
 from .utils import dynamic_penalty, partial_argument, timeit
 
 __authors__ = ["Hao Wang"]
@@ -61,22 +60,18 @@ class BaseMOBO(BO):
     @property
     def ref_point(self):
         """reference point for computing the hypervolumne"""
-        # NOTE: assume maximization
+        # NOTE: assuming maximization
         return np.min(self.y, axis=0) * 0.8
 
     @property
     def y(self):
         """The transformed objective value for the internal use"""
-        # TODO: double check if this is still needed for GPRs
-        # if any(np.isclose(self.frange, 0)) and len(y) > 1:
-        # raise Exception("flat objective value!")
         if not hasattr(self, "data"):
             return None
-
-        # Standardization should make the GP prior less mis-specified
-        # self._scaler = StandardScaler()
-        # y = self._scaler.fit_transform(self.data.fitness)
-        y = self.data.fitness
+        # normalize the objective values in case objective functions differ hugely in their ranges
+        self._scaler = MinMaxScaler()
+        y = self._scaler.fit_transform(self.data.fitness)
+        # y = self.data.fitness
         # convert to maximization problem
         return y * (-1) ** self.minimize
 
@@ -89,7 +84,6 @@ class BaseMOBO(BO):
         List[Tuple[float]]
             of the shape [[f1(x1),...,fm(x1)], [f1(x2),...,fm(x2)],...,[f1(xn),...,fm(xn)]]
         """
-        # TODO: fix for `self.parallel_obj_fun`
         func_vals = []
         for f in self.obj_fun:
             if self.n_job > 1:  # or by ourselves..
@@ -100,9 +94,6 @@ class BaseMOBO(BO):
         return list(zip(*func_vals))
 
     @timeit
-    def recommend(self) -> Union[None, List[Solution]]:
-        return self.xopt
-
     def tell(
         self,
         X: List[Union[list, dict]],
@@ -121,13 +112,11 @@ class BaseMOBO(BO):
         func_vals : List/np.ndarray of float
             The corresponding function values
         """
-        # TODO: implement method to handle known, expensive constraints `h_vals` and `g_vals`
-        # add extra columns h_vals, g_vals to the `Solution` object
         X = self._to_geno(X, index)
         self.logger.info(f"observing {len(X)} points:")
 
-        # if h_vals is not None or g_vals is not None:
-        # raise NotImplementedError("will be implemented soon :)")
+        # TODO: implement method to handle known, expensive constraints `h_vals` and `g_vals`
+        # add extra columns h_vals, g_vals to the `Solution` object
 
         for i, _ in enumerate(X):
             X[i].n_eval += 1
@@ -146,11 +135,12 @@ class BaseMOBO(BO):
         # update the surrogate models
         self.update_model()
         # compute the hypervolume indicator value of the incumbent
+        # TODO: HV computation is not exactly correct
         xopt = self.xopt
-        pf = self.xopt.fitness * (-1) ** self.minimize
+        pf = self._scaler.transform(self.xopt.fitness) * (-1) ** self.minimize
         hv = Hypervolume(ref_point=Tensor(self.ref_point))
-        self.logger.info(f"Efficient set/Pareto front (xopt/fopt):\n{xopt}")
-        self.logger.info(f"Hypervolume indicator value: {hv.compute(Tensor(pf))}")
+        self.logger.info(f"efficient set/Pareto front (xopt/fopt):\n{xopt}")
+        self.logger.info(f"hypervolume of normalized fitness: {hv.compute(Tensor(pf))}")
 
         if self.h is not None or self.g is not None:
             penalty = np.array(
@@ -163,7 +153,7 @@ class BaseMOBO(BO):
             self.hist_f.append(xopt.fitness)
 
     def update_model(self):
-        # TODO: add model selection
+        # TODO: add model selection to the base class
         X, y = self.data, self.y
         self.model.fit(X, y)
         y_ = self.model.predict(X)
@@ -181,7 +171,6 @@ class MOBO(BaseMOBO):
 
     def __init__(self, *args, **kwargv):
         super().__init__(*args, **kwargv)
-        self.AQ_max_FEs = 1e3 * self.search_space.dim
         if self._acquisition_fun != "EHVI":
             self._acquisition_fun = "EHVI"
             self.logger.warning(
@@ -200,16 +189,6 @@ class MOBO(BaseMOBO):
             fixed,
             reduce_output=False,
         )
-
-    # def _batch_arg_max_acquisition(
-    #     self, n_point: int, return_dx: bool, fixed: Dict = None
-    # ) -> Tuple[List[list], List[float]]:
-    #     """Set ``self._argmax_restart`` for optimizing the acquisition function"""
-    #     candidates, values = self._argmax_restart(
-    #         self._create_acquisition(par={"n_point": n_point, "model": self.model}, fixed=fixed),
-    #         logger=self.logger,
-    #     )
-    #     return [candidates], [values]
 
 
 class MOBO_qEHVI(BaseMOBO):

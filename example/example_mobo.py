@@ -2,7 +2,7 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "../")
+sys.path.insert(0, "./")
 
 from bayes_optim import RealSpace
 from bayes_optim.mobo import MOBO
@@ -26,7 +26,7 @@ def f2(x):
 space = RealSpace([lb, ub]) * dim
 # Bayesian optimization also uses a Surrogate model
 # For mixed variable type, the random forest is typically used
-model = RandomForest()
+model = RandomForest(levels=space.levels)
 
 opt = MOBO(
     search_space=space,
@@ -35,9 +35,6 @@ opt = MOBO(
     DoE_size=5,
     max_FEs=100,
     verbose=True,
-    # n_point=3,
     acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
-    # acquisition_optimization={"optimizer": "MIES"},
 )
 print(opt.run())
-# assert np.isclose(opt.fopt, 0.002111536359751477)

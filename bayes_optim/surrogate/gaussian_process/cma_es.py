@@ -117,11 +117,11 @@ class cma_es(object):
         self.f_target = opts["f_target"] if self.is_minimize else -opts["f_target"]
 
         # Strategy parameters: Selection
-        self._lambda = opts["_lambda"] if opts.has_key("_lambda") else int(4 + floor(3 * log(dim)))
+        self._lambda = opts["_lambda"] if "_lambda" in opts else int(4 + floor(3 * log(dim)))
         if isinstance(self._lambda, str):
             self._lambda = eval(self._lambda)
         _mu_prime = (self._lambda - 1) / 2.0
-        self._mu = opts["_mu"] if opts.has_key("_mu") else int(ceil(_mu_prime))
+        self._mu = opts["_mu"] if "_mu" in opts else int(ceil(_mu_prime))
         if isinstance(self._mu, str):
             self._mu = eval(self._mu)
 
@@ -165,7 +165,7 @@ class cma_es(object):
         #    cs = (mueff+2.) / (dim+mueff+3.)
 
         # damps parameter tuning
-        if opts.has_key("damps"):
+        if "damps" in opts:
             self.damps = opts["damps"]
         else:
             # TODO: Parameter setting for mirrored orthogonal sampling
@@ -431,7 +431,7 @@ class cma_es(object):
         else:
             try:
                 w, e_vector = eigh(C)
-                e_value = sqrt(map(complex, w)).reshape(-1, 1)
+                e_value = sqrt(list(map(complex, w))).reshape(-1, 1)
                 if any(~isreal(e_value)) or any(isinf(e_value)):
                     if self.is_stop_on_warning:
                         self.stop_dict["EigenvalueError"] = True
@@ -485,7 +485,7 @@ class cma_es(object):
                 self.flg_warning = True
 
             diagC = diag(self.C).reshape(-1, 1)
-            self.histfunval[mod(evalcount / _lambda - 1, self.nbin)] = fitness[self.sel[0]]
+            self.histfunval[int(mod(evalcount / _lambda - 1, self.nbin))] = fitness[self.sel[0]]
             if (
                 mod(evalcount, _lambda) == self.nbin
                 and max(self.histfunval) - min(self.histfunval) < self.tolfun
@@ -518,7 +518,7 @@ class cma_es(object):
                     self.flg_warning = True
 
             # No effective axis
-            a = mod(evalcount / _lambda - 1, self.dim)
+            a = int(mod(evalcount / _lambda - 1, self.dim))
             if all(0.1 * sigma * self.e_value[a, 0] * self.e_vector[:, a] + self.wcm == self.wcm):
                 if is_stop_on_warning:
                     self.stop_dict["noeffectaxis"] = True

@@ -11,6 +11,7 @@ from joblib import Parallel, delayed
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
 from . import acquisition_fun as AcquisitionFunction
+from ._exception import AskEmptyError, FlatFitnessError, RecommendationUnavailableError
 from .acquisition_optim import argmax_restart
 from .acquisition_optim.option import (
     default_AQ_max_FEs,
@@ -18,7 +19,7 @@ from .acquisition_optim.option import (
     default_AQ_wait_iter,
 )
 from .misc import LoggerFormatter
-from .search_space import SearchSpace
+from .search_space import RealSpace, SearchSpace
 from .solution import Solution
 from .utils import (
     arg_to_int,
@@ -30,10 +31,6 @@ from .utils import (
 )
 
 __authors__ = ["Hao Wang"]
-
-
-# TODO: `ask` -> suggest, `tell` -> observe
-# TODO: implement `verbose` levels
 
 
 class BaseBO(ABC):
@@ -300,8 +297,11 @@ class BaseBO(ABC):
         if "optimizer" in kwargs:
             self._optimizer = kwargs["optimizer"]
         else:
-            if self.N_d + self.N_i == 0 and hasattr(self.model, "gradient"):
-                self._optimizer = "BFGS"
+            if isinstance(self.search_space, RealSpace):
+                if hasattr(self.model, "gradient") and self.n_obj == 1:
+                    self._optimizer = "BFGS"
+                else:
+                    self._optimizer = "OnePlusOne_Cholesky_CMA"
             else:
                 self._optimizer = "MIES"
 
@@ -372,12 +372,6 @@ class BaseBO(ABC):
     def step(self):
         self.logger.info(f"iteration {self.iter_count} starts...")
         X = self.ask()
-        if len(X) == 0:
-            # TODO: customize exception classes
-            raise Exception(
-                "Ask yields empty solutions. "
-                "Please check the search space/constraints are feasible"
-            )
         func_vals = self.evaluate(X)
         self.tell(X, func_vals)
 
@@ -413,19 +407,23 @@ class BaseBO(ABC):
                 )
                 N = n_point - len(X)
                 # take random samples if the acquisition optimization failed
+                _count = 0
                 while N:
                     s = self.create_DoE(N, fixed=fixed)
                     # NOTE: random sampling could generate duplicated points again
-                    # keep sampling until getting enough points TODO: add a timeout
+                    # keep sampling until getting enough points
                     N -= len(s)
                     X += s
+                    _count += 1
+                    if _count > 20:  # maximally 20 iterations
+                        break
         else:  # take the initial DoE
             n_point = self._DoE_size if n_point is None else n_point
             msg = f"asking {n_point} points (using DoE):"
             X = self.create_DoE(n_point, fixed=fixed)
 
-        if len(X) == 0:  # NOTE: this would happen if the constraints are too restrict
-            return []
+        if len(X) == 0:
+            raise AskEmptyError()
 
         index = np.arange(len(X))
         if hasattr(self, "data"):
@@ -506,10 +504,10 @@ class BaseBO(ABC):
                 func_vals = [self.obj_fun(x) for x in X]
         return func_vals
 
-    def recommend(self) -> List[Solution]:
-        if self.xopt is None:
-            return []
-        return [self.xopt]
+    def recommend(self) -> Solution:
+        if self.xopt is None or len(self.xopt) == 0:
+            raise RecommendationUnavailableError()
+        return self.xopt
 
     def create_DoE(self, n_point: int, fixed: Dict = None) -> List:
         """get the initial sample points using Design of Experiemnt (DoE) methods
@@ -573,10 +571,12 @@ class BaseBO(ABC):
         # Standardization should make it easier to specify the GP prior, compared to
         # rescaling values to the unit interval.
         _std = np.std(fitness)
+        if len(fitness) > 5 and np.isclose(_std, 0):
+            raise FlatFitnessError()
+
         fitness_ = (
             fitness if np.isclose(_std, 0) else (fitness - np.mean(fitness)) / np.std(fitness)
         )
-
         self.fmin, self.fmax = np.min(fitness_), np.max(fitness_)
         self.frange = self.fmax - self.fmin
 

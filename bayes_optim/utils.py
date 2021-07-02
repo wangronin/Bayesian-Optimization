@@ -76,7 +76,10 @@ def partial_argument(
     values = [fixed[k] for i, k in enumerate(var_name) if masks[i]]
 
     @functools.wraps(func)
-    def wrapper(X):
+    def wrapper(X: Union[np.ndarray, Solution, list]):
+        if not isinstance(X, np.ndarray):
+            X = np.array(X, dtype=object)
+
         N = 1 if len(X.shape) == 1 else X.shape[1]
         X_ = np.empty((N, len(masks)), dtype=object)
         X_[:, masks] = values
@@ -88,10 +91,13 @@ def partial_argument(
             out = []
             for v in tuple(out_):
                 if isinstance(v, np.ndarray):
-                    if len(v.shape) == 1 or v.shape[1] == len(masks):
+                    if len(v.shape) == 1 and len(v) > 1:
                         v = v[~masks]
-                    elif v.shape[0] == len(masks):
-                        v = v[~masks, :]
+                    elif len(v.shape) == 2:
+                        if v.shape[0] == len(masks):
+                            v = v[~masks, :]
+                        elif v.shape[1] == len(masks):
+                            v = v[:, ~masks]
                 elif isinstance(v, list) and len(v) == len(masks):
                     v = [v[m] for m in ~masks]
                 out.append(v)
@@ -204,6 +210,7 @@ def dynamic_penalty(
     if not hasattr(X[0], "__iter__") or isinstance(X[0], str):
         X = [X]
 
+    X = np.array(X, dtype=object)
     N = len(X)
     p = np.zeros(N)
 

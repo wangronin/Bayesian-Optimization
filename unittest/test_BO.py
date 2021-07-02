@@ -3,6 +3,7 @@ import os
 import numpy as np
 import pytest
 from bayes_optim import BO, ParallelBO
+from bayes_optim._exception import AskEmptyError, FlatFitnessError
 from bayes_optim.search_space import BoolSpace, DiscreteSpace, IntegerSpace, RealSpace
 from bayes_optim.surrogate import GaussianProcess, RandomForest, trend
 
@@ -180,7 +181,10 @@ def test_flat_continuous():
         verbose=True,
         n_point=1,
     )
-    print(opt.run())
+    try:
+        opt.run()
+    except FlatFitnessError:
+        pass
 
 
 def test_infeasible_constraints():
@@ -202,15 +206,10 @@ def test_infeasible_constraints():
         verbose=True,
         n_point=1,
     )
-    X = opt.ask()
-    assert len(X) == 0
-
     try:
         opt.run()
-    except Exception as e:
-        assert str(e) == (
-            "Ask yields empty solutions. Please check the search space/constraints are feasible"
-        )
+    except AskEmptyError:
+        pass
 
 
 @pytest.mark.parametrize("eval_type", ["list", "dict"])  # type: ignore
