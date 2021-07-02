@@ -18,13 +18,23 @@ from .surrogate import GaussianProcess
 
 
 class PCABO(BO):
-    """Dimensionality reduction using Principle Component Decomposition (PCA)"""
+    """Dimensionality reduction using Principle Component Decomposition (PCA)
+
+    References
+
+    [RaponiWB+20]
+        Raponi, Elena, Hao Wang, Mariusz Bujny, Simonetta Boria, and Carola Doerr.
+        "High dimensional bayesian optimization assisted by principal component analysis."
+        In International Conference on Parallel Problem Solving from Nature, pp. 169-183.
+        Springer, Cham, 2020.
+
+    """
 
     def __init__(self, kernel_pca: bool = False, n_components: Union[float, int] = None, **kwargs):
         super().__init__(**kwargs)
         if self.model is not None:
             self.logger.warn(
-                "The surrogate model will be created automatically by PCA-BO."
+                "The surrogate model will be created automatically by PCA-BO. "
                 "The input argument `model` will be ignored"
             )
         assert isinstance(self._search_space, RealSpace)
@@ -71,7 +81,9 @@ class PCABO(BO):
         return functools.partial(
             penalized_acquisition,
             acquisition_func=acquisition_func,
-            bounds=self._search_space.bounds,
+            bounds=self.__search_space.bounds,  # hyperbox in the original space
+            pca=self._pca,
+            X_mean=self._X_mean,
             return_dx=return_dx,
         )
 

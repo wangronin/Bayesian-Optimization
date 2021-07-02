@@ -258,6 +258,26 @@ class Solution(np.ndarray):
         self.N: int = getattr(obj, "N", None)
         self.n_obj: int = getattr(obj, "n_obj", None)
 
+    # def append(self, other: Solution) -> Solution:
+    #     assert isinstance(other, Solution)
+    #     assert self.dim == other.dim
+    #     assert self.n_obj == other.n_obj
+    #     assert len(set(self.fitness_name).symmetric_difference(other.fitness_name)) == 0
+    #     assert len(set(self.var_name).symmetric_difference(other.var_name)) == 0
+
+    #     _ = [self.tolist()] if len(self.shape) == 1 else self.tolist()
+    #     __ = [other.tolist()] if len(other.shape) == 1 else other.tolist()
+    #     return Solution(
+    #         _ + __,
+    #         self.fitness.tolist() + other.fitness.tolist(),
+    #         self.n_eval.tolist() + other.n_eval.tolist(),
+    #         var_name=self.var_name,
+    #         fitness_name=self.fitness_name,
+    #         index=self.index.tolist() + other.index.tolist(),
+    #         n_obj=self.n_obj,
+    #         verbose=self.verbose,
+    #     )
+
     @classmethod
     def from_dict(
         cls,

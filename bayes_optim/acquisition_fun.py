@@ -13,22 +13,27 @@ __authors__ = ["Hao Wang"]
 # TODO: multi-objective extension
 
 
-def penalized_acquisition(x, acquisition_func, bounds, return_dx):
-    bounds = np.asarray(bounds)
-    idx_lower = np.nonzero(x < bounds[:, 0])[0]
-    idx_upper = np.nonzero(x > bounds[:, 1])[0]
-    penalty = np.sum([bounds[i, 0] - x[i] for i in idx_lower]) + np.sum(
-        [x[i] - bounds[i, 1] for i in idx_upper]
+def penalized_acquisition(x, acquisition_func, bounds, pca, X_mean, return_dx):
+    bounds_ = np.atleast_2d(bounds)
+    # map back the candidate point to check if it falls inside the original domain
+    x_ = pca.inverse_transform(x) + X_mean
+    idx_lower = np.nonzero(x_ < bounds_[:, 0])[0]
+    idx_upper = np.nonzero(x_ > bounds_[:, 1])[0]
+    penalty = -1 * (
+        np.sum([bounds_[i, 0] - x_[i] for i in idx_lower])
+        + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
     )
-    penalty *= -1
 
     if penalty == 0:
         out = acquisition_func(x)
     else:
         if return_dx:
-            g = np.zeros((len(x), 1))
-            g[idx_lower, :] = 1
-            g[idx_upper, :] = -1
+            # gradient of the penalty in the original space
+            g_ = np.zeros((len(x_), 1))
+            g_[idx_lower, :] = 1
+            g_[idx_upper, :] = -1
+            # get the gradient of the penalty in the reduced space
+            g = pca.components_.dot(g_)
             out = (penalty, g)
         else:
             out = penalty
