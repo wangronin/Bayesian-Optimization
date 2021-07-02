@@ -655,7 +655,10 @@ class BaseBO(ABC):
 
     def save(self, filename: str):
         # creat the folder if not exist
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        dirname = os.path.dirname(filename)
+        if dirname != "":
+            os.makedirs(dirname, exist_ok=True)
+
         with open(filename, "wb") as f:
             # NOTE: we need to dump `self.data` first. Otherwise, some
             # attributes of it will be lost
