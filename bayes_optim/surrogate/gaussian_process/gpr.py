@@ -11,13 +11,8 @@ from sklearn.metrics.pairwise import manhattan_distances
 from sklearn.utils import check_array, check_random_state, check_X_y
 
 from .cma_es import cma_es
-from .kernel import (
-    absolute_exponential,
-    cubic,
-    generalized_exponential,
-    matern,
-    squared_exponential,
-)
+from .kernel import (absolute_exponential, cubic, generalized_exponential,
+                     matern, squared_exponential)
 from .trend import BasisExpansionTrend, NonparametricTrend, constant_trend
 
 MACHINE_EPSILON = np.finfo(np.double).eps
@@ -240,7 +235,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         if not (np.isfinite(self.thetaL).all() and np.isfinite(self.thetaU).all()):
             raise ValueError("all bounds are required finite.")
 
-        # hyperparameter optimization parameters
+        # hyperparameter: optimization parameters
         self.optimizer = optimizer
         self.random_start = random_start
         self.random_state = random_state
@@ -248,8 +243,8 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.eval_budget = eval_budget
 
         self.noise_var = np.atleast_1d(nugget) if nugget else 0
-        self.noise_estim = True if noise_estim else False
-        self.noisy = True if self.noise_var or self.noise_estim else False
+        self.noise_estim = noise_estim
+        self.noisy = self.noise_var or self.noise_estim
 
         # three cases to compute the log-likelihood function
         # TODO: verify: it seems the noisy case is the most useful one
@@ -400,6 +395,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.theta_ = self.par["theta"]
         self.noise_var = env["noise_var"]
         self.sigma2 = env["sigma2"]
+        assert len(self.sigma2) == self.y.shape[1]
         self.rho = env["rho"]
         self.Yt = env["Yt"]
         self.C = env["C"]
@@ -454,21 +450,17 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             with the Mean Squared Error at x.
         """
         assert hasattr(self, "X")
-
-        # Check input shapes
-        # TODO: remove the support for multiple independent outputs
         X = check_array(X)
         n_eval, _ = X.shape
         n_samples, n_features = self.X.shape
         n_targets = self.y.shape[1]
-
         # Run input checks
         self._check_params()
 
         if X.shape[1] != n_features:
             raise ValueError(
                 (
-                    "The number of features in X (X.shape[1] = %d) "
+                    f"The number of features in X (X.shape[1] = %d) "
                     "should match the number of features used "
                     "for fit() which is %d."
                 )
@@ -487,9 +479,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             dx = manhattan_distances(X, Y=self.X, sum_over_features=False)
             # Get meanession function and correlation
             r = self.corr(self.theta_, dx).reshape(n_eval, n_samples)
-
             # Predictor
-            # TODO: get rid of n_targets in this class
             y = (self.mean(X) + r.dot(self.gamma)).reshape(n_eval, n_targets)
 
             # Mean Squared Error
@@ -526,19 +516,16 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     y[batch_from:batch_to], MSE[batch_from:batch_to] = self.predict(
                         X[batch_from:batch_to], eval_MSE=eval_MSE, batch_size=None
                     )
-
                 return y, MSE
 
-            else:
-
-                y = np.zeros(n_eval)
-                for k in range(max(1, n_eval / batch_size)):
-                    batch_from = k * batch_size
-                    batch_to = min([(k + 1) * batch_size + 1, n_eval + 1])
-                    y[batch_from:batch_to] = self.predict(
-                        X[batch_from:batch_to], eval_MSE=eval_MSE, batch_size=None
-                    )
-                return y
+            y = np.zeros(n_eval)
+            for k in range(max(1, n_eval / batch_size)):
+                batch_from = k * batch_size
+                batch_to = min([(k + 1) * batch_size + 1, n_eval + 1])
+                y[batch_from:batch_to] = self.predict(
+                    X[batch_from:batch_to], eval_MSE=eval_MSE, batch_size=None
+                )
+            return y
 
     def gradient(self, x):
         """Calculate the gradient of the posterior mean and variance
@@ -996,7 +983,6 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             env["noise_var"] = noise_var
             env["rho"] = rho
             env["Yt"] = Yt
-            # TODO: change variable 'C' --> 'L'
             env["C"] = L
             env["Ft"] = Ft
             env["G"] = G
