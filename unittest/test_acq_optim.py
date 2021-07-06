@@ -1,6 +1,6 @@
 import numpy as np
 from bayes_optim.acquisition_optim import MIES, OnePlusOne_Cholesky_CMA
-from bayes_optim.search_space import Bool, Discrete, Integer, Ordinal, Real, SearchSpace
+from bayes_optim.search_space import Bool, Discrete, Integer, Ordinal, Real, RealSpace, SearchSpace
 
 
 def obj_fun_min(x):
@@ -26,35 +26,36 @@ def g(x):
 
 def test_OnePlusOne_Cholesky_CMA():
     _, __, stop_dict = OnePlusOne_Cholesky_CMA(
-        dim=2, obj_fun=obj_fun_min, lb=-5, ub=5, sigma0=2, ftol=1e-2, verbose=False, random_seed=42
+        search_space=RealSpace([-5, 5]) * 2,
+        obj_fun=obj_fun_min,
+        sigma0=2,
+        ftol=1e-2,
+        verbose=False,
+        random_seed=42,
     ).run()
     assert "ftol" in stop_dict
 
 
 def test_OnePlusOne_Cholesky_CMA_constraint():
     xopt, _, __, = OnePlusOne_Cholesky_CMA(
-        dim=2,
+        search_space=RealSpace([-5, 5]) * 2,
         obj_fun=obj_fun_max,
         h=h,
-        lb=-5,
-        ub=5,
         sigma0=2,
         max_FEs=500,
         minimize=False,
-        verbose=True,
+        verbose=False,
         random_seed=42,
     ).run()
     assert np.isclose(h(xopt), 0, atol=1e-2)
 
     OnePlusOne_Cholesky_CMA(
-        dim=2,
+        search_space=RealSpace([-5, 5]) * 2,
         obj_fun=obj_fun_min,
         g=g,
-        lb=-5,
-        ub=5,
         sigma0=2,
         max_FEs=1000,
-        verbose=True,
+        verbose=False,
         random_seed=42,
     ).run()
     assert np.isclose(g(xopt), 0, atol=1e-2)
@@ -74,7 +75,7 @@ def test_MIES():
         search_space=space,
         max_eval=100,
         obj_func=obj_fun_mies,
-        verbose=True,
+        verbose=False,
         eval_type="list",
         minimize=True,
     ).optimize()

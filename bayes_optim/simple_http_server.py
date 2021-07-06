@@ -84,10 +84,6 @@ class RemoteBO(BaseHTTPRequestHandler, object):
         del bo_param["n_obj"]
         _BO = ParallelBO if bo_param["n_point"] > 1 else BO
 
-        # NOTE: this is an ad-hoc solution for MOTI
-        # def eq_fun(x):
-        #     return np.sum(list(x.values())) - 1
-
         # TODO: turn this off until the feature importance of GPR is implemented
         if isinstance(search_space, RealSpace) and 11 < 2:
             dim = search_space.dim
@@ -150,7 +146,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
                 "dim": opt.search_space.dim,
                 "max_FEs": opt.max_FEs,
                 "step": opt.iter_count,
-                "fopt": opt.fopt if hasattr(opt, "fopt") else None,
+                "fopt": opt.xopt.fitness[0],
             }
 
     def _get_history(self, data, rsp_data):
@@ -219,7 +215,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
         opt.save(dump_file)
 
         rsp_data["xopt"] = opt.xopt.to_dict()
-        rsp_data["fopt"] = opt.fopt
+        rsp_data["fopt"] = opt.xopt.fitness[0]
 
     def _finalize(self, data):
         job_id = self._get_job_id(data)

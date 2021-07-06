@@ -56,15 +56,13 @@ def argmax_restart(
 
             if logger is not None and stop_dict["warnflag"] != 0:
                 logger.debug("L-BFGS-B terminated abnormally with the state: %s" % stop_dict)
+
         elif optimizer == "OnePlusOne_Cholesky_CMA":
-            lb, ub = list(zip(*search_space.bounds))
             opt = OnePlusOne_Cholesky_CMA(
-                dim=search_space.dim,
+                search_space=search_space,
                 obj_fun=obj_func,
                 h=h,
                 g=g,
-                lb=lb,
-                ub=ub,
                 max_FEs=eval_budget,
                 ftol=1e-4,
                 xtol=1e-4,

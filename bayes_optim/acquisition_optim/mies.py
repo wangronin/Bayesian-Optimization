@@ -1,8 +1,11 @@
+from typing import Callable, List, Union
+
 import numpy as np
 from numpy import argsort, ceil, exp, mod, zeros
 from numpy.random import geometric, rand, randint, randn
 
 from ..misc import handle_box_constraint
+from ..search_space import SearchSpace
 from ..solution import Solution
 from ..utils import dynamic_penalty
 
@@ -14,22 +17,22 @@ class MIES:
 
     def __init__(
         self,
-        search_space,
-        obj_func,
-        eq_func=None,
-        ineq_func=None,
-        x0=None,
-        ftarget=None,
-        max_eval=np.inf,
-        minimize=True,
-        elitism=False,
-        mu_=4,
-        lambda_=10,
-        sigma0=None,
-        eta0=None,
-        P0=None,
-        verbose=False,
-        eval_type="list",
+        search_space: SearchSpace,
+        obj_func: Callable,
+        eq_func: Callable = None,
+        ineq_func: Callable = None,
+        x0: Union[List, Solution] = None,
+        ftarget: float = None,
+        max_eval: float = np.inf,
+        minimize: bool = True,
+        elitism: bool = False,
+        mu_: int = 4,
+        lambda_: int = 10,
+        sigma0: float = None,
+        eta0: float = None,
+        P0: float = None,
+        verbose: bool = False,
+        eval_type: str = "list",
     ):
         # TODO: constructor is too long...
         self.mu_ = mu_
@@ -237,12 +240,12 @@ class MIES:
 
         # Interval Bounds Treatment
         x_ = handle_box_constraint(x_, self.bounds_r[:, 0], self.bounds_r[:, 1])
-
-        # TODO: check if this interval boundary handling works with penalty functions
-        # the constraint handling method will (by chance) turn really bad cadidates
-        # (the one with huge sigmas) to good ones and hence making the step size explode
-        # Repair the step-size if x_ is out of bounds
-        if 11 < 2:
+        # rounding if a coarser numerical precision is provided
+        x_ = self._space[self._space.real_id].round(x_).ravel()
+        # NOTE: experimental correction to the step-size when the box constraints are violated
+        # the constraint handling method will (by chance) turn bad candidates (which are generated
+        # by large step-sizes) to good ones, hence confusing the self-adaptation for step-sizes.
+        if 1 < 2:
             individual[self._id_sigma] = np.abs((x_ - x) / R)
         else:
             individual[self._id_sigma] = sigma

@@ -1,5 +1,5 @@
 class AskEmptyError(Exception):
-    """Exception raised if BO.ask yields an empty outcome
+    """Exception raised if `BO.ask` yields an empty outcome
 
     Attributes:
         message -- explanation of the error

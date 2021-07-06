@@ -27,9 +27,9 @@ def f2(x):
 
 def test_3D():
     search_space = (
-        RealSpace([0, 100], var_name="Kp", precision=8)
-        + RealSpace([0, 100], var_name="Ki", precision=8)
-        + RealSpace([0, 100], var_name="Kd", precision=8)
+        RealSpace([0, 100], var_name="Kp", precision=2)
+        + RealSpace([0, 100], var_name="Ki", precision=2)
+        + RealSpace([0, 100], var_name="Kd", precision=2)
     )
     f1 = lambda x: x["Kp"] ** 2 + x["Ki"] + x["Kd"] ** 2
     f2 = lambda x: x["Kp"] + x["Ki"] ** 2 + x["Kd"] ** 2
@@ -121,7 +121,7 @@ def test_fixed_var():
     search_space = (
         BoolSpace(var_name="bool")
         + IntegerSpace([5, 15], var_name="ordinal")
-        + RealSpace([-5, 5], var_name="continuous")
+        + RealSpace([-5, 5], var_name="continuous", precision=2)
         + DiscreteSpace(["OK", "A", "B", "C", "D", "E", "F", "G"], var_name="nominal")
     )
     opt = MOBO(
