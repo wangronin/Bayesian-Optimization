@@ -731,7 +731,7 @@ class SearchSpace:
         # TODO: implement more efficient sampling method, e.g., SCMC
         X, n, max_trial = [], N, 1e2
         while True:
-            S = self._sample(N, method)
+            S = self._sample(n, method)
             if h:
                 S = list(filter(lambda x: np.all(h(x) == 0), S))
             if g and len(S) > 0:
