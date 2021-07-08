@@ -1,5 +1,5 @@
 import numpy as np
-from bayes_optim.surrogate import RandomForest, SurrogateAggregation
+from bayes_optim.surrogate import GaussianProcess, RandomForest, SurrogateAggregation
 from sklearn.metrics import r2_score
 
 np.random.seed(12)
@@ -48,4 +48,59 @@ def test_pickling():
     print("predicted:", y_hat)
     print("MSE:", mse)
     print("r2:", r2_score(y_test, y_hat))
-    print()
+
+
+def test_multioutput_gpr():
+    n_sample = 100
+    dim = 10
+    X = np.random.rand(n_sample, dim)
+    y = np.sum(X ** 2.0, axis=1)
+    thetaL, thetaU = 1e-10 * np.ones(dim), 10 * np.ones(dim)
+
+    # noiseless mode
+    model = GaussianProcess(
+        theta0=np.random.rand(dim) * (thetaU - thetaL) + thetaL,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=0,
+        noise_estim=False,
+        optimizer="BFGS",
+        wait_iter=3,
+        random_start=dim,
+        likelihood="concentrated",
+        eval_budget=100 * dim,
+    )
+    model.fit(X, y)
+    model.predict(X, eval_MSE=True)
+
+    # noisy mode
+    model = GaussianProcess(
+        theta0=np.random.rand(dim) * (thetaU - thetaL) + thetaL,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=1e-6,
+        noise_estim=False,
+        optimizer="BFGS",
+        wait_iter=3,
+        random_start=dim,
+        likelihood="concentrated",
+        eval_budget=100 * dim,
+    )
+    model.fit(X, y)
+    model.predict(X, eval_MSE=True)
+
+    # noise estimation mode
+    model = GaussianProcess(
+        theta0=np.random.rand(dim) * (thetaU - thetaL) + thetaL,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=1e-6,
+        noise_estim=True,
+        optimizer="BFGS",
+        wait_iter=3,
+        random_start=dim,
+        likelihood="concentrated",
+        eval_budget=100 * dim,
+    )
+    model.fit(X, y)
+    model.predict(X, eval_MSE=True)

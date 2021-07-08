@@ -11,13 +11,8 @@ from sklearn.metrics.pairwise import manhattan_distances
 from sklearn.utils import check_array, check_random_state, check_X_y
 
 from .cma_es import cma_es
-from .kernel import (
-    absolute_exponential,
-    cubic,
-    generalized_exponential,
-    matern,
-    squared_exponential,
-)
+from .kernel import (absolute_exponential, cubic, generalized_exponential,
+                     matern, squared_exponential)
 from .trend import BasisExpansionTrend, NonparametricTrend, constant_trend
 
 MACHINE_EPSILON = np.finfo(np.double).eps
@@ -240,7 +235,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         if not (np.isfinite(self.thetaL).all() and np.isfinite(self.thetaU).all()):
             raise ValueError("all bounds are required finite.")
 
-        # hyperparameter optimization parameters
+        # hyperparameter: optimization parameters
         self.optimizer = optimizer
         self.random_start = random_start
         self.random_state = random_state
@@ -248,8 +243,8 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.eval_budget = eval_budget
 
         self.noise_var = np.atleast_1d(nugget) if nugget else 0
-        self.noise_estim = True if noise_estim else False
-        self.noisy = True if self.noise_var or self.noise_estim else False
+        self.noise_estim = noise_estim
+        self.noisy = self.noise_var or self.noise_estim
 
         # three cases to compute the log-likelihood function
         # TODO: verify: it seems the noisy case is the most useful one
@@ -400,6 +395,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.theta_ = self.par["theta"]
         self.noise_var = env["noise_var"]
         self.sigma2 = env["sigma2"]
+        assert len(self.sigma2) == self.y.shape[1]
         self.rho = env["rho"]
         self.Yt = env["Yt"]
         self.C = env["C"]
@@ -454,21 +450,17 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             with the Mean Squared Error at x.
         """
         assert hasattr(self, "X")
-
-        # Check input shapes
-        # TODO: remove the support for multiple independent outputs
         X = check_array(X)
         n_eval, _ = X.shape
         n_samples, n_features = self.X.shape
         n_targets = self.y.shape[1]
-
         # Run input checks
         self._check_params()
 
         if X.shape[1] != n_features:
             raise ValueError(
                 (
-                    "The number of features in X (X.shape[1] = %d) "
+                    f"The number of features in X (X.shape[1] = %d) "
                     "should match the number of features used "
                     "for fit() which is %d."
                 )
@@ -487,9 +479,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             dx = manhattan_distances(X, Y=self.X, sum_over_features=False)
             # Get meanession function and correlation
             r = self.corr(self.theta_, dx).reshape(n_eval, n_samples)
-
             # Predictor
-            # TODO: get rid of n_targets in this class
             y = (self.mean(X) + r.dot(self.gamma)).reshape(n_eval, n_targets)
 
             # Mean Squared Error
@@ -512,8 +502,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 # machine precision: force to zero!
                 MSE[MSE < 0.0] = 0.0
                 return y, MSE
-            else:
-                return y
+            return y
         else:
             # Memory management
             if type(batch_size) is not int or batch_size <= 0:
@@ -527,19 +516,16 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     y[batch_from:batch_to], MSE[batch_from:batch_to] = self.predict(
                         X[batch_from:batch_to], eval_MSE=eval_MSE, batch_size=None
                     )
-
                 return y, MSE
 
-            else:
-
-                y = np.zeros(n_eval)
-                for k in range(max(1, n_eval / batch_size)):
-                    batch_from = k * batch_size
-                    batch_to = min([(k + 1) * batch_size + 1, n_eval + 1])
-                    y[batch_from:batch_to] = self.predict(
-                        X[batch_from:batch_to], eval_MSE=eval_MSE, batch_size=None
-                    )
-                return y
+            y = np.zeros(n_eval)
+            for k in range(max(1, n_eval / batch_size)):
+                batch_from = k * batch_size
+                batch_to = min([(k + 1) * batch_size + 1, n_eval + 1])
+                y[batch_from:batch_to] = self.predict(
+                    X[batch_from:batch_to], eval_MSE=eval_MSE, batch_size=None
+                )
+            return y
 
     def gradient(self, x):
         """Calculate the gradient of the posterior mean and variance
@@ -943,76 +929,60 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         if self.estimation_mode == "noiseless":
             theta = par
             noise_var = 0
-
             R0 = self.correlation_matrix(theta)
-
             try:
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R0)
+                # TODO: check experimental correction of the sigma2 estimation
+                k = np.linalg.matrix_rank(Q.dot(Q.T)) if Q is not None else 0
+                sigma2 = (rho ** 2.0).sum(axis=0) / (n_samples - k)
+                log_likelihood = -0.5 * (
+                    n_samples * log(2.0 * pi * sigma2) + 2.0 * np.log(np.diag(L)).sum() + n_samples
+                )
             except (LinAlgError, ValueError):
-                if eval_grad:
-                    return (-np.inf, np.zeros((n_par, 1)))
-                else:
-                    return -np.inf
-
-            # TODO: experimental correction of the sigma2 estimation
-            if Q is not None:
-                k = np.linalg.matrix_rank(Q.dot(Q.T))
-            else:
-                k = 0
-            sigma2 = (rho ** 2.0).sum(axis=0) / (n_samples - k)
-            log_likelihood = -0.5 * (
-                n_samples * log(2.0 * pi * sigma2) + 2.0 * np.log(np.diag(L)).sum() + n_samples
-            )
+                log_likelihood = None
 
         elif self.estimation_mode == "noise_estim":
             theta, alpha = par[:-1], par[-1]
             R0 = self.correlation_matrix(theta)
             R = alpha * R0 + (1 - alpha) * np.eye(n_samples)
-
             try:
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R)
+                sigma2_total = (rho ** 2.0).sum(axis=0) / n_samples
+                sigma2, noise_var = alpha * sigma2_total, (1 - alpha) * sigma2_total
+                log_likelihood = -0.5 * (
+                    n_samples * log(2.0 * pi * sigma2_total)
+                    + 2.0 * np.log(np.diag(L)).sum()
+                    + n_samples
+                )
             except (LinAlgError, ValueError):
-                if eval_grad:
-                    return (-np.inf, np.zeros(n_par, 1))
-                else:
-                    return -np.inf
-
-            sigma2_total = (rho ** 2.0).sum(axis=0) / n_samples
-            sigma2, noise_var = alpha * sigma2_total, (1 - alpha) * sigma2_total
-            log_likelihood = -0.5 * (
-                n_samples * log(2.0 * pi * sigma2_total)
-                + 2.0 * np.log(np.diag(L)).sum()
-                + n_samples
-            )
+                log_likelihood = None
 
         elif self.estimation_mode == "noisy":
             theta, sigma2 = par[:-1], par[-1]
-
             noise_var = self.noise_var
             sigma2_total = sigma2 + noise_var
             R0 = self.correlation_matrix(theta)
             C = sigma2 * R0 + noise_var * np.eye(n_samples)
             R = C / sigma2_total
-
+            sigma2 = np.repeat(sigma2, n_targets)
             try:
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R)
+                log_likelihood = -0.5 * (
+                    n_samples * log(2.0 * pi * sigma2_total)
+                    + 2.0 * np.log(np.diag(L)).sum()
+                    + np.diag(np.dot(rho.T, rho)) / sigma2_total
+                )
             except (LinAlgError, ValueError):
-                if eval_grad:
-                    return (-np.inf, np.zeros(n_par, 1))
-                return -np.inf
+                log_likelihood = None
 
-            log_likelihood = -0.5 * (
-                n_samples * log(2.0 * pi * sigma2_total)
-                + 2.0 * np.log(np.diag(L)).sum()
-                + np.diag(np.dot(rho.T, rho)) / sigma2_total
-            )
+        if log_likelihood is None or any(log_likelihood > 0):
+            return (-np.inf, np.zeros((n_par, 1))) if eval_grad else -np.inf
 
         if env is not None:
-            env["sigma2"] = np.repeat(sigma2, n_targets)
+            env["sigma2"] = sigma2
             env["noise_var"] = noise_var
             env["rho"] = rho
             env["Yt"] = Yt
-            # TODO: change variable 'C' --> 'L'
             env["C"] = L
             env["Ft"] = Ft
             env["G"] = G
@@ -1024,56 +994,45 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             Rinv = cho_solve((L, True), np.eye(n_samples))
             Rinv_upper = Rinv[np.triu_indices(n_samples, 1)]
             _upper = gamma.dot(gamma.T)[np.triu_indices(n_samples, 1)]
-
             llf_grad = np.zeros((n_par, n_targets))
+
             if self.estimation_mode == "noiseless":
                 # The grad tensor of R w.r.t. theta
                 R_grad_tensor = self.corr_grad_theta(theta, self.X, R0)
-
                 for i in range(n_par):
                     R_grad_upper = R_grad_tensor[:, :, i][np.triu_indices(n_samples, 1)]
 
                     llf_grad[i, :] = np.sum(_upper * R_grad_upper) / sigma2 - np.sum(
                         Rinv_upper * R_grad_upper
                     )
-
             elif self.estimation_mode == "noise_estim":
                 # The grad tensor of R w.r.t. theta
                 R_grad_tensor = alpha * self.corr_grad_theta(theta, self.X, R0)
-
                 # partial derivatives w.r.t theta's
                 for i in range(n_par - 1):
                     R_grad_upper = R_grad_tensor[:, :, i][np.triu_indices(n_samples, 1)]
-
                     # Note that sigma2_total is used here
                     llf_grad[i, :] = np.sum(_upper * R_grad_upper) / sigma2_total - np.sum(
                         Rinv_upper * R_grad_upper
                     )
-
                 # partial derivatives w.r.t 'v'
                 R_dv = R0 - np.eye(n_samples)
                 llf_grad[n_par - 1, :] = -0.5 * (
-                    np.sum(Rinv * R_dv) - np.dot(gamma.T, R_dv.dot(gamma)) / sigma2_total
+                    np.sum(Rinv * R_dv) - np.diag(gamma.T.dot(R_dv.dot(gamma))) / sigma2_total
                 )
-
             elif self.estimation_mode == "noisy":
                 gamma_ = gamma / sigma2_total
                 Cinv = Rinv / sigma2_total
                 # Covariance: partial derivatives w.r.t. theta
                 C_grad_tensor = sigma2_total * self.corr_grad_theta(theta, self.X, R0)
-
                 # Covariance: partial derivatives w.r.t. sigma2
                 C_grad_tensor = np.concatenate([C_grad_tensor, R0[..., np.newaxis]], axis=2)
-
                 for i in range(n_par):
                     C_grad = C_grad_tensor[:, :, i]
                     llf_grad[i, :] = -0.5 * (
                         np.sum(Cinv * C_grad) - np.diag(gamma_.T.dot(C_grad).dot(gamma_))
                     )
             llf_grad = llf_grad.sum(axis=1)
-
-        if any(log_likelihood > 0):
-            return (-np.inf, np.zeros((n_par, 1))) if eval_grad else -np.inf
 
         return log_likelihood.sum() if not eval_grad else (log_likelihood.sum(), llf_grad)
 

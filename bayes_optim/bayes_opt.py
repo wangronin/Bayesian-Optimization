@@ -20,7 +20,7 @@ class BO(BaseBO):
         par = {} if par is None else par
         if hasattr(getattr(AcquisitionFunction, fun), "plugin"):
             if "plugin" not in par:
-                par.update({"plugin": self.fmin})
+                par.update({"plugin": self.fmin if self.minimize else self.fmax})
 
         return super()._create_acquisition(fun, par, **kwargv)
 

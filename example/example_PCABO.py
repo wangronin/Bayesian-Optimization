@@ -7,7 +7,7 @@ sys.path.insert(0, "./")
 from bayes_optim.extension import PCABO, RealSpace
 
 np.random.seed(123)
-dim = 5
+dim = 10
 lb, ub = -5, 5
 
 
@@ -24,7 +24,7 @@ opt = PCABO(
     max_FEs=30,
     verbose=True,
     n_point=1,
-    n_components=0.95,
+    n_components=0.98,
     acquisition_optimization={"optimizer": "BFGS"},
 )
 print(opt.run())

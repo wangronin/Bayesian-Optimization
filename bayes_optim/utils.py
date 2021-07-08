@@ -7,7 +7,7 @@ import numpy as np
 from .solution import Solution
 
 
-def is_pareto_efficient(fitness, return_mask=True) -> Union[List[int], List[bool]]:
+def is_pareto_efficient(fitness, return_mask: bool = True) -> Union[List[int], List[bool]]:
     """get the Pareto efficient subset
 
     Parameters
