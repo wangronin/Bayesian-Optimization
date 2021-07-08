@@ -13,7 +13,7 @@ lb, ub = -5, 5
 
 def fitness(x):
     x = np.asarray(x)
-    return np.sum(x ** 2) #np.sum((np.arange(1, dim + 1) * x) ** 2)
+    return np.sum((np.arange(1, dim + 1) * x) ** 2)
 
 
 space = RealSpace([lb, ub]) * dim
@@ -21,7 +21,7 @@ opt = PCABO(
     search_space=space,
     obj_fun=fitness,
     DoE_size=5,
-    max_FEs=100,
+    max_FEs=30,
     verbose=True,
     n_point=1,
     n_components=0.95,
