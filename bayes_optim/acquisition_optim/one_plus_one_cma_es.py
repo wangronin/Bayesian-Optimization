@@ -7,6 +7,7 @@ import numpy as np
 from scipy.linalg import solve_triangular
 
 from ..misc import LoggerFormatter, handle_box_constraint
+from ..search_space import RealSpace, SearchSpace
 from ..utils import dynamic_penalty, set_bounds
 
 Vector = List[float]
@@ -14,13 +15,13 @@ Matrix = List[Vector]
 
 __authors__ = ["Hao Wang"]
 
-# TODO: get rid of all ``eval`` calls
+
 class OnePlusOne_CMA(object):
     """(1+1)-CMA-ES"""
 
     def __init__(
         self,
-        dim: int,
+        search_space: SearchSpace,
         obj_fun: Callable,
         args: Dict = {},
         h: Callable = None,
@@ -28,8 +29,6 @@ class OnePlusOne_CMA(object):
         x0: Union[str, Vector, np.ndarray] = None,
         sigma0: Union[float] = None,
         C0: Union[Matrix, np.ndarray] = None,
-        lb: Union[float, str, Vector, np.ndarray] = -np.inf,
-        ub: Union[float, str, Vector, np.ndarray] = np.inf,
         ftarget: Union[int, float] = None,
         max_FEs: Union[int, str] = np.inf,
         minimize: bool = True,
@@ -99,7 +98,10 @@ class OnePlusOne_CMA(object):
         random_seed : int, optional
             The seed for pseudo-random number generators, by default None.
         """
-        self.dim: int = dim
+        assert isinstance(search_space, RealSpace)
+        lb, ub = list(zip(*search_space.bounds))
+        self.search_space = search_space
+        self.dim: int = search_space.dim
         self.obj_fun: Callable = obj_fun
         self.h: Callable = h
         self.g: Callable = g
@@ -139,7 +141,6 @@ class OnePlusOne_CMA(object):
         self._delta_x: float = self.xtol / self._w ** (5 * self.dim)
         self._delta_f: float = self.ftol / self._w ** (5 * self.dim)
         self._stop: bool = False
-
         # set the initial search point
         self.x = x0
 
@@ -283,16 +284,15 @@ class OnePlusOne_CMA(object):
         x : np.ndarray
             the trial point to check against the constraints
         """
-        return dynamic_penalty(
-            x.tolist(), self.iter_count + 1, self.h, self.g, minimize=self.minimize
-        )
+        return dynamic_penalty(x, self.iter_count + 1, self.h, self.g, minimize=self.minimize)
 
-    def evaluate(self, x):
+    def evaluate(self, x: np.ndarray) -> np.ndarray:
         self.eval_count += 1
         if isinstance(self.args, (list, tuple)):
-            return self.obj_fun(x, *self.args)
+            fval = self.obj_fun(x, *self.args)
         elif isinstance(self.args, dict):
-            return self.obj_fun(x, **self.args)
+            fval = self.obj_fun(x, **self.args)
+        return fval
 
     def restart(self):
         if self._restart:
@@ -321,9 +321,13 @@ class OnePlusOne_CMA(object):
         np.ndarray
             The mutation vector
         """
-        z = np.random.randn(self.dim)
-        x = self._x + self.sigma * z.dot(self._A.T)
+        z = np.random.randn(self.dim).dot(self._A.T)
+        x = self._x + self.sigma * z
         x = handle_box_constraint(x, self.lb, self.ub)
+        # rounding if a coarser numerical precision is provided
+        x = self.search_space.round(x).ravel()
+        # NOTE: experimental correction to the step-size when the box constraints are violated
+        # self.sigma = np.min(np.abs((x - self._x) / z))
         return x
 
     def tell(self, x: np.ndarray, y: np.ndarray, penalty: float = 0):
