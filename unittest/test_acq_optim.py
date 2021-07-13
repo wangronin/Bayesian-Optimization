@@ -1,6 +1,7 @@
 import numpy as np
 from bayes_optim.acquisition_optim import MIES, OnePlusOne_Cholesky_CMA
-from bayes_optim.search_space import Bool, Discrete, Integer, Ordinal, Real, RealSpace, SearchSpace
+from bayes_optim.search_space import (Bool, Discrete, Integer, Ordinal, Real,
+                                      RealSpace, SearchSpace)
 
 
 def obj_fun_min(x):
@@ -47,7 +48,7 @@ def test_OnePlusOne_Cholesky_CMA_constraint():
         verbose=False,
         random_seed=42,
     ).run()
-    assert np.isclose(h(xopt), 0, atol=1e-2)
+    assert np.isclose(h(xopt), 0, atol=1e-1)
 
     OnePlusOne_Cholesky_CMA(
         search_space=RealSpace([-5, 5]) * 2,
@@ -58,7 +59,7 @@ def test_OnePlusOne_Cholesky_CMA_constraint():
         verbose=False,
         random_seed=42,
     ).run()
-    assert np.isclose(g(xopt), 0, atol=1e-2)
+    assert np.isclose(g(xopt), 0, atol=1e-1)
 
 
 def test_MIES():

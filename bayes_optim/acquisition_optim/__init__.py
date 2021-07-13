@@ -1,14 +1,47 @@
 import logging
-from typing import Any, Callable, List, Tuple, Union
+from typing import Callable, List, Tuple
 
 import numpy as np
 from scipy.optimize import fmin_l_bfgs_b
 
 from ..search_space import RealSpace
+from ..utils import dynamic_penalty
 from .mies import MIES
 from .one_plus_one_cma_es import OnePlusOne_Cholesky_CMA, OnePlusOne_CMA
 
 __all__ = ["argmax_restart", "OnePlusOne_CMA", "OnePlusOne_Cholesky_CMA", "MIES"]
+
+
+def finite_difference(f: Callable, x: np.ndarray, delta: float = 1e-5, **kwargs):
+    N = len(x)
+    v = np.eye(N) * delta
+    return np.array(
+        [(f(x + v[i], **kwargs) - f(x - v[i], **kwargs)) / (2 * delta) for i in range(N)]
+    ).reshape(-1, 1)
+
+
+class Penalized:
+    """Construct a penalized problem of form, `f(x) + p(x)`, where `p` is
+    the `dynamic_penalty` function from ..utils module. We also take care of approximating
+    the gradient, which is then used by the BFGS algorithm.
+    """
+
+    def __init__(self, func: Callable, h: Callable, g: Callable):
+        self.func = func
+        self.h = h
+        self.g = g
+        self.t = 10
+
+    def __call__(self, x: np.ndarray) -> Tuple[float, np.ndarray]:
+        f, fg = tuple(map(lambda x: -1.0 * x, self.func(x)))
+        if self.h or self.g:
+            p = dynamic_penalty(x, t=self.t, equality=self.h, inequality=self.g)
+            pg = finite_difference(
+                dynamic_penalty, x, t=self.t, equality=self.h, inequality=self.g
+            )
+            self.t += 1
+            return f + p, fg + pg
+        return f, fg
 
 
 def argmax_restart(
@@ -30,25 +63,19 @@ def argmax_restart(
         optimizer = "MIES"
         logger.warning("L-BFGS-B cannot be applied on continuous search space")
 
-    if (h is not None or g is not None) and optimizer == "BFGS":
-        optimizer = "OnePlusOne_Cholesky_CMA"
-        # TODO: add constraint handling for BFGS
-        logger.warning("L-BFGS-B cannot be applied with constraints at this moment")
-
     for iteration in range(n_restart):
         x0 = search_space.sample(N=1, method="uniform")[0]
 
         if optimizer == "BFGS":
             bounds = np.array(search_space.bounds)
-
-            if not all([isinstance(_, float) for _ in x0]):
-                raise ValueError("BFGS is not supported with mixed variable types.")
-
-            func = lambda x: tuple(map(lambda x: -1.0 * x, obj_func(x)))
             xopt_, fopt_, stop_dict = fmin_l_bfgs_b(
-                func, x0, pgtol=1e-8, factr=1e6, bounds=bounds, maxfun=eval_budget
+                Penalized(obj_func, h, g),
+                x0,
+                pgtol=1e-8,
+                factr=1e6,
+                bounds=bounds,
+                maxfun=eval_budget,
             )
-
             xopt_ = xopt_.flatten().tolist()
             if not isinstance(fopt_, float):
                 fopt_ = float(fopt_)

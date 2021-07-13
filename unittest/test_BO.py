@@ -181,10 +181,8 @@ def test_flat_continuous():
         verbose=True,
         n_point=1,
     )
-    try:
+    with pytest.raises(FlatFitnessError):
         opt.run()
-    except FlatFitnessError:
-        pass
 
 
 def test_infeasible_constraints():
@@ -206,10 +204,8 @@ def test_infeasible_constraints():
         verbose=True,
         n_point=1,
     )
-    try:
+    with pytest.raises(AskEmptyError):
         opt.run()
-    except AskEmptyError:
-        pass
 
 
 @pytest.mark.parametrize("eval_type", ["list", "dict"])  # type: ignore

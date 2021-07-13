@@ -15,6 +15,8 @@ from numpy.random import rand, randint
 from pyDOE import lhs
 from scipy.special import logit
 
+from ._exception import ConstraintEvaluationError
+
 __authors__ = "Hao Wang"
 
 MAX = sys.float_info.max
@@ -732,10 +734,15 @@ class SearchSpace:
         X, n, max_trial = [], N, 1e2
         while True:
             S = self._sample(n, method)
-            if h:
-                S = list(filter(lambda x: np.all(h(x) == 0), S))
-            if g and len(S) > 0:
-                S = list(filter(lambda x: np.all(g(x) <= 0), S))
+            try:
+                if h:
+                    # NOTE: equality constraints are converted to an epsilon-tude around the
+                    # corresponding manifold
+                    S = list(filter(lambda x: np.all(np.abs(h(x)) <= 1e-1), S))
+                if g and len(S) > 0:
+                    S = list(filter(lambda x: np.all(g(x) <= 0), S))
+            except Exception as e:
+                raise ConstraintEvaluationError(S, str(e)) from None
 
             if len(S) != 0:
                 X.append(S)

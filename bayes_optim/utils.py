@@ -4,6 +4,7 @@ from typing import Callable, Dict, List, Union
 
 import numpy as np
 
+from ._exception import ConstraintEvaluationError
 from .solution import Solution
 
 
@@ -161,7 +162,6 @@ def set_bounds(bound, dim):
     return np.asarray(bound)
 
 
-# TODO: move this to a '_penalty.py' file
 def dynamic_penalty(
     X: List,
     t: int = 1,
@@ -170,7 +170,7 @@ def dynamic_penalty(
     C: float = 0.5,
     alpha: float = 1,
     beta: float = 2,
-    epsilon: float = 1e-2,
+    epsilon: float = 1e-1,
     minimize: bool = True,
 ) -> np.ndarray:
     r"""Dynamic Penalty calculated as follows:
@@ -209,18 +209,27 @@ def dynamic_penalty(
     """
     if not hasattr(X[0], "__iter__") or isinstance(X[0], str):
         X = [X]
-
     X = np.array(X, dtype=object)
+
     N = len(X)
     p = np.zeros(N)
 
     if equality is not None:
-        v = np.atleast_2d(list(map(equality, X))).reshape(N, -1)
+        try:
+            v = np.atleast_2d(list(map(equality, X))).reshape(N, -1)
+        except Exception as e:
+            raise ConstraintEvaluationError(X, str(e)) from None
         v[np.abs(v) <= epsilon] = 0
         p += np.sum(np.abs(v), axis=1)
 
     if inequality is not None:
-        v = np.atleast_2d(list(map(inequality, X))).reshape(N, -1)
+        try:
+            v = np.atleast_2d(list(map(inequality, X))).reshape(N, -1)
+        except Exception as e:
+            raise ConstraintEvaluationError(X, str(e)) from None
+        # NOTE: inequalities are always tested with less or equal relation.
+        # Inequalities with strict less conditions should be created by adding a tiny epsilon
+        # to the constraint
         v[v <= 0] = 0
         p += np.sum(np.abs(v) ** beta, axis=1)
 

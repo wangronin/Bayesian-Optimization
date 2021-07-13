@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from bayes_optim import MOBO
 from bayes_optim._exception import RecommendationUnavailableError
 from bayes_optim.search_space import BoolSpace, DiscreteSpace, IntegerSpace, RealSpace
@@ -64,10 +65,8 @@ def test_3D():
         opt.tell(X, [(f1(x), f2(x), f3(x)) for x in X])
 
     opt.recommend()
-    try:
+    with pytest.raises(NotImplementedError):
         X = opt.ask(3)
-    except NotImplementedError:
-        pass
 
 
 def test_with_constraints():
@@ -97,7 +96,6 @@ def test_with_constraints():
         obj_fun=(f1, f2),
         ineq_fun=g,
         model=model,
-        # model=RandomForest(),
         max_FEs=100,
         DoE_size=1,  # the initial DoE size
         eval_type="dict",
@@ -111,10 +109,8 @@ def test_with_constraints():
         assert g(X[0]) <= 0
 
     opt.recommend()
-    try:
+    with pytest.raises(NotImplementedError):
         X = opt.ask(3)
-    except NotImplementedError:
-        pass
 
 
 def test_fixed_var():
@@ -141,10 +137,8 @@ def test_fixed_var():
     assert all([x["nominal"] == "OK" and not x["bool"] for x in X])
     opt.recommend()
 
-    try:
+    with pytest.raises(NotImplementedError):
         X = opt.ask(3)
-    except NotImplementedError:
-        pass
 
 
 def test_recommend():
@@ -164,10 +158,8 @@ def test_recommend():
         n_job=1,  # number of processes
         verbose=True,  # turn this off, if you prefer no output
     )
-    try:
+    with pytest.raises(RecommendationUnavailableError):
         opt.recommend()
-    except RecommendationUnavailableError:
-        pass
 
 
 def test_constraint():

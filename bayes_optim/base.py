@@ -311,10 +311,6 @@ class BaseBO(ABC):
             else:
                 self._optimizer = "MIES"
 
-        # TODO: this is an ad-hoc solution
-        if (self.h is not None or self.g is not None) and self._optimizer == "BFGS":
-            self._optimizer = "OnePlusOne_Cholesky_CMA"
-
         # NOTE: `AQ` -> acquisition
         if "max_FEs" in kwargs:
             self.AQ_max_FEs = arg_to_int(kwargs["max_FEs"])
@@ -378,6 +374,7 @@ class BaseBO(ABC):
     def step(self):
         self.logger.info(f"iteration {self.iter_count} starts...")
         X = self.ask()
+        # TODO: add exception handling for evaluating the objective function
         func_vals = self.evaluate(X)
         self.tell(X, func_vals)
 
