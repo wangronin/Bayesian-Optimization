@@ -311,6 +311,9 @@ class BaseBO(ABC):
             else:
                 self._optimizer = "MIES"
 
+        if self._optimizer == "BFGS" and (self.h or self.g):
+            self._optimizer = "OnePlusOne_Cholesky_CMA"
+
         # NOTE: `AQ` -> acquisition
         if "max_FEs" in kwargs:
             self.AQ_max_FEs = arg_to_int(kwargs["max_FEs"])
@@ -623,6 +626,7 @@ class BaseBO(ABC):
             candidates, values = self._argmax_restart(criteria, logger=self.logger)
             candidates, values = [candidates], [values]
 
+        candidates = [c for c in candidates if len(c) != 0]
         candidates = fillin_fixed_value(candidates, fixed, self.search_space)
         for callback in self._acquisition_callbacks:
             callback()

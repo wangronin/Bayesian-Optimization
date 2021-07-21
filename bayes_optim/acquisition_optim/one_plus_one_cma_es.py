@@ -197,15 +197,19 @@ class OnePlusOne_CMA(object):
         self._logger.setLevel(logging.DEBUG)
         fmt = LoggerFormatter()
 
-        if self.verbose:
-            # create console handler and set level to warning
-            ch = logging.StreamHandler(sys.stdout)
-            ch.setLevel(logging.INFO)
-            ch.setFormatter(fmt)
-            self._logger.addHandler(ch)
+        # create console handler and set level to the vebosity
+        SH = list(filter(lambda h: isinstance(h, logging.StreamHandler), self._logger.handlers))
+        if self.verbose and len(SH) == 0:
+            sh = logging.StreamHandler(sys.stdout)
+            sh.setLevel(logging.INFO)
+            sh.setFormatter(fmt)
+            self._logger.addHandler(sh)
 
         # create file handler and set level to debug
-        if logger is not None:
+        # TODO: perhaps also according to the verbosity?
+        # TODOL perhaps create a logger class
+        FH = list(filter(lambda h: isinstance(h, logging.FileHandler), self._logger.handlers))
+        if logger is not None and len(FH) == 0:
             fh = logging.FileHandler(logger)
             fh.setLevel(logging.DEBUG)
             fh.setFormatter(fmt)
@@ -371,7 +375,7 @@ class OnePlusOne_CMA(object):
             self.logger.info(f"fopt: {self.fopt}")
             if self.h is not None or self.g is not None:
                 _penalty = (self.fopt - self.fopt_penalized) * (-1) ** self.minimize
-                self.logger.info(f"penalty: {_penalty:.4e}")
+                self.logger.info(f"penalty: {_penalty[0]:.4e}")
             self.logger.info(f"xopt: {self.xopt.tolist()}")
             self.logger.info(f"sigma: {self._sigma}\n")
 

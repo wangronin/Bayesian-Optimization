@@ -22,33 +22,34 @@ def g(x):
     return [-x["pc"], x["mu"] - 1.9]
 
 
-# def test_BO_equality():
-#     dim = 2
-#     search_space = RealSpace([0, 1]) * dim
-#     thetaL = 1e-10 * np.ones(dim)
-#     thetaU = 10 * np.ones(dim)
-#     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-#     model = GaussianProcess(
-#         corr="squared_exponential",
-#         theta0=theta0,
-#         thetaL=thetaL,
-#         thetaU=thetaU,
-#         nugget=1e-5,
-#     )
-#     xopt, _, __ = BO(
-#         search_space=search_space,
-#         obj_fun=obj_fun,
-#         eq_fun=h,
-#         model=model,
-#         max_FEs=20,
-#         DoE_size=3,
-#         acquisition_fun="MGFI",
-#         acquisition_par={"t": 2},
-#         acquisition_optimization={"optimizer": "BFGS"},
-#         verbose=True,
-#         random_seed=42,
-#     ).run()
-#     assert np.isclose(h(xopt), 0, atol=1e-1)
+def test_BO_equality():
+    dim = 2
+    search_space = RealSpace([0, 1]) * dim
+    thetaL = 1e-5 * np.ones(dim)
+    thetaU = np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+    model = GaussianProcess(
+        corr="squared_exponential",
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=1e-1,
+        random_state=42,
+    )
+    xopt, _, __ = BO(
+        search_space=search_space,
+        obj_fun=obj_fun,
+        eq_fun=h,
+        model=model,
+        max_FEs=20,
+        DoE_size=3,
+        acquisition_fun="MGFI",
+        acquisition_par={"t": 2},
+        acquisition_optimization={"optimizer": "BFGS"},
+        verbose=True,
+        random_seed=42,
+    ).run()
+    assert np.isclose(h(xopt), 0, atol=1e-1)
 
 
 def test_BO_constraints():

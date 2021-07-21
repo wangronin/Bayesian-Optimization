@@ -170,7 +170,7 @@ def dynamic_penalty(
     C: float = 0.5,
     alpha: float = 1,
     beta: float = 2,
-    epsilon: float = 1e-3,
+    epsilon: float = 1e-1,
     minimize: bool = True,
 ) -> np.ndarray:
     r"""Dynamic Penalty calculated as follows:

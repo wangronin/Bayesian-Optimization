@@ -26,6 +26,9 @@ class BO(BaseBO):
 
     def pre_eval_check(self, X: List) -> List:
         """Check for the duplicated solutions as it is not allowed in noiseless cases"""
+        if len(X) == 0:
+            return X
+
         if not isinstance(X, Solution):
             X = Solution(X, var_name=self._search_space.var_name, n_obj=self.n_obj)
 

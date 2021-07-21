@@ -25,6 +25,8 @@ class SCMC:
     .. [GolchiL15]
         Golchi, Shirin, and Jason L. Loeppky. "Monte Carlo based designs for constrained domains."
         arXiv preprint arXiv:1512.07328 (2015).
+
+    TODO: consider adopting MIES-like self-adaptation for the MH algorithm
     """
 
     def __init__(

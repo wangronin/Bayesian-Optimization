@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Callable, List, Tuple
 
 import numpy as np
@@ -63,9 +64,6 @@ def argmax_restart(
         optimizer = "MIES"
         logger.warning("L-BFGS-B cannot be applied on continuous search space")
 
-    if optimizer == "BFGS" and (h or g):
-        optimizer = "OnePlusOne_Cholesky_CMA"
-
     for iteration in range(n_restart):
         x0 = search_space.sample(N=1, method="uniform")[0]
         if optimizer == "BFGS":
@@ -99,6 +97,7 @@ def argmax_restart(
                 n_restart=0,
                 minimize=False,
                 verbose=False,
+                seed=time.time(),
             )
             xopt_, fopt_, stop_dict = opt.run()
             stop_dict["funcalls"] = stop_dict["FEs"] if "FEs" in stop_dict else opt.eval_count
@@ -115,27 +114,33 @@ def argmax_restart(
                 eval_type="list",
             ).optimize()
 
-        if isinstance(fopt_, np.ndarray):
-            fopt_ = fopt_[0]
+        cond_h = all(np.isclose(np.abs(h(xopt_)), 0, atol=1e-1)) if h else True
+        cond_g = all(g(xopt_) <= 0) if g else True
+        if cond_h and cond_g:
+            if isinstance(fopt_, np.ndarray):
+                fopt_ = fopt_[0]
 
-        if fopt_ > best:
-            best = fopt_
-            wait_count = 0
+            if fopt_ > best:
+                best = fopt_
+                wait_count = 0
 
-            if logger is not None:
-                logger.debug(
-                    "restart : %d - funcalls : %d - Fopt : %f"
-                    % (iteration + 1, stop_dict["funcalls"], fopt_)
-                )
-        else:
-            wait_count += 1
+                if logger is not None:
+                    logger.debug(
+                        "restart : %d - funcalls : %d - Fopt : %f"
+                        % (iteration + 1, stop_dict["funcalls"], fopt_)
+                    )
+            else:
+                wait_count += 1
 
-        eval_budget -= stop_dict["funcalls"]
-        xopt.append(xopt_)
-        fopt.append(fopt_)
+            eval_budget -= stop_dict["funcalls"]
+            xopt.append(xopt_)
+            fopt.append(fopt_)
 
         if eval_budget <= 0 or wait_count >= wait_iter:
             break
+
+    if len(xopt) == 0:
+        return [], []
 
     idx = np.argsort(fopt)[::-1]
     return xopt[idx[0]], fopt[idx[0]]
