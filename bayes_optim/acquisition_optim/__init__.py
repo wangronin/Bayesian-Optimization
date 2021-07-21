@@ -63,11 +63,14 @@ def argmax_restart(
         optimizer = "MIES"
         logger.warning("L-BFGS-B cannot be applied on continuous search space")
 
+    if optimizer == "BFGS" and (h or g):
+        optimizer = "OnePlusOne_Cholesky_CMA"
+
     for iteration in range(n_restart):
         x0 = search_space.sample(N=1, method="uniform")[0]
-
         if optimizer == "BFGS":
             bounds = np.array(search_space.bounds)
+            # TODO: this is still subject to testing
             xopt_, fopt_, stop_dict = fmin_l_bfgs_b(
                 Penalized(obj_func, h, g),
                 x0,
@@ -111,6 +114,9 @@ def argmax_restart(
                 verbose=False,
                 eval_type="list",
             ).optimize()
+
+        if isinstance(fopt_, np.ndarray):
+            fopt_ = fopt_[0]
 
         if fopt_ > best:
             best = fopt_

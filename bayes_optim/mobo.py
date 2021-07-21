@@ -117,7 +117,6 @@ class BaseMOBO(BO):
 
         # TODO: implement method to handle known, expensive constraints `h_vals` and `g_vals`
         # add extra columns h_vals, g_vals to the `Solution` object
-
         for i, _ in enumerate(X):
             X[i].n_eval += 1
             for k in range(self.n_obj):

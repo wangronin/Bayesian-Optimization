@@ -409,16 +409,7 @@ class BaseBO(ABC):
                 )
                 N = n_point - len(X)
                 # take random samples if the acquisition optimization failed
-                _count = 0
-                while N:
-                    s = self.create_DoE(N, fixed=fixed)
-                    # NOTE: random sampling could generate duplicated points again
-                    # keep sampling until getting enough points
-                    N -= len(s)
-                    X += s
-                    _count += 1
-                    if _count > 20:  # maximally 20 iterations
-                        break
+                X += self.create_DoE(N, fixed=fixed)
         else:  # take the initial DoE
             n_point = self._DoE_size if n_point is None else n_point
             msg = f"asking {n_point} points (using DoE):"
@@ -526,17 +517,33 @@ class BaseBO(ABC):
         """
         fixed = {} if fixed is None else fixed
         search_space = self.search_space.filter(fixed.keys(), invert=True)
-        DoE = search_space.sample(
-            n_point,
-            method="LHS" if n_point > 1 else "uniform",
-            h=partial_argument(self._h, self.search_space.var_name, fixed) if self._h else None,
-            g=partial_argument(self._g, self.search_space.var_name, fixed) if self._g else None,
-        ).tolist()
-        DoE = fillin_fixed_value(DoE, fixed, self.search_space)
 
-        if len(DoE) != 0:
-            DoE = self.search_space.round(DoE)
-            DoE = self.pre_eval_check(DoE)
+        count = 0
+        DoE = []
+        while n_point:
+            # NOTE: random sampling could generate duplicated points again
+            # keep sampling until getting enough points
+            X = search_space.sample(
+                n_point,
+                method="LHS" if n_point > 1 else "uniform",
+                h=partial_argument(self._h, self.search_space.var_name, fixed)
+                if self._h
+                else None,
+                g=partial_argument(self._g, self.search_space.var_name, fixed)
+                if self._g
+                else None,
+            ).tolist()
+            X = fillin_fixed_value(X, fixed, self.search_space)
+
+            if len(X) != 0:
+                X = self.search_space.round(X)
+                X = self.pre_eval_check(X)
+                DoE += X
+                n_point -= len(X)
+
+            count += 1
+            if count > 3:  # maximally 3 iterations
+                break
 
         return DoE
 

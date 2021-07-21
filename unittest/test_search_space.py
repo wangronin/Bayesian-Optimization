@@ -82,7 +82,7 @@ def test_in():
 def test_sample_with_constraints():
     g = lambda x: x - 0.1
     cs = RealSpace([1e-10, 1e-1], "x", 0.01, scale="log")
-    X = cs.sample(10, method="LHS", g=g)
+    X = cs.sample(10, g=g)
     assert all(list(map(lambda x: g(x) <= 0, X)))
 
 

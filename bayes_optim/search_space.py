@@ -14,8 +14,10 @@ import numpy as np
 from numpy.random import rand, randint
 from pyDOE import lhs
 from scipy.special import logit
+from sobol_seq import i4_sobol_generate
 
 from ._exception import ConstraintEvaluationError
+from .samplers import SCMC
 
 __authors__ = "Hao Wang"
 
@@ -35,7 +37,7 @@ INV_TRANS = {
     "bilog": lambda x: np.sign(x) * (np.exp(np.abs(x)) - 1),
 }
 
-# TODO: discuss and fix the return type of `sample`, `round`, and `to_linear_scale`
+
 class Variable(ABC):
     """Base class for decision variables"""
 
@@ -550,6 +552,7 @@ class SearchSpace:
             return all([v in self.__getitem__(i) for i, v in enumerate(item)])
         if isinstance(item, dict):
             return all([v in self.__getitem__(i) for i, v in item.items()])
+        raise ValueError(f"type {type(item)} is not supported")
 
     def __len__(self):
         return self.dim
@@ -704,7 +707,12 @@ class SearchSpace:
         return SearchSpace.__set_type(self)
 
     def sample(
-        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
+        self,
+        N: int = 1,
+        method: str = "uniform",
+        h: Callable = None,
+        g: Callable = None,
+        tol: float = 1e-2,
     ) -> np.ndarray:
         """Sample random points from the search space
 
@@ -718,6 +726,8 @@ class SearchSpace:
             equality constraints, by default None
         g : Callable, optional
             inequality constraints, by default None
+        tol : float, optional
+            the tolerance on the constraint
 
         NOTES
         -----
@@ -728,29 +738,29 @@ class SearchSpace:
         np.ndarray
             the sample points in shape `(N, self.dim)`
         """
-        # NOTE: simple Monte Carlo sampling, which will take an exponential running time when
-        # the feasible space diminishes exponentially
-        # TODO: implement more efficient sampling method, e.g., SCMC
-        X, n, max_trial = [], N, 1e2
-        while True:
-            S = self._sample(n, method)
-            try:
-                if h:
-                    # NOTE: equality constraints are converted to an epsilon-tude around the
-                    # corresponding manifold
-                    S = list(filter(lambda x: np.all(np.abs(h(x)) <= 1e-1), S))
-                if g and len(S) > 0:
-                    S = list(filter(lambda x: np.all(g(x) <= 0), S))
-            except Exception as e:
-                raise ConstraintEvaluationError(S, str(e)) from None
+        # 10 is the minimal number of sample points to take under constraints
+        n = max(N, 10) if h or g else N
+        constraints = lambda x: np.r_[np.abs(h(x)) if h else [], np.array(g(x)) if g else []]
+        S = SCMC(self, constraints, tol=tol).sample(n) if h or g else self._sample(N, method)
+        try:
+            # NOTE: equality constraints are converted to an epsilon-tude around the
+            # corresponding manifold
+            idx_h = (
+                list(map(lambda x: all(np.isclose(np.abs(h(x)), 0, atol=tol)), S))
+                if h
+                else [True] * n
+            )
+            idx_g = list(map(lambda x: np.all(np.asarray(g(x)) <= 0), S)) if g else [True] * n
+            idx = np.bitwise_and(idx_h, idx_g)
+            S = S[idx, :]
+        except Exception as e:
+            raise ConstraintEvaluationError(S, str(e)) from None
 
-            if len(S) != 0:
-                X.append(S)
-            n -= len(S)
-            max_trial -= 1
-            if n == 0 or max_trial == 0:
-                break
-        return np.empty(0) if len(X) == 0 else np.concatenate(X, axis=0)
+        # get unique rows
+        # S = np.array([list(x) for x in set(tuple(x) for x in S)], dtype=object)
+        if len(S) > N:
+            S = S[np.random.choice(len(S), N, replace=False)]
+        return S
 
     def _sample(self, N: int = 1, method: str = "uniform") -> np.ndarray:
         # in case this space is empty after slicing
@@ -918,6 +928,8 @@ class RealSpace(SearchSpace):
                 X = (ub - lb) * rand(N, self.dim) + lb
             else:
                 X = (ub - lb) * lhs(self.dim, samples=N, criterion="maximin") + lb
+        elif method == "sobol":
+            X = (ub - lb) * i4_sobol_generate(self.dim, N) + lb
         return self.round(self.to_linear_scale(X))
 
     def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
