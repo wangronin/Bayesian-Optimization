@@ -118,7 +118,7 @@ class RandomForest(RandomForestRegressor):
         self.X = self._check_X(X)
         self.y = y
         self.is_fitted = True
-        return super().fit(X, y)
+        return super().fit(self.X, self.y)
 
     def predict(self, X: Union[Solution, List, np.ndarray], eval_MSE=False) -> np.ndarray:
         """Predict regression target for `X`.
