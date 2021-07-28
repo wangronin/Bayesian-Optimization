@@ -13,6 +13,7 @@ from sklearn.utils.validation import check_is_fitted
 
 from ..solution import Solution
 
+__authors__ = ["Hao Wang"]
 
 # TODO: implement multi-output/objetive surrogate models, better to model the c
 # orrelation among targets
@@ -55,22 +56,26 @@ class SurrogateAggregation(object):
 
 
 def _save_prediction(predict, X, index, out):
-    """
-    It can't go locally in ForestClassifier or ForestRegressor, because joblib
+    """It can't go locally in ForestClassifier or ForestRegressor, because joblib
     complains that it cannot pickle it when placed there.
     """
     out[..., index] = predict(X, check_input=False)
 
 
 class RandomForest(RandomForestRegressor):
-    """Extension on the sklearn's `RandomForestRegressor`
+    r"""Extension on the sklearn's `RandomForestRegressor`
     Added functionality:
         1) MSE estimate,
         2) OneHotEncoding to handle categorical variables
     """
 
     def __init__(
-        self, n_estimators=100, max_features=5 / 6, min_samples_leaf=2, levels=None, **kwargs
+        self,
+        n_estimators: int = 100,
+        max_features: float = 5 / 6,
+        min_samples_leaf: int = 2,
+        levels: dict = None,
+        **kwargs,
     ):
         """
         parameter
@@ -79,37 +84,38 @@ class RandomForest(RandomForestRegressor):
             keys: indices of categorical variables
             values: list of levels of categorical variables
         """
-        super(RandomForest, self).__init__(
+        super().__init__(
             n_estimators=n_estimators,
             max_features=max_features,
             min_samples_leaf=min_samples_leaf,
             **kwargs,
         )
+        assert isinstance(levels, dict)
+        self.levels = levels
         self.is_fitted = False
 
         # for categorical levels/variable number
         # in the future, maybe implement binary/multi-value split
-        if levels is not None:
-            assert isinstance(levels, dict)
+        if self.levels is not None:
             self._levels = OrderedDict(sorted(levels.items()))
             self._cat_idx = list(self._levels.keys())
             self._categories = list(self._levels.values())
             # encode categorical variables to binary values
             self._enc = OneHotEncoder(categories=self._categories, sparse=False)
 
-    def _check_X(self, X) -> Solution:
+    def _check_X(self, X: Union[Solution, List, np.ndarray]) -> Solution:
         X_ = array(X, dtype=object)
         if hasattr(self, "_levels"):
             X_cat = X_[:, self._cat_idx]
             try:
                 X_cat = self._enc.transform(X_cat)
-            except:
+            except Exception:
                 X_cat = self._enc.fit_transform(X_cat)
             X = np.c_[np.delete(X_, self._cat_idx, 1).astype(float), X_cat]
         return X
 
     def fit(self, X: Union[Solution, List, np.ndarray], y: np.ndarray):
-        X = self._check_X(X)
+        self.X = self._check_X(X)
         self.y = y
         self.is_fitted = True
         return super().fit(X, y)
@@ -130,22 +136,18 @@ class RandomForest(RandomForestRegressor):
             The predicted values.
         """
         check_is_fitted(self)
-        # Check data
+        # check data
         X = self._check_X(X)
         X = self._validate_X_predict(X)
-
-        # Assign chunk of trees to jobs
+        # assign chunk of trees to jobs
         n_jobs, _, _ = _partition_estimators(self.n_estimators, self.n_jobs)
-
         # storing the output of every estimator since those are required to estimate the MSE
-        if self.n_outputs_ > 1:
-            y_hat_all = np.zeros(
-                (X.shape[0], self.n_outputs_, self.n_estimators), dtype=np.float64
-            )
-        else:
-            y_hat_all = np.zeros((X.shape[0], self.n_estimators), dtype=np.float64)
-
-        # Parallel loop
+        y_hat_all = (
+            np.zeros((X.shape[0], self.n_outputs_, self.n_estimators), dtype=np.float64)
+            if self.n_outputs_ > 1
+            else np.zeros((X.shape[0], self.n_estimators), dtype=np.float64)
+        )
+        # parallel loop
         Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
             delayed(_save_prediction)(e.predict, X, i, y_hat_all)
             for i, e in enumerate(self.estimators_)
