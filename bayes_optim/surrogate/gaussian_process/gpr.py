@@ -11,8 +11,13 @@ from sklearn.metrics.pairwise import manhattan_distances
 from sklearn.utils import check_array, check_random_state, check_X_y
 
 from .cma_es import cma_es
-from .kernel import (absolute_exponential, cubic, generalized_exponential,
-                     matern, squared_exponential)
+from .kernel import (
+    absolute_exponential,
+    cubic,
+    generalized_exponential,
+    matern,
+    squared_exponential,
+)
 from .trend import BasisExpansionTrend, NonparametricTrend, constant_trend
 
 MACHINE_EPSILON = np.finfo(np.double).eps
@@ -490,13 +495,13 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     f = self.mean.F(X)
                     u = solve_triangular(self.G.T, np.dot(self.Ft.T, rt) - f.T, lower=True)
                 else:  # simple Kriging
-                    u = np.zeros((n_targets, n_eval))
+                    u = np.zeros((1, n_eval))
 
                 MSE = np.dot(
-                    self.sigma2.reshape(n_targets, 1),
-                    (1.0 - (rt ** 2.0).sum(axis=0) + (u ** 2.0).sum(axis=0))[np.newaxis, :],
+                    (1.0 - (rt ** 2.0).sum(axis=0) + (u ** 2.0).sum(axis=0)).reshape(n_eval, -1),
+                    self.sigma2.reshape(1, -1),
                 )
-                MSE = np.sqrt((MSE ** 2.0).sum(axis=0) / n_targets)
+                # MSE = np.sqrt((MSE ** 2.0).sum(axis=0) / n_targets)
 
                 # Mean Squared Error might be slightly negative depending on
                 # machine precision: force to zero!
