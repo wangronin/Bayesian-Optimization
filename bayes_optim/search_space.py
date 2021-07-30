@@ -494,10 +494,11 @@ class SearchSpace:
         # TODO: check if this is still needed
         """Set categorical levels for all nominal variables"""
         if self.dim > 0:
-            if len(self.categorical_id) > 0:
-                self.levels = {i: self._bounds[i] for i in self.categorical_id}
-            else:
-                self.levels = None
+            self.levels = (
+                {i: self._bounds[i] for i in self.categorical_id}
+                if len(self.categorical_id) > 0
+                else {}
+            )
 
     def __getitem__(self, index) -> Union[SearchSpace, Variable]:
         if isinstance(index, (int, slice)):
@@ -980,7 +981,7 @@ class IntegerSpace(_DiscreteSpace):
         bounds: List,
         var_name: Union[str, List[str]] = "integer",
         default_value: Union[int, List[int]] = None,
-        step: Optional[int, float] = 1,
+        step: Optional[Union[int, float]] = 1,
         **kwargs,
     ):
         out = self._ready_args(bounds, var_name, default_value=default_value, step=step)

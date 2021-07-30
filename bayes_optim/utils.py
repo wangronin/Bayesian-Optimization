@@ -169,7 +169,7 @@ def dynamic_penalty(
     inequality: Callable = None,
     C: float = 0.5,
     alpha: float = 1,
-    beta: float = 2,
+    beta: float = 1.5,
     epsilon: float = 1e-1,
     minimize: bool = True,
 ) -> np.ndarray:

@@ -1,10 +1,17 @@
 import os
+import string
 
 import numpy as np
 import pytest
 from bayes_optim import BO, ParallelBO
 from bayes_optim._exception import AskEmptyError, FlatFitnessError
-from bayes_optim.search_space import BoolSpace, DiscreteSpace, IntegerSpace, RealSpace
+from bayes_optim.search_space import (
+    BoolSpace,
+    DiscreteSpace,
+    IntegerSpace,
+    OrdinalSpace,
+    RealSpace,
+)
 from bayes_optim.surrogate import GaussianProcess, RandomForest, trend
 
 np.random.seed(123)
@@ -58,7 +65,7 @@ def test_pickling():
     os.remove("log")
 
 
-@pytest.mark.parametrize("var_type", ["r", "b", "c", "i"])
+@pytest.mark.parametrize("var_type", ["r", "b", "c", "i", "o"])
 def test_homogenous(var_type):
     dim = 5
 
@@ -92,9 +99,11 @@ def test_homogenous(var_type):
         if var_type == "b":
             space = BoolSpace() * dim
         elif var_type == "i":
-            space = IntegerSpace([0, 10]) * dim
+            space = IntegerSpace([0, 10], step=1) * dim
         elif var_type == "c":
             space = DiscreteSpace(list(range(10))) * dim
+        elif var_type == "o":
+            space = OrdinalSpace(list(string.ascii_lowercase))
         model = RandomForest(levels=space.levels)
 
     opt = BO(

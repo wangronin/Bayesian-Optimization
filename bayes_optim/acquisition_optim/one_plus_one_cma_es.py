@@ -23,7 +23,7 @@ class OnePlusOne_CMA(object):
         self,
         search_space: SearchSpace,
         obj_fun: Callable,
-        args: Dict = {},
+        args: Dict = None,
         h: Callable = None,
         g: Callable = None,
         x0: Union[str, Vector, np.ndarray] = None,
@@ -109,8 +109,9 @@ class OnePlusOne_CMA(object):
         self.ftarget: float = ftarget
         self.lb: np.ndarray = set_bounds(lb, self.dim)
         self.ub: np.ndarray = set_bounds(ub, self.dim)
-        self.sigma0 = self.sigma = sigma0
-        self.args: Dict = args
+        self.sigma = sigma0
+        self.sigma0 = self.sigma
+        self.args: Dict = args if args else {}
         self.n_restart: int = max(0, int(n_restart))
         self._restart: bool = False
 
@@ -360,16 +361,18 @@ class OnePlusOne_CMA(object):
 
         if success:
             self._delta_f += (1 - self._w) * abs(self.fopt_penalized - y_penalized)
-            self._delta_x += (1 - self._w) * np.sqrt(sum((self.xopt - x) ** 2))
-            self.fopt = y
+            self._delta_x += (1 - self._w) * np.sqrt(sum((self._x - x) ** 2))
             self.fopt_penalized = y_penalized
-            self._x = self.xopt = copy(x)
+            self._x = copy(x)
             self._update_covariance(z)
+
+        if success and penalty == 0:
+            self.xopt = copy(self._x)
+            self.fopt = y
 
         self._handle_exception()
         self.iter_count += 1
 
-        # TODO: should this be part of the logging function?
         if self.verbose:
             self.logger.info(f"iteration {self.iter_count}")
             self.logger.info(f"fopt: {self.fopt}")
@@ -426,6 +429,8 @@ class OnePlusOne_CMA(object):
         prob_target = self.prob_target
         self.success_rate = (1 - self.cp) * self.success_rate + self.cp * success
         self._sigma *= np.exp((self.success_rate - prob_target) / (1 - prob_target) / self.d)
+        if self._sigma is None:
+            breakpoint()
 
     def _update_A(self, C):
         if np.any(np.isinf(C)):
