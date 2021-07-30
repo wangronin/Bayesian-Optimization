@@ -247,6 +247,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.wait_iter = wait_iter
         self.eval_budget = eval_budget
 
+        self.nugget = nugget
         self.noise_var = np.atleast_1d(nugget) if nugget else 0
         self.noise_estim = noise_estim
         self.noisy = self.noise_var or self.noise_estim
