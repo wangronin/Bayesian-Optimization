@@ -243,17 +243,19 @@ class MGFI(ImprovementBased):
             y_dx, sd2_dx = self._gradient(X)
             sd_dx = sd2_dx / (2.0 * sd)
 
-            try:
-                term = exp(self._t * (self._plugin + self._t * sd ** 2.0 / 2 - y_hat - 1))
-                m_prime_dx = y_dx - 2.0 * self._t * sd * sd_dx
-                beta_p_dx = -(m_prime_dx + beta_p * sd_dx) / sd
+            with warnings.catch_warnings():
+                warnings.filterwarnings("error")
+                try:
+                    term = exp(self._t * (self._plugin + self._t * sd ** 2.0 / 2 - y_hat - 1))
+                    m_prime_dx = y_dx - 2.0 * self._t * sd * sd_dx
+                    beta_p_dx = -(m_prime_dx + beta_p * sd_dx) / sd
 
-                f_dx = term * (
-                    norm.pdf(beta_p) * beta_p_dx
-                    + norm.cdf(beta_p) * ((self._t ** 2) * sd * sd_dx - self._t * y_dx)
-                )
-            except Exception:
-                f_dx = np.zeros((len(X[0]), 1))
+                    f_dx = term * (
+                        norm.pdf(beta_p) * beta_p_dx
+                        + norm.cdf(beta_p) * ((self._t ** 2) * sd * sd_dx - self._t * y_dx)
+                    )
+                except Exception:
+                    f_dx = np.zeros((len(X[0]), 1))
             return f_, f_dx
         return f_
 

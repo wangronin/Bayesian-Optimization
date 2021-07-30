@@ -69,9 +69,8 @@ def test_pickling():
 def test_homogenous(var_type):
     dim = 5
 
-    def fitness(x):
-        x = np.asarray(x)
-        return np.sum(x ** 2)
+    def fitness(_):
+        return np.random.rand()
 
     if var_type == "r":
         lb, ub = -1, 5

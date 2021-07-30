@@ -95,7 +95,7 @@ class RandomForest(RandomForestRegressor):
 
         # for categorical levels/variable number
         # in the future, maybe implement binary/multi-value split
-        if self.levels is not None:
+        if self.levels:
             self._levels = OrderedDict(sorted(levels.items()))
             self._cat_idx = list(self._levels.keys())
             self._categories = list(self._levels.values())
