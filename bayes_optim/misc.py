@@ -3,6 +3,7 @@ import os
 import random
 import re
 import string
+import sys
 from copy import copy
 
 import numpy as np
@@ -208,11 +209,39 @@ class LoggerFormatter(logging.Formatter):
         return fmt
 
 
-def random_string(k=15):
-    return "".join(random.choices(string.ascii_letters + string.digits, k=15))
+def get_logger(logger_id: str, logger_file: str = None, console: bool = False) -> logging.Logger:
+    # TODO: perhaps also add verbosity level to file asnd console output
+    # NOTE: logging.getLogger create new instance based on `name`
+    # no new instance will be created if the same name is provided
+    logger = logging.getLogger(logger_id)
+    logger.setLevel(logging.DEBUG)
+    fmt = LoggerFormatter()
+
+    # create console handler and set level to the vebosity
+    SH = list(filter(lambda h: isinstance(h, logging.StreamHandler), logger.handlers))
+    if console and len(SH) == 0:
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setLevel(logging.INFO)
+        sh.setFormatter(fmt)
+        logger.addHandler(sh)
+
+    # create file handler and set level to debug
+    FH = list(filter(lambda h: isinstance(h, logging.FileHandler), logger.handlers))
+    if logger_file is not None and logger_file not in [h.baseFilename for h in FH]:
+        fh = logging.FileHandler(logger_file)
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(fmt)
+        logger.addHandler(fh)
+
+    logger.propagate = False
+    return logger
 
 
-def expand_replace(s):
+def random_string(k: int = 15):
+    return "".join(random.choices(string.ascii_letters + string.digits, k=k))
+
+
+def expand_replace(s: str):
     m = re.match(r"${.*}", s)
     for _ in m.group():
         s.replace(_, os.path.expandvars(_))

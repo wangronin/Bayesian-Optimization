@@ -15,8 +15,7 @@ from ..solution import Solution
 
 __authors__ = ["Hao Wang"]
 
-# TODO: implement multi-output/objetive surrogate models, better to model the c
-# orrelation among targets
+
 class SurrogateAggregation(object):
     """Linear aggregation of surrogate models used for multi-obvjective optimization"""
 
@@ -153,6 +152,7 @@ class RandomForest(RandomForestRegressor):
             for i, e in enumerate(self.estimators_)
         )
         y_hat = np.mean(y_hat_all, axis=-1)
+
         if eval_MSE:
             # TODO: implement the jackknife estimate of variance
             MSE_hat = np.std(y_hat_all, axis=-1, ddof=1) ** 2.0
