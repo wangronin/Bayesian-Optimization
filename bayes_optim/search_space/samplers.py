@@ -6,6 +6,7 @@ from typing import Callable, Tuple
 import numpy as np
 import torch
 from gpytorch.distributions import MultivariateNormal
+
 # from scipy.optimize import root_scalar
 from scipy.stats import norm
 from torch import Tensor
@@ -32,8 +33,8 @@ class SCMC:
         self,
         sample_space,
         constraints: Callable,
-        target_dist: Callable = lambda x: 1,
-        metropolis_hastings_step: int = 15,
+        target_dist: Callable = lambda _: 1,
+        metropolis_hastings_step: int = 17,
         tol: float = 1e-2,
     ):
         """Sequential Constrained Monte Carlo sampling
@@ -63,7 +64,7 @@ class SCMC:
         self.nu_target = tol / 8  # 8-sigma CI leads to ~1.24e-15 significance
         self.nu0 = 10
         self.nu_schedule = np.logspace(
-            np.log10(self.nu0), np.log10(self.nu_target), base=10, num=15
+            np.log10(self.nu0), np.log10(self.nu_target), base=10, num=20
         )
 
         # index of each type of variables in the dataframe

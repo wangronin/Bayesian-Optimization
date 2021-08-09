@@ -297,11 +297,6 @@ def test_from_dict():
     assert cs.dim == 3
     assert cs.var_name[0] == "activation0"
 
-    with open("./shiny/example.json") as f:
-        data = json.load(f)
-
-    cs = SearchSpace.from_dict(data["search_param"])
-
 
 def test_update():
     cs = RealSpace([0, 5], "x") * 3

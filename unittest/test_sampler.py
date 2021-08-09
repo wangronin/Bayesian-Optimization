@@ -33,6 +33,7 @@ def test_SCMC():
         tol=1e-1,
     )
     X = sampler.sample(10)
+
     assert all([np.all(np.isclose(h(x), 0, atol=1e-1)) for x in X])
     assert all([np.all(g(x) <= 0) for x in X])
 
