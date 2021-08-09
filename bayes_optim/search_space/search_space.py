@@ -622,6 +622,8 @@ class SearchSpace:
                 _vars = [Ordinal(bounds, name=k, default_value=default_value) for _ in N]
             elif v["type"] in ["c", "cat"]:  # category-valued parameter
                 _vars = [Discrete(bounds, name=k, default_value=default_value) for _ in N]
+            elif v["type"] in ["s", "subset"]:  # subset parameter
+                _vars = [Subset(bounds, name=k, default_value=default_value) for _ in N]
             elif v["type"] in ["b", "bool"]:  # Boolean-valued
                 _vars = [Bool(name=k, default_value=default_value) for _ in N]
             variables += _vars
@@ -729,7 +731,7 @@ class SubsetSpace(_DiscreteSpace):
     def __init__(
         self,
         bounds: List,
-        var_name: Union[str, List[str]] = "subset-discrete",
+        var_name: Union[str, List[str]] = "subset",
         default_value: Union[int, List[int]] = None,
         **kwargs,
     ):

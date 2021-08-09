@@ -12,6 +12,8 @@ from bayes_optim.search_space import (
     Real,
     RealSpace,
     SearchSpace,
+    Subset,
+    SubsetSpace,
     Variable,
 )
 from bayes_optim.solution import Solution
@@ -316,6 +318,13 @@ def test_filter():
     cs *= 2
     assert cs.filter(["x1"]).var_name == ["x1"]
     assert "x1" not in cs.filter(["x1"], invert=True).var_name
+
+
+def test_subset():
+    x = SubsetSpace(["a", "b", "c", "d"]) * 2
+    x.sample(10)
+    xx = Subset(["a", "b", "c", "d"])
+    xx.sample(10)
 
 
 def test_node():

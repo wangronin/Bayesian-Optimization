@@ -265,10 +265,17 @@ class Subset(Discrete):
     """A discrete variable created by enumerating all subsets of the input `bounds`"""
 
     def __init__(self, bounds, name: str = "s", default_value: Union[int, str] = None, **kwargs):
+        self._bounds = bounds
         bounds = list(
             chain.from_iterable(map(lambda r: combinations(bounds, r), range(1, len(bounds) + 1)))
         )
         super().__init__(bounds, name, default_value, **kwargs)
+
+    def __str__(self):
+        msg = f"{self.name} -> {type(self).__name__} | range: 2 ^ {self._bounds}"
+        if self.default_value is not None:
+            msg += f" | default: {self.default_value}"
+        return msg
 
 
 class Ordinal(_Discrete):

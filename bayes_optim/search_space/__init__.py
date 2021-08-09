@@ -6,6 +6,7 @@ from .search_space import (
     OrdinalSpace,
     RealSpace,
     SearchSpace,
+    SubsetSpace,
 )
 from .variable import Bool, Discrete, Integer, Ordinal, Real, Subset, Variable
 
@@ -23,5 +24,6 @@ __all__ = [
     "Ordinal",
     "Bool",
     "Subset",
+    "SubsetSpace",
     "Variable",
 ]
