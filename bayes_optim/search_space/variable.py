@@ -12,7 +12,7 @@ import numpy as np
 from numpy.random import randint
 from scipy.special import logit
 
-__authors__ = "Hao Wang"
+__authors__ = ["Hao Wang"]
 
 MAX = sys.float_info.max
 TRANS = {
