@@ -1,19 +1,25 @@
-name: test
-displayName: 'Build and Test '
-triggers:                                # 流水线触发器配置
-  push:                                  # 设置 master 分支 在产生代码 push 时精确触发（PRECISE）构建
-    - matchType: PRECISE
-      branch: main
-commitMessage: ''                        # 通过匹配当前提交的 CommitMessage 决定是否执行流水线
-stages:                                  # 构建阶段配置
-  - stage:                               # 定义一个 ID 标识为 python-build-stage ,名为 “Python Stage” 的阶段
-      name: build
-      displayName: 'Build Stage'
-      failFast: false                    # 允许快速失败，即当 Stage 中有任务失败时，直接结束整个 Stage
-        - step: pythonbuild@1            # 采用 Maven 编译环境
-          name: python-test
-          displayName: 'Python Test'
-          inputs:                        # 构建输入参数设定
-            pythonVersion: 3.7
-            goals:
-                "pip install -r requirements.txt"
+name: Build and Test
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.6, 3.7, 3.8]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Test with pytest
+        run: |
+          cd unittest
+          pytest -v
