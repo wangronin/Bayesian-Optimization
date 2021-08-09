@@ -71,7 +71,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
 
         search_param = data["search_param"]
         bo_param = data["bo_param"]
-
+        breakpoint()
         search_space = SearchSpace.from_dict(search_param)
         n_obj = bo_param["n_obj"]
 
@@ -238,7 +238,7 @@ class RemoteBO(BaseHTTPRequestHandler, object):
             elif "check_job" in data:
                 self._check_job(rsp_data)
             elif "finalize" in data:
-                self._finalize(data, rsp_data)
+                self._finalize(data)
         except Exception as ex:
             self._handle_exception(ex, rsp_data)
 

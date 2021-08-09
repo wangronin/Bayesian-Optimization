@@ -40,11 +40,11 @@ class BaseBO(ABC):
     def __init__(
         self,
         search_space: SearchSpace,
-        obj_fun: Callable,
-        parallel_obj_fun: Callable = None,
-        eq_fun: Callable = None,
-        ineq_fun: Callable = None,
-        model: Optional[Any] = None,  # TODO: regulate the type for `model`
+        obj_fun: Optional[Callable] = None,
+        parallel_obj_fun: Optional[Callable] = None,
+        eq_fun: Optional[Callable] = None,
+        ineq_fun: Optional[Callable] = None,
+        model: Optional[Any] = None,
         eval_type: str = "list",
         DoE_size: Optional[int] = None,
         warm_data: Tuple = (),

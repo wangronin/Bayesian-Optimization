@@ -6,13 +6,12 @@ from typing import Callable, Tuple
 import numpy as np
 import torch
 from gpytorch.distributions import MultivariateNormal
-
 # from scipy.optimize import root_scalar
 from scipy.stats import norm
 from torch import Tensor
 from torch.nn import Module
 
-from ._exception import ConstraintEvaluationError
+from .._exception import ConstraintEvaluationError
 
 __author__ = "Hao Wang"
 

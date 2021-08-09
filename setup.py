@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="bayes-optim",
-    version="0.2.4",
+    version="0.2.5",
     author="Hao Wang",
     author_email="wangronin@gmail.com",
     packages=find_packages(),

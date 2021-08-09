@@ -8,6 +8,7 @@ from bayes_optim.search_space import (
     DiscreteSpace,
     Integer,
     IntegerSpace,
+    Node,
     Real,
     RealSpace,
     SearchSpace,
@@ -34,7 +35,7 @@ def test_real_warning():
 
 def test_SearchSpace_var_name():
     cs = (
-        RealSpace([1e-10, 1e-1], "x", 7, scale="log")
+        RealSpace([1e-10, 1e-1], "x", 1e-3, scale="log")
         + IntegerSpace([-10, 10], "y")
         + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
     )
@@ -88,7 +89,7 @@ def test_sample_with_constraints():
 
 def test_SearchSpace_remove():
     cs = (
-        RealSpace([1e-10, 1e-1], "x", 7, scale="log")
+        RealSpace([1e-10, 1e-1], "x", 1e-3, scale="log")
         + IntegerSpace([-10, 10], "y")
         + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
     )
@@ -184,7 +185,7 @@ def test_SearchSpace_slice():
 
 def test_sample():
     cs = (
-        RealSpace([1e-10, 1e-1], "x", 7, scale="log")
+        RealSpace([1e-10, 1e-1], "x", 1e-3, scale="log")
         + IntegerSpace([-10, 10], "y")
         + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
     )
@@ -257,7 +258,7 @@ def test_precision():
 
 def test_iter():
     cs = (
-        RealSpace([1e-10, 1e-1], "x", 7, scale="log")
+        RealSpace([1e-10, 1e-1], "x", 1e-3, scale="log")
         + IntegerSpace([-10, 10], "y")
         + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
     )
@@ -304,3 +305,49 @@ def test_update():
     assert "y" in cs.var_name
     assert cs[[1]].data[0].bounds[0] == -100
     assert cs[[1]].data[0].bounds[1] == 100
+
+
+def test_filter():
+    cs = (
+        RealSpace([1e-10, 1e-1], "x", 0.01, scale="log")
+        + IntegerSpace([-10, 10], "y")
+        + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
+    )
+    cs *= 2
+    assert cs.filter(["x1"]).var_name == ["x1"]
+    assert "x1" not in cs.filter(["x1"], invert=True).var_name
+
+
+def test_node():
+
+    info = {
+        "ccc2": [{"name": "cccc", "condition": "ccc2 == 2"}],
+        "c1": [
+            {"name": "cc1", "condition": "c1 == 1"},
+            {"name": "cc2", "condition": "c1 == 10"},
+        ],
+        "p1": [
+            {"name": "c1", "condition": "p1 == 1"},
+            {"name": "c2", "condition": "p1 == 2"},
+            {"name": "c3", "condition": "p1 == 3"},
+        ],
+        "cc2": [
+            {"name": "ccc1", "condition": "cc2 == 1"},
+            {"name": "ccc2", "condition": "cc2 == 2"},
+        ],
+        "p2": [{"name": "a", "condition": "p2 == 'a'"}, {"name": "b", "condition": "p2 == 'b'"}],
+    }
+    root = Node.from_dict(info)
+    assert root[0].name == "p1"
+    assert root[1].name == "p2"
+
+    # print(root[0].get_all_path())
+
+
+# def test_condition():
+#     import string
+#     v = Real([0, 5], "x", conditions="y == 'A'")
+#     breakpoint()
+#     cs = SearchSpace(
+#         [Real([0, 5], "x", conditions="`y` == 'A'"), Discrete(list(string.ascii_uppercase), "y")]
+#     )

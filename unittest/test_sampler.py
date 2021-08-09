@@ -1,6 +1,6 @@
 import numpy as np
 from bayes_optim import DiscreteSpace, IntegerSpace, RealSpace
-from bayes_optim.samplers import SCMC
+from bayes_optim.search_space.samplers import SCMC
 
 search_space = (
     RealSpace([-5, 5]) * 2 + DiscreteSpace(["A", "B", "C", "D"]) + IntegerSpace([1, 10]) * 2
