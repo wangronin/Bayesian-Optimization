@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, List
 
-from py_expression_eval import Parser
+# from py_expression_eval import Parser
 
 
 class Node:
