@@ -1,7 +1,10 @@
+import sys
+
 import numpy as np
+
+sys.path.insert(0, "../")
 from bayes_optim.acquisition_optim import MIES, OnePlusOne_Cholesky_CMA
-from bayes_optim.search_space import (Bool, Discrete, Integer, Ordinal, Real,
-                                      RealSpace, SearchSpace)
+from bayes_optim.search_space import Bool, Discrete, Integer, Ordinal, Real, RealSpace, SearchSpace
 
 
 def obj_fun_min(x):

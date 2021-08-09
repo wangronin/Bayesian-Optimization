@@ -1,17 +1,14 @@
 import os
 import string
+import sys
 
+sys.path.insert(0, "../")
 import numpy as np
 import pytest
 from bayes_optim import BO, ParallelBO
 from bayes_optim._exception import AskEmptyError, FlatFitnessError
-from bayes_optim.search_space import (
-    BoolSpace,
-    DiscreteSpace,
-    IntegerSpace,
-    OrdinalSpace,
-    RealSpace,
-)
+from bayes_optim.search_space import (BoolSpace, DiscreteSpace, IntegerSpace,
+                                      OrdinalSpace, RealSpace)
 from bayes_optim.surrogate import GaussianProcess, RandomForest, trend
 
 np.random.seed(123)
