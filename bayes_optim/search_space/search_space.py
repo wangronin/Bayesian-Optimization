@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import ast
+import functools
+import itertools
 import json
 from collections import Counter
 from copy import copy, deepcopy
-from itertools import chain, combinations
+from itertools import chain
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -18,6 +21,8 @@ from .samplers import SCMC
 from .variable import Bool, Discrete, Integer, Ordinal, Real, Subset, Variable
 
 __authors__ = "Hao Wang"
+
+_reduce = lambda iterable: functools.reduce(lambda a, b: a + b, iterable)
 
 
 class SearchSpace:
@@ -57,7 +62,12 @@ class SearchSpace:
 
     _supported_types = (Real, Integer, Ordinal, Discrete, Bool)
 
-    def __init__(self, data: List[Variable], random_seed: int = None, hierarchy: dict = None):
+    def __init__(
+        self,
+        data: List[Variable],
+        random_seed: int = None,
+        structure: Union[dict, List[Node]] = None,
+    ):
         """Search Space
 
         Parameters
@@ -75,9 +85,8 @@ class SearchSpace:
 
         self.random_seed: int = random_seed
         self._set_data(data)
+        self.__set_structure(structure)
         SearchSpace.__set_type(self)
-        self.structure = hierarchy
-        self.__set_conditions()
 
     @property
     def var_name(self):
@@ -152,37 +161,33 @@ class SearchSpace:
                 for i, k in enumerate(idx):
                     data[k].name = _names[i]
 
-    @property
-    def structure(self):
-        return self._structure
-
-    @structure.setter
-    def structure(self, hierarchy: dict):
-        if hierarchy:
-            self._structure = Node.from_dict(hierarchy)
-        else:
-            pass
+    def __set_structure(self, structure: Union[dict, List[Node]] = None):
+        if structure is None:
+            structure = dict()
+            for var in self.data:
+                if var.conditions is None:
+                    continue
+                # TODO: support more dependent variables in the condition
+                key = var.conditions["vars"][0]
+                if key not in var.conditions["vars"]:
+                    raise ValueError(f"variable {var} not in {self}")
+                structure.setdefault(key, []).append(
+                    {"name": var.name, "condition": var.conditions["string"]}
+                )
+            self.structure = Node.from_dict(structure)
+        # a list of tree/nodes
+        elif isinstance(structure, list) and all([isinstance(t, Node) for t in structure]):
+            self.structure = [tree.remove(self.var_name, invert=True) for tree in structure]
+        elif isinstance(structure, dict):  # dictionary input
+            self.structure = [
+                tree.remove(self.var_name, invert=True) for tree in Node.from_dict(structure)
+            ]
 
     @staticmethod
     def __set_type(obj: SearchSpace) -> SearchSpace:
         _type = np.unique(obj.var_type)
-        if len(_type) == 1:
-            obj.__class__ = eval(_type[0] + "Space")
-        else:
-            obj.__class__ = SearchSpace
+        obj.__class__ = eval(_type[0] + "Space") if len(_type) == 1 else SearchSpace
         return obj
-
-    def __set_conditions(self):
-        # TODO: perhaps implement a `conditions` property (list of all conditions)
-        # TODO: to validate the conditions specified in variables
-        # TODO: add conditions when the prefix of some variables appears (conditional parameters)
-        for var in self.data:
-            if var.conditions is not None:
-                pre, _, __ = var.name.rpartition(".")
-                if pre:
-                    for i, var_name in enumerate(var.var_in_conditions):
-                        if not var_name.startswith(pre):
-                            var.var_in_conditions[i] = pre + "." + var_name
 
     def _set_data(self, data):
         """Sanity check on the input data and set the auxiliary variables"""
@@ -241,6 +246,7 @@ class SearchSpace:
             out = data
         elif isinstance(data, list):
             out = SearchSpace(data, self.random_seed)
+            # getattr(out, "__set_structure")(self.structure)
         return out
 
     def __setitem__(self, index, value):
@@ -297,7 +303,10 @@ class SearchSpace:
         # NOTE: the random seed of `self` has the priority
         random_seed = self.random_seed if self.random_seed else space.random_seed
         data = deepcopy(self.data) + space.data
-        return SearchSpace(data, random_seed)
+        structure = [t.deepcopy() for t in self.structure] + [
+            t.deepcopy() for t in space.structure
+        ]
+        return SearchSpace(data, random_seed, structure)
 
     def __radd__(self, space) -> SearchSpace:
         return self.__add__(space)
@@ -315,7 +324,9 @@ class SearchSpace:
         _res = set(self.var_name) - set(space.var_name)
         _index = [self.var_name.index(_) for _ in _res]
         data = [copy(self.data[i]) for i in range(self.dim) if i in _index]
-        return SearchSpace(data, random_seed)
+        cs = SearchSpace(data, random_seed)
+        # getattr(cs, "__set_structure")(self.structure)
+        return cs
 
     def __rsub__(self, space) -> SearchSpace:
         return self.__sub__(space)
@@ -342,7 +353,9 @@ class SearchSpace:
             a copy of replicated `self`
         """
         data = [deepcopy(var) for _ in range(max(1, int(N))) for var in self.data]
-        obj = SearchSpace(data, self.random_seed)
+        # TODO: this is not working yet..
+        structure = [t.deepcopy() for _ in range(max(1, int(N))) for t in self.structure]
+        obj = SearchSpace(data, self.random_seed, structure)
         obj.__class__ = type(self)
         return obj
 
@@ -376,6 +389,13 @@ class SearchSpace:
             msg += str(var) + "\n"
         return msg
 
+    def pprint(self):
+        if self.structure:
+            for root in self.structure:
+                root.pprint(data={k: self[k] for k in self.var_name})
+        else:
+            print(self.__str__())
+
     def filter(self, keys: List[str], invert=False) -> SearchSpace:
         """filter a search space based on a list of variable names
 
@@ -400,14 +420,15 @@ class SearchSpace:
             return args[0]
 
         assert isinstance(args[0], SearchSpace)
-        data = list(chain.from_iterable([deepcopy(_.data) for _ in args]))
-        return SearchSpace(data)
+        data = list(chain.from_iterable([deepcopy(cs.data) for cs in args]))
+        structure = [t.deepcopy() for cs in args for t in cs.structure]
+        return SearchSpace(data, structure=structure)
 
     def pop(self, index: int = -1) -> Variable:
         value = self.data.pop(index)
         self._set_data(self.data)
+        self.__set_structure(self.structure)
         SearchSpace.__set_type(self)
-        self.__set_conditions()
         return value
 
     def remove(self, index: Union[int, str]) -> SearchSpace:
@@ -423,13 +444,13 @@ class SearchSpace:
 
         self.data.pop(_index)
         self._set_data(self.data)
-        self.__set_conditions()
+        self.__set_structure(self.structure)
         return SearchSpace.__set_type(self)
 
     def update(self, space: SearchSpace) -> SearchSpace:
         """Update the search space based on the var_name of the input search space,
         which behaves similarly to the dictionary update. Please note its difference
-        to ``self.__add__``
+        to ``self.__add__``. This function will not update the structure of the search space.
 
         Parameters
         ----------
@@ -646,11 +667,33 @@ class SearchSpace:
         with open(file, "r") as f:
             return cls.from_dict(json.load(f))
 
-    def pprint(self):
-        print(str(self))
+    def get_unconditional_subspace(self) -> List[Tuple[dict, SearchSpace]]:
+        """get all unconditional subspaces"""
         if self.structure:
-            for root in self.structure:
-                root.pprint()
+            # all variables in the conditional structure
+            _var = _reduce([t.get_all_name() for t in self.structure])
+            # remaining variables not affected by conditions
+            isolated_var = [self[v] for v in set(self.var_name) - set(_var)]
+            out, d = list(), dict()
+            # all paths in the conditional tree
+            paths = [list(root.get_all_path().items()) for root in self.structure]
+            idx = [list(range(len(_))) for _ in paths]
+            # get all combinations of paths from all trees
+            for item in itertools.product(*idx):
+                condition = _reduce([paths[i][k][0] for i, k in enumerate(item)])
+                variables = _reduce([paths[i][k][1] for i, k in enumerate(item)])
+                d[condition] = variables
+            # create all unconditional subspaces
+            for condition, var in d.items():
+                key = {
+                    t.body[0].value.left.id: t.body[0].value.comparators[0].value
+                    for t in map(ast.parse, condition)
+                }
+                out.append((key, SearchSpace(isolated_var + [self[v] for v in var])))
+            # TODO: consider the case where selector/conditioning variable has other values
+        else:
+            out = [({}, self)]
+        return out
 
 
 class RealSpace(SearchSpace):

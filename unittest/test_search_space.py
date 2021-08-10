@@ -1,4 +1,3 @@
-import json
 import re
 import sys
 
@@ -7,6 +6,7 @@ sys.path.insert(0, "../")
 import numpy as np
 import pytest
 from bayes_optim.search_space import (
+    Bool,
     Discrete,
     DiscreteSpace,
     Integer,
@@ -326,7 +326,6 @@ def test_subset():
 
 
 def test_node():
-
     info = {
         "ccc2": [{"name": "cccc", "condition": "ccc2 == 2"}],
         "c1": [
@@ -344,17 +343,71 @@ def test_node():
         ],
         "p2": [{"name": "a", "condition": "p2 == 'a'"}, {"name": "b", "condition": "p2 == 'b'"}],
     }
-    root = Node.from_dict(info)
-    assert root[0].name == "p1"
-    assert root[1].name == "p2"
+    roots = Node.from_dict(info)
+    assert roots[0].name == "p1"
+    assert roots[1].name == "p2"
 
-    # print(root[0].get_all_path())
+    root = roots[0]
+    print(root.pprint())
+    print(root.get_all_path())
 
 
-# def test_condition():
-#     import string
-#     v = Real([0, 5], "x", conditions="y == 'A'")
-#     breakpoint()
-#     cs = SearchSpace(
-#         [Real([0, 5], "x", conditions="`y` == 'A'"), Discrete(list(string.ascii_uppercase), "y")]
-#     )
+def test_condition():
+    structure = {
+        "z2": [{"name": "q", "condition": "z2 == 3.14"}],
+        "y1": [
+            {"name": "z1", "condition": "y1 == 'A'"},
+            {"name": "z2", "condition": "y1 == 'B'"},
+        ],
+        "x": [
+            {"name": "y1", "condition": "x == 1"},
+            {"name": "y2", "condition": "x == 2"},
+            {"name": "y3", "condition": "x == 3"},
+        ],
+        "x1": [{"name": "a", "condition": "x1 == 3"}, {"name": "b", "condition": "x1 == 2"}],
+    }
+    cs = SearchSpace(
+        [
+            Integer([0, 5], "x"),
+            Discrete(["A", "B", "C"], "y1"),
+            Discrete(["A", "B", "C"], "y2"),
+            Discrete(["A", "B", "C"], "y3"),
+            Real([-5, 5], "z1"),
+            Real([-5, 5], "z2"),
+            Bool("q"),
+            Integer([0, 5], "x1"),
+            Real([-5, 5], "a"),
+            Real([-5, 5], "b"),
+            Real([-5, 5], "xx"),
+            Real([-5, 5], "yy"),
+            Real([-5, 5], "zz"),
+        ],
+        structure=structure,
+    )
+    subcs = cs.get_unconditional_subspace()
+    assert len(subcs) == 8
+
+
+def test_condition2():
+    cs = SearchSpace(
+        [
+            Integer([0, 5], "x"),
+            Discrete(["A", "B", "C"], "y1", conditions="x == 1"),
+            Discrete(["A", "B", "C"], "y2", conditions="x == 2"),
+            Discrete(["A", "B", "C"], "y3", conditions="x == 3"),
+            Real([-5, 5], "z1", conditions="y1 == 'A'"),
+            Real([-5, 5], "z2", conditions="y1 == 'B'"),
+            Bool("q", conditions="z1 == 3.14"),
+            Integer([0, 5], "x1"),
+            Real([-5, 5], "a", conditions="x1 == 3"),
+            Real([-5, 5], "b", conditions="x1 == 2"),
+            Real([-5, 5], "xx"),
+            Real([-5, 5], "yy"),
+            Real([-5, 5], "zz"),
+        ],
+    )
+    subcs = cs.get_unconditional_subspace()
+    assert len(subcs) == 8
+
+
+test_condition2()

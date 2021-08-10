@@ -283,7 +283,7 @@ class BaseBO(ABC):
         self.hist_f = []
 
         if self._eval_type == "list":
-            self._to_pheno = lambda x: x.tolist()
+            self._to_pheno = lambda x: copy(x.tolist())
             self._to_geno = lambda x, index=None, n_eval=1, fitness=None: Solution(
                 x,
                 var_name=self.var_names,
@@ -293,7 +293,7 @@ class BaseBO(ABC):
                 fitness=fitness,
             )
         elif self._eval_type == "dict":
-            self._to_pheno = lambda x: x.to_dict()
+            self._to_pheno = lambda x: x.to_dict().copy()
             self._to_geno = lambda x, index=None: Solution.from_dict(
                 x, index=index, n_obj=self.n_obj
             )

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import re
 import sys
 import warnings
 from abc import ABC
-from copy import copy, deepcopy
+from copy import deepcopy
 from itertools import chain, combinations
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 from numpy.random import randint
+from py_expression_eval import Parser
 from scipy.special import logit
 
 __authors__ = ["Hao Wang"]
@@ -81,7 +81,7 @@ class Variable(ABC):
             msg += f" | default: {self.default_value}"
         return msg
 
-    def __contains__(self, x: Union[float, str, object]) -> bool:
+    def __contains__(self, _: Union[float, str, object]) -> bool:
         pass
 
     def __eq__(self, var: Variable) -> bool:
@@ -90,13 +90,19 @@ class Variable(ABC):
             and self.bounds == var.bounds
             and self.default_value == var.default_value
             and self.name == var.name
-            and self._conditions == var._conditions
-        )  # TODO: verify this!
+            # and self.conditions["string"] == var.conditions["string"]
+            # and self.action == var.action
+        )
 
     def __ne__(self, var: Variable) -> bool:
         return not self.__eq__(var)
 
     def copyfrom(self, var: Variable):
+        """copy from another variable of the same type"""
+        if not isinstance(var, type(self)):
+            raise TypeError(
+                f"copying from variable {var} which has a type different type than {type(self)}"
+            )
         self.__dict__.update(**deepcopy(var.__dict__))
 
     def set_default_value(self, value):
@@ -106,30 +112,16 @@ class Variable(ABC):
         self.default_value = value
 
     def add_conditions(self, conditions: str, action: Union[callable, int, float, str]):
-        self._conditions = None
+        self.conditions = None
         if conditions is not None:
-            self.var_in_conditions = re.findall(r"`([^`]*)`", conditions)
-            for i, var_name in enumerate(self.var_in_conditions):
-                conditions = conditions.replace(f"`{var_name}`", f"#{i}")
-            self._conditions = conditions
+            # TODO: add parsing exceptions here
+            expr = Parser().parse(conditions)
+            self.conditions = {"string": conditions, "expr": expr, "vars": expr.variables()}
 
         if isinstance(action, (int, float, str)):
-            self._action = lambda x: action
+            self.action = lambda _: action
         elif hasattr(action, "__call__"):
-            self._action = action
-
-    @property
-    def conditions(self):
-        if self._conditions is None:
-            return None
-        out = copy(self._conditions)
-        for i, var_name in enumerate(self.var_in_conditions):
-            out = out.replace(f"#{i}", f"{var_name}")
-        return out
-
-    @property
-    def action(self):
-        return self._action
+            self.action = action
 
 
 class Real(Variable):
@@ -248,7 +240,7 @@ class _Discrete(Variable):
     def __hash__(self):
         return hash((self.name, self.bounds, self.default_value))
 
-    def sample(self, N: int = 1, **kwargs) -> List:
+    def sample(self, N: int = 1, **_) -> List:
         return list(map(self._map_func, randint(0, self._size, N)))
 
 

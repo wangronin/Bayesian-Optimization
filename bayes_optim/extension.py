@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 from copy import copy, deepcopy
-from typing import Callable, Dict, List, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -13,7 +13,8 @@ from sklearn.metrics import mean_absolute_percentage_error, r2_score
 from . import acquisition_fun as AcquisitionFunction
 from .bayes_opt import BO, ParallelBO
 from .search_space import RealSpace, SearchSpace
-from .surrogate import GaussianProcess
+from .surrogate import GaussianProcess, RandomForest
+from .utils import timeit
 
 
 class LinearTransform(PCA):
@@ -199,6 +200,104 @@ class PCABO(BO):
         r2 = r2_score(y_, y_hat)
         MAPE = mean_absolute_percentage_error(y_, y_hat)
         self.logger.info(f"model r2: {r2}, MAPE: {MAPE}")
+
+
+class ConditionalBO(ParallelBO):
+    def __init__(
+        self,
+        search_space: List[Tuple[dict, SearchSpace]],
+        obj_fun: Optional[Callable] = None,
+        parallel_obj_fun: Optional[Callable] = None,
+        DoE_size: int = 1,
+        n_point: int = 1,
+        ftarget: Optional[float] = None,
+        max_FEs: Optional[int] = None,
+        verbose: bool = False,
+        n_job: int = 1,
+        *args,
+        **kwargs,
+    ):
+        self.obj_fun = obj_fun
+        self.n_job = n_job
+        self.parallel_obj_fun = parallel_obj_fun
+        self.subspaces = search_space
+        self.n_subspace = len(self.subspaces)
+        self._DoE_size = DoE_size
+        self.ftarget = ftarget
+        self.max_FEs = max_FEs
+        self.n_point = n_point
+        self._bo = [
+            BO(
+                search_space=cs,
+                DoE_size=1,
+                n_point=1,
+                eval_type="dict",
+                model=RandomForest(levels=cs.levels),
+                *args,
+                **kwargs,
+            )
+            for _, cs in self.subspaces
+        ]
+        self._init_gen = iter(zip(range(self.n_subspace), self._bo))
+        self._fixed_vars = [d for d, _ in self.subspaces]
+        self._ucb = np.zeros(self.n_subspace)
+        self.eval_count = 0
+        self.iter_count = 0
+        self.stop_dict = {}
+        self.verbose = verbose
+        self.instance_name = None
+        self.logger = None
+
+    def select_subspace(self, n_point: int) -> List[int]:
+        return np.random.choice(self.n_subspace, n_point)
+
+    @timeit
+    def ask(
+        self, n_point: int = None, fixed: Dict[str, Union[float, int, str]] = None
+    ) -> Union[List[list], List[dict]]:
+        n_point = self.n_point if n_point is None else n_point
+        X, _bo, idx = [], [], []
+        for _ in range(n_point):
+            try:
+                _bo.append(next(self._init_gen))
+            except StopIteration:
+                break
+        if _bo:
+            _idx, _bo = list(zip(*_bo))
+            idx += list(_idx)
+            X += [o.ask()[0] for o in _bo]
+            n_point -= len(idx)
+
+        if n_point > 0:
+            _idx = self.select_subspace(n_point=n_point)
+            idx += _idx.tolist()
+            X += [self._bo[i].ask()[0] for i in _idx]
+
+        for i, k in enumerate(idx):
+            X[i].update(self._fixed_vars[k])
+
+        self.idx = idx
+        return X
+
+    @timeit
+    def tell(self, X: List[Union[list, dict]], func_vals: List[Union[float, list]], **kwargs):
+        """Tell the BO about the function values of proposed candidate solutions
+
+        Parameters
+        ----------
+        X : List of Lists or Solution
+            The candidate solutions which are usually proposed by the `self.ask` function
+        func_vals : List/np.ndarray of reals
+            The corresponding function values
+        """
+        assert len(self.idx) == len(X)
+        self.eval_count += len(X)
+        self.iter_count += 1
+        for i, k in enumerate(self.idx):
+            x = X[i]
+            for key, _ in self._fixed_vars[k].items():
+                x.pop(key)
+            self._bo[i].tell([x], [func_vals[i]], **kwargs)
 
 
 class MultiAcquisitionBO(ParallelBO):
