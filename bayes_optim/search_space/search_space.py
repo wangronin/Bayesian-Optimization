@@ -184,6 +184,7 @@ class SearchSpace:
                 {"name": var.name, "condition": var.conditions["string"]}
             )
         self.structure = [t.remove(self.var_name, invert=True) for t in Node.from_dict(_structure)]
+        self.structure = [t for t in self.structure if t]
 
     @staticmethod
     def __set_type(obj: SearchSpace) -> SearchSpace:
