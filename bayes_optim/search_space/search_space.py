@@ -60,7 +60,7 @@ class SearchSpace:
             the corresponding discrete variable serves as the dictionary key.
     """
 
-    _supported_types = (Real, Integer, Ordinal, Discrete, Bool)
+    _supported_types = (Real, Integer, Ordinal, Discrete, Bool, Subset)
 
     def __init__(
         self,
@@ -163,25 +163,27 @@ class SearchSpace:
 
     def __set_structure(self, structure: Union[dict, List[Node]] = None):
         if structure is None:
-            structure = dict()
-            for var in self.data:
-                if var.conditions is None:
-                    continue
-                # TODO: support more dependent variables in the condition
-                key = var.conditions["vars"][0]
-                if key not in var.conditions["vars"]:
-                    raise ValueError(f"variable {var} not in {self}")
-                structure.setdefault(key, []).append(
-                    {"name": var.name, "condition": var.conditions["string"]}
-                )
-            self.structure = Node.from_dict(structure)
+            _structure = dict()
         # a list of tree/nodes
         elif isinstance(structure, list) and all([isinstance(t, Node) for t in structure]):
-            self.structure = [tree.remove(self.var_name, invert=True) for tree in structure]
-        elif isinstance(structure, dict):  # dictionary input
-            self.structure = [
-                tree.remove(self.var_name, invert=True) for tree in Node.from_dict(structure)
-            ]
+            _structure = dict()
+            for t in structure:
+                _structure.update(t.to_dict())
+        elif isinstance(structure, dict):
+            _structure = structure
+
+        # scan for all conditions defined in variables
+        for var in self.data:
+            if var.conditions is None:
+                continue
+            # TODO: support more dependent variables in the condition
+            key = var.conditions["vars"][0]
+            if key not in var.conditions["vars"]:
+                raise ValueError(f"variable {var} not in {self}")
+            _structure.setdefault(key, []).append(
+                {"name": var.name, "condition": var.conditions["string"]}
+            )
+        self.structure = [t.remove(self.var_name, invert=True) for t in Node.from_dict(_structure)]
 
     @staticmethod
     def __set_type(obj: SearchSpace) -> SearchSpace:
@@ -211,9 +213,12 @@ class SearchSpace:
                 self.__dict__[attr_mask] = mask
                 self.__dict__[attr_id] = np.nonzero(mask)[0]
 
-            self.categorical_id = np.r_[self.discrete_id, self.ordinal_id, self.bool_id]
+            self.categorical_id = np.r_[
+                self.discrete_id, self.ordinal_id, self.bool_id, self.subset_id
+            ]
             self.categorical_mask = np.bitwise_or(
-                self.bool_mask, np.bitwise_or(self.discrete_mask, self.ordinal_mask)
+                self.bool_mask,
+                np.bitwise_or(self.discrete_mask, self.ordinal_mask, self.subset_mask),
             )
 
     def _set_levels(self):

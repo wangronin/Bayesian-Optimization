@@ -654,7 +654,7 @@ class BaseBO(ABC):
         if self.eval_count >= self.max_FEs:
             self.stop_dict["max_FEs"] = self.eval_count
 
-        if self.ftarget is not None and hasattr(self, "xopt"):
+        if self.ftarget is not None and self.xopt is not None:
             if self._compare(self.xopt.fitness[0], self.ftarget):
                 self.stop_dict["ftarget"] = self.xopt.fitness[0]
 

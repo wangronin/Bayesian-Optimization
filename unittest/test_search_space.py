@@ -350,6 +350,7 @@ def test_node():
     root = roots[0]
     print(root.pprint())
     print(root.get_all_path())
+    print(root.to_dict())
 
 
 def test_condition():

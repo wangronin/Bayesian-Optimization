@@ -60,6 +60,16 @@ class Node:
             cls(k).add_child_from_dict(d, cache)
         return [node for _, node in cache.items() if node.is_root]
 
+    def to_dict(self) -> dict:
+        out = dict()
+        if self.children:  # an internal node
+            for i, child in enumerate(self.children):
+                out.setdefault(self.name, []).append(
+                    {"name": child.name, "condition": self.branches[i]}
+                )
+                out.update(child.to_dict())
+        return out
+
     def pprint(self, _prefix: str = "", branch: str = None, _last: bool = True, data: dict = None):
         s_branch = "`- " if _last else "|- "
         s_branch += f"<{branch}> - " if branch else ""
