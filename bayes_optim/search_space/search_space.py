@@ -85,7 +85,7 @@ class SearchSpace:
 
         self.random_seed: int = random_seed
         self._set_data(data)
-        self.__set_structure(structure)
+        self._set_structure(structure)
         SearchSpace.__set_type(self)
 
     @property
@@ -161,7 +161,7 @@ class SearchSpace:
                 for i, k in enumerate(idx):
                     data[k].name = _names[i]
 
-    def __set_structure(self, structure: Union[dict, List[Node]] = None):
+    def _set_structure(self, structure: Union[dict, List[Node]] = None):
         if structure is None:
             _structure = dict()
         # a list of tree/nodes
@@ -251,7 +251,7 @@ class SearchSpace:
             out = data
         elif isinstance(data, list):
             out = SearchSpace(data, self.random_seed)
-            # getattr(out, "__set_structure")(self.structure)
+            getattr(out, "_set_structure")(self.structure)
         return out
 
     def __setitem__(self, index, value):
@@ -330,7 +330,7 @@ class SearchSpace:
         _index = [self.var_name.index(_) for _ in _res]
         data = [copy(self.data[i]) for i in range(self.dim) if i in _index]
         cs = SearchSpace(data, random_seed)
-        # getattr(cs, "__set_structure")(self.structure)
+        getattr(cs, "_set_structure")(self.structure)
         return cs
 
     def __rsub__(self, space) -> SearchSpace:
@@ -432,7 +432,7 @@ class SearchSpace:
     def pop(self, index: int = -1) -> Variable:
         value = self.data.pop(index)
         self._set_data(self.data)
-        self.__set_structure(self.structure)
+        self._set_structure(self.structure)
         SearchSpace.__set_type(self)
         return value
 
@@ -449,7 +449,7 @@ class SearchSpace:
 
         self.data.pop(_index)
         self._set_data(self.data)
-        self.__set_structure(self.structure)
+        self._set_structure(self.structure)
         return SearchSpace.__set_type(self)
 
     def update(self, space: SearchSpace) -> SearchSpace:
