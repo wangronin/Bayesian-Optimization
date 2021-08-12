@@ -288,8 +288,9 @@ class Integer(_Discrete):
         name: str = "i",
         default_value: int = None,
         step: Optional[Union[int, float]] = 1,
+        **kwargs,
     ):
-        super().__init__(bounds, name, default_value)
+        super().__init__(bounds, name, default_value, **kwargs)
         assert len(self.bounds) == 2
         assert self.bounds[0] < self.bounds[1]
         assert all(map(lambda x: isinstance(x, (int, float)), self.bounds))

@@ -401,7 +401,7 @@ def test_condition2():
             Bool("q", conditions="z1 == 3.14"),
             Integer([0, 5], "x1"),
             Real([-5, 5], "a", conditions="x1 == 3"),
-            Real([-5, 5], "b", conditions="x1 == 2"),
+            Integer([-5, 5], "b", conditions="x1 == 2"),
             Real([-5, 5], "xx"),
             Real([-5, 5], "yy"),
             Real([-5, 5], "zz"),
@@ -409,6 +409,3 @@ def test_condition2():
     )
     subcs = cs.get_unconditional_subspace()
     assert len(subcs) == 8
-
-
-test_condition2()
