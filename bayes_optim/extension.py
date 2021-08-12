@@ -134,6 +134,11 @@ class PCABO(BO):
         )
 
     def pre_eval_check(self, X: List) -> List:
+        """Note that we do not check against duplicated point in PCA-BO since those points are
+        sampled in the reduced search space. Please check if this is intended
+        """
+        if isinstance(X, np.ndarray):
+            X = X.tolist()
         return X
 
     @property
