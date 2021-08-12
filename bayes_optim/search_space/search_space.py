@@ -627,33 +627,36 @@ class SearchSpace:
 
             N = range(int(v["N"])) if "N" in v else range(1)
             default_value = v["defualt"] if "default" in v else None
-            if v["type"] in ["r", "real"]:  # real-valued parameter
-                precision = v["precision"] if "precision" in v else None
-                scale = v["scale"] if "scale" in v else "linear"
-                _vars = [
-                    Real(
-                        bounds,
-                        name=k,
-                        default_value=default_value,
-                        precision=precision,
-                        scale=scale,
-                    )
-                    for _ in N
-                ]
-            elif v["type"] in ["i", "int", "integer"]:  # integer-valued parameter
-                _vars = [
-                    Integer(bounds, name=k, default_value=default_value, step=v.pop("step", 1))
-                    for _ in N
-                ]
-            elif v["type"] in ["o", "ordinal"]:  # ordinal parameter
-                _vars = [Ordinal(bounds, name=k, default_value=default_value) for _ in N]
-            elif v["type"] in ["c", "cat"]:  # category-valued parameter
-                _vars = [Discrete(bounds, name=k, default_value=default_value) for _ in N]
-            elif v["type"] in ["s", "subset"]:  # subset parameter
-                _vars = [Subset(bounds, name=k, default_value=default_value) for _ in N]
-            elif v["type"] in ["b", "bool"]:  # Boolean-valued
-                _vars = [Bool(name=k, default_value=default_value) for _ in N]
-            variables += _vars
+            try:
+                if v["type"] in ["r", "real"]:  # real-valued parameter
+                    precision = v["precision"] if "precision" in v else None
+                    scale = v["scale"] if "scale" in v else "linear"
+                    _vars = [
+                        Real(
+                            bounds,
+                            name=k,
+                            default_value=default_value,
+                            precision=precision,
+                            scale=scale,
+                        )
+                        for _ in N
+                    ]
+                elif v["type"] in ["i", "int", "integer"]:  # integer-valued parameter
+                    _vars = [
+                        Integer(bounds, name=k, default_value=default_value, step=v.pop("step", 1))
+                        for _ in N
+                    ]
+                elif v["type"] in ["o", "ordinal"]:  # ordinal parameter
+                    _vars = [Ordinal(bounds, name=k, default_value=default_value) for _ in N]
+                elif v["type"] in ["c", "cat"]:  # category-valued parameter
+                    _vars = [Discrete(bounds, name=k, default_value=default_value) for _ in N]
+                elif v["type"] in ["s", "subset"]:  # subset parameter
+                    _vars = [Subset(bounds, name=k, default_value=default_value) for _ in N]
+                elif v["type"] in ["b", "bool"]:  # Boolean-valued
+                    _vars = [Bool(name=k, default_value=default_value) for _ in N]
+                variables += _vars
+            except:
+                print(param)
         return SearchSpace(variables)
 
     @classmethod
