@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="bayes-optim",
-    version="0.2.5.4",
+    version="0.2.5.5",
     author="Hao Wang",
     author_email="wangronin@gmail.com",
     packages=find_packages(),
@@ -19,7 +19,7 @@ setup(
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     ],
     download_url="https://github.com/wangronin/Bayesian-Optimization/archive/v0.1.3.tar.gz",
-    python_requires=">=3.8",
+    python_requires=">=3.7",
     install_requires=[
         "dill>=0.3.3",
         "joblib>=1.0.0",
