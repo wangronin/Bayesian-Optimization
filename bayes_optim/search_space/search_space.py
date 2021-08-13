@@ -24,6 +24,15 @@ from .variable import Bool, Discrete, Integer, Ordinal, Real, Subset, Variable
 __authors__ = "Hao Wang"
 
 _reduce = lambda iterable: functools.reduce(lambda a, b: a + b, iterable)
+_get_var = lambda c: Parser().parse(c).variables()[0]
+
+
+def _get_val(condition):
+    c = ast.parse(condition).body[0].value.comparators[0]
+    if hasattr(c, "n"):
+        return c.n
+    if hasattr(c, "s"):
+        return c.s
 
 
 class SearchSpace:
@@ -693,8 +702,6 @@ class SearchSpace:
                 variables = _reduce([paths[i][k][1] for i, k in enumerate(item)])
                 d[condition] = variables
             # create all unconditional subspaces
-            _get_var = lambda c: Parser().parse(c).variables()[0]
-            _get_val = lambda c: ast.parse(c).body[0].value.comparators[0].n
             for condition, var in d.items():
                 key = {_get_var(c): _get_val(c) for c in condition}
                 out.append((key, SearchSpace(isolated_var + [self[v] for v in var])))
