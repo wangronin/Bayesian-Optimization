@@ -13,6 +13,7 @@ from sklearn.metrics import mean_absolute_percentage_error, r2_score
 from . import acquisition_fun as AcquisitionFunction
 from .bayes_opt import BO, ParallelBO
 from .search_space import RealSpace, SearchSpace
+from .solution import Solution
 from .surrogate import GaussianProcess, RandomForest
 from .utils import timeit
 
@@ -217,20 +218,41 @@ class ConditionalBO(ParallelBO):
         n_point: int = 1,
         ftarget: Optional[float] = None,
         max_FEs: Optional[int] = None,
-        verbose: bool = False,
         n_job: int = 1,
-        *args,
+        minimize: bool = True,
+        verbose: bool = False,
+        random_seed: Optional[int] = None,
+        logger: Optional[str] = None,
         **kwargs,
     ):
         self.obj_fun = obj_fun
         self.n_job = n_job
+        self.search_space = search_space
+        self.var_name = set(self.search_space.var_name)
         self.parallel_obj_fun = parallel_obj_fun
-        self.subspaces = search_space
-        self.n_subspace = len(self.subspaces)
-        self._DoE_size = DoE_size
+        self.DoE_size = DoE_size
         self.ftarget = ftarget
         self.max_FEs = max_FEs
         self.n_point = n_point
+        self.eval_count = 0
+        self.iter_count = 0
+        self.stop_dict = {}
+        self.verbose = verbose
+        self.random_seed = random_seed
+        self.minimize = minimize
+        self.instance_name = None
+        self.logger = logger
+        self.hist_f = []
+
+        self._create_optimizer(search_space, **kwargs)
+        self._ucb = np.zeros(self.n_subspace)
+        self._to_pheno = lambda x: x.to_dict()
+        self._to_geno = lambda x, **kwargs: Solution.from_dict(x, **kwargs)
+        self._bo_idx: List[int] = list()
+        self._get_best = np.min if self.minimize else np.max
+
+    def _create_optimizer(self, search_space: SearchSpace, **kwargs):
+        self.subspaces = search_space.get_unconditional_subspace()
         self._bo = [
             BO(
                 search_space=cs,
@@ -238,54 +260,52 @@ class ConditionalBO(ParallelBO):
                 n_point=1,
                 eval_type="dict",
                 model=RandomForest(levels=cs.levels),
-                *args,
                 **kwargs,
             )
             for _, cs in self.subspaces
         ]
-        self._init_gen = iter(zip(range(self.n_subspace), self._bo))
+        self.n_subspace = len(self.subspaces)
+        self._init_gen = iter(range(self.n_subspace))
         self._fixed_vars = [d for d, _ in self.subspaces]
-        self._ucb = np.zeros(self.n_subspace)
-        self.eval_count = 0
-        self.iter_count = 0
-        self.stop_dict = {}
-        self.verbose = verbose
-        self.instance_name = None
-        self.logger = None
 
     def select_subspace(self, n_point: int) -> List[int]:
-        return np.random.choice(self.n_subspace, n_point)
+        if n_point == 0:
+            return []
+        return np.random.choice(self.n_subspace, n_point).tolist()
 
     @timeit
     def ask(
         self, n_point: int = None, fixed: Dict[str, Union[float, int, str]] = None
-    ) -> Union[List[list], List[dict]]:
+    ) -> Union[List[dict]]:
         n_point = self.n_point if n_point is None else n_point
-        X, _bo, idx = [], [], []
+        idx = []
+        # initial DoE
         for _ in range(n_point):
             try:
-                _bo.append(next(self._init_gen))
+                idx.append(next(self._init_gen))
             except StopIteration:
                 break
-        if _bo:
-            _idx, _bo = list(zip(*_bo))
-            idx += list(_idx)
-            X += [o.ask()[0] for o in _bo]
-            n_point -= len(idx)
 
-        if n_point > 0:
-            _idx = self.select_subspace(n_point=n_point)
-            idx += _idx.tolist()
-            X += [self._bo[i].ask()[0] for i in _idx]
-
+        # select subspaces/BOs
+        idx += self.select_subspace(n_point=n_point - len(idx))
+        self._bo_idx = idx
+        # calling `ask` methods from BO's from each subspace
+        X = [self._bo[i].ask()[0] for i in idx]
+        # fill in the value for conditioning and irrelative variables (None)
         for i, k in enumerate(idx):
             X[i].update(self._fixed_vars[k])
-
-        self.idx = idx
+            X[i].update({k: None for k in self.var_name - set(X[i].keys())})
+            self.logger.info(f"#{i + 1} - {X[i]}")
         return X
 
     @timeit
-    def tell(self, X: List[Union[list, dict]], func_vals: List[Union[float, list]], **kwargs):
+    def tell(
+        self,
+        X: List[Union[list, dict]],
+        func_vals: List[Union[float, list]],
+        warm_start: bool = False,
+        **kwargs,
+    ):
         """Tell the BO about the function values of proposed candidate solutions
 
         Parameters
@@ -295,14 +315,25 @@ class ConditionalBO(ParallelBO):
         func_vals : List/np.ndarray of reals
             The corresponding function values
         """
-        assert len(self.idx) == len(X)
-        self.eval_count += len(X)
-        self.iter_count += 1
-        for i, k in enumerate(self.idx):
-            x = X[i]
+        assert len(self._bo_idx) == len(X)
+        # call `tell` method of BOs in each subspace
+        for i, k in enumerate(self._bo_idx):
+            x = {k: v for k, v in X[i].items() if v}
             for key, _ in self._fixed_vars[k].items():
                 x.pop(key)
-            self._bo[i].tell([x], [func_vals[i]], **kwargs)
+            self._bo[k].tell([x], [func_vals[i]], **kwargs)
+
+        X = self.post_eval_check(self._to_geno(X, fitness=func_vals))
+        self.data = self.data + X if hasattr(self, "data") else X
+        self.eval_count += len(X)
+
+        xopt = self.xopt
+        self.logger.info(f"fopt: {xopt.fitness}")
+        self.logger.info(f"xopt: {self._to_pheno(xopt)}\n")
+
+        if not warm_start:
+            self.iter_count += 1
+            self.hist_f.append(xopt.fitness)
 
 
 class MultiAcquisitionBO(ParallelBO):

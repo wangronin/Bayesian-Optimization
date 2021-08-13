@@ -101,7 +101,6 @@ class SearchSpace:
     @property
     def var_name(self):
         return self._var_name
-        # return (self._var_name[0] if self.dim == 1 else self._var_name)
 
     @var_name.setter
     def var_name(self, var_name):
