@@ -84,8 +84,9 @@ def partial_argument(
 
         N = 1 if len(X.shape) == 1 else X.shape[1]
         X_ = np.empty((N, len(masks)), dtype=object)
-        X_[:, masks] = values
         X_[:, ~masks] = X
+        for i in range(N):
+            X_[i, masks] = values
         out_ = func(X_)
 
         # TODO: fix this ad-hoc solution for acquisition functions

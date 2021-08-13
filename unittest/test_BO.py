@@ -7,8 +7,14 @@ import numpy as np
 import pytest
 from bayes_optim import BO, ParallelBO
 from bayes_optim._exception import AskEmptyError, FlatFitnessError
-from bayes_optim.search_space import (BoolSpace, DiscreteSpace, IntegerSpace,
-                                      OrdinalSpace, RealSpace)
+from bayes_optim.search_space import (
+    BoolSpace,
+    DiscreteSpace,
+    IntegerSpace,
+    OrdinalSpace,
+    RealSpace,
+    SubsetSpace,
+)
 from bayes_optim.surrogate import GaussianProcess, RandomForest, trend
 
 np.random.seed(123)
@@ -62,7 +68,7 @@ def test_pickling():
     os.remove("log")
 
 
-@pytest.mark.parametrize("var_type", ["r", "b", "c", "i", "o"])
+@pytest.mark.parametrize("var_type", ["r", "b", "c", "i", "o", "s"])
 def test_homogenous(var_type):
     dim = 5
 
@@ -100,6 +106,8 @@ def test_homogenous(var_type):
             space = DiscreteSpace(list(range(10))) * dim
         elif var_type == "o":
             space = OrdinalSpace(list(string.ascii_lowercase))
+        elif var_type == "s":
+            space = SubsetSpace(list(string.ascii_lowercase)[:5])
         model = RandomForest(levels=space.levels)
 
     opt = BO(
@@ -121,6 +129,7 @@ def test_fixed_var():
             + abs(x["ordinal"] - 10) / 123.0
             + (x["nominal"] != "OK") * 2
             + int(x["bool"]) * 3
+            + (x["subset"] == ["A"]) * 5
         )
 
     search_space = (
@@ -128,6 +137,7 @@ def test_fixed_var():
         + IntegerSpace([5, 15], var_name="ordinal")
         + RealSpace([-5, 5], var_name="continuous")
         + DiscreteSpace(["OK", "A", "B", "C", "D", "E", "F", "G"], var_name="nominal")
+        + SubsetSpace(["A", "B", "C"], var_name="subset")
     )
     opt = ParallelBO(
         search_space=search_space,
@@ -230,8 +240,8 @@ def test_mix_space(eval_type):
 
         def obj_fun(x):
             x_r = np.array([x[i] for i in range(dim_r)])
-            x_i = x[-2]
-            x_d = x[-1]
+            x_i = x[dim_r]
+            x_d = x[dim_r + 1]
             _ = 0 if x_d == "OK" else 1
             return np.sum(x_r ** 2) + abs(x_i - 10) / 123.0 + _ * 2
 
@@ -242,10 +252,9 @@ def test_mix_space(eval_type):
         RealSpace([-5, 5], var_name="continuous") * dim_r
         + IntegerSpace([5, 15], var_name="ordinal")
         + DiscreteSpace(["OK", "A", "B", "C", "D", "E", "F", "G"], var_name="nominal")
+        + SubsetSpace(["A", "B", "C"], var_name="subset")
     )
-
     model = RandomForest(levels=search_space.levels)
-
     opt = ParallelBO(
         search_space=search_space,
         obj_fun=obj_fun,

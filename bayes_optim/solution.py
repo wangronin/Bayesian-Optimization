@@ -72,7 +72,14 @@ class Solution(np.ndarray):
             For slicing and view casting, the extra attributes are handled in function
             `__array_finalize__`.
         """
-        obj = np.asarray(x, dtype="object").view(cls)
+        if isinstance(x[0], list) and isinstance(x[0][0], tuple):
+            dim = len(x[0])
+            obj = np.asarray([_ + [1] for _ in x], dtype="object")[:, 0:dim].view(cls)
+        elif isinstance(x[0], tuple):
+            dim = len(x)
+            obj = np.asarray(x + [1], dtype="object")[:, 0:dim].view(cls)
+        else:
+            obj = np.asarray(x, dtype="object").view(cls)
 
         if len(obj.shape) > 2:
             raise Exception("More than 2D is not supported")
