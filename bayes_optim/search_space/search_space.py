@@ -11,6 +11,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from numpy.random import rand
+from py_expression_eval import Parser
 from pyDOE import lhs
 from scipy.special import logit
 from sobol_seq import i4_sobol_generate
@@ -171,7 +172,6 @@ class SearchSpace:
                 _structure.update(t.to_dict())
         elif isinstance(structure, dict):
             _structure = structure
-
         # scan for all conditions defined in variables
         for var in self.data:
             if var.conditions is None:
@@ -693,11 +693,10 @@ class SearchSpace:
                 variables = _reduce([paths[i][k][1] for i, k in enumerate(item)])
                 d[condition] = variables
             # create all unconditional subspaces
+            _get_var = lambda c: Parser().parse(c).variables()[0]
+            _get_val = lambda c: ast.parse(c).body[0].value.comparators[0].value
             for condition, var in d.items():
-                key = {
-                    t.body[0].value.left.id: t.body[0].value.comparators[0].value
-                    for t in map(ast.parse, condition)
-                }
+                key = {_get_var(c): _get_val(c) for c in condition}
                 out.append((key, SearchSpace(isolated_var + [self[v] for v in var])))
             # TODO: consider the case where selector/conditioning variable has other values
         else:

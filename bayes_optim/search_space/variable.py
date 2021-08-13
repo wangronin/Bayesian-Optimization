@@ -70,7 +70,7 @@ class Variable(ABC):
         self.name: str = name
         self.bounds = tuple(bounds)
         self.set_default_value(default_value)
-        self.add_conditions(conditions, action)
+        self.set_conditions(conditions, action)
 
     def __repr__(self):
         return self.__str__()
@@ -111,7 +111,9 @@ class Variable(ABC):
             assert self.__contains__(value)
         self.default_value = value
 
-    def add_conditions(self, conditions: str, action: Union[callable, int, float, str]):
+    def set_conditions(
+        self, conditions: str, action: Union[callable, int, float, str] = lambda x: x
+    ):
         self.conditions = None
         if conditions is not None:
             # TODO: add parsing exceptions here
