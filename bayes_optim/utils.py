@@ -50,8 +50,9 @@ def fillin_fixed_value(X: List[List], fixed: Dict, search_space):
     mask = np.array([v in fixed.keys() for v in search_space.var_name])
     values = [fixed[k] for i, k in enumerate(search_space.var_name) if mask[i]]
     out = np.empty((len(X), len(mask)), dtype=object)
-    out[:, mask] = values
     out[:, ~mask] = X
+    for i in range(len(X)):
+        out[i, mask] = values
     return out.tolist()
 
 

@@ -320,9 +320,11 @@ def test_filter():
 
 def test_subset():
     x = SubsetSpace(["a", "b", "c", "d"]) * 2
-    x.sample(10)
+    s = x.sample().tolist()
+
     xx = Subset(["a", "b", "c", "d"])
     xx.sample(10)
+    assert s[0] in x
 
 
 def test_node():
