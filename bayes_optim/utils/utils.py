@@ -1,11 +1,16 @@
 import functools
+import os
+import random
+import re
+import string
 import time
+from copy import copy
 from typing import Callable, Dict, List, Union
 
 import numpy as np
 
-from ._exception import ConstraintEvaluationError
-from .solution import Solution
+from ..solution import Solution
+from .exception import ConstraintEvaluationError
 
 
 def is_pareto_efficient(fitness, return_mask: bool = True) -> Union[List[int], List[bool]]:
@@ -40,6 +45,100 @@ def is_pareto_efficient(fitness, return_mask: bool = True) -> Union[List[int], L
         is_efficient_mask[is_efficient] = True
         return is_efficient_mask
     return is_efficient
+
+
+class bcolors:
+    HEADER = "\033[95m"
+    OKBLUE = "\033[94m"
+    OKGREEN = "\033[92m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+
+
+def random_string(k: int = 15):
+    return "".join(random.choices(string.ascii_letters + string.digits, k=k))
+
+
+def expand_replace(s: str):
+    m = re.match(r"${.*}", s)
+    for _ in m.group():
+        s.replace(_, os.path.expandvars(_))
+    return s
+
+
+# TODO: implement this as a C procedure
+def proportional_selection(perf, N, minimize=True, replacement=True):
+    def select(perf):
+        perf_min = np.min(perf)
+        interval = np.cumsum((perf - perf_min) / (np.sum(perf) - perf_min * len(perf)))
+        return np.nonzero(np.random.rand() <= interval)[0][0]
+
+    perf = np.array(perf)
+    if minimize:
+        perf = -perf
+        perf -= np.min(perf)
+
+    if replacement:
+        res = [select(perf) for i in range(N)]
+    else:
+        assert N <= len(perf)
+        perf_ = copy(perf)
+        idx = list(range(0, len(perf)))
+        res = []
+        for i in range(N):
+            if len(perf_) == 1:
+                res.append(idx[0])
+            else:
+                _ = select(perf_)
+                res.append(idx[_])
+                perf_ = np.delete(perf_, _)
+                del idx[_]
+    return res
+
+
+# TODO: double check this one. It causes the explosion of step-sizes in MIES
+def handle_box_constraint(x, lb, ub):
+    """This function transforms x to t w.r.t. the low and high
+    boundaries lb and ub. It implements the function T^{r}_{[a,b]} as
+    described in Rui Li's PhD thesis "Mixed-Integer Evolution Strategies
+    for Parameter Optimization and Their Applications to Medical Image
+    Analysis" as alorithm 6.
+
+    """
+    x = np.asarray(x, dtype="float")
+    shape_ori = x.shape
+    x = np.atleast_2d(x)
+    lb = np.atleast_1d(lb)
+    ub = np.atleast_1d(ub)
+
+    transpose = False
+    if x.shape[0] != len(lb):
+        x = x.T
+        transpose = True
+
+    lb, ub = lb.flatten(), ub.flatten()
+    lb_index = np.isfinite(lb)
+    up_index = np.isfinite(ub)
+
+    valid = np.bitwise_and(lb_index, up_index)
+
+    LB = lb[valid][:, np.newaxis]
+    UB = ub[valid][:, np.newaxis]
+
+    y = (x[valid, :] - LB) / (UB - LB)
+    I = np.mod(np.floor(y), 2) == 0
+    yprime = np.zeros(y.shape)
+    yprime[I] = np.abs(y[I] - np.floor(y[I]))
+    yprime[~I] = 1.0 - np.abs(y[~I] - np.floor(y[~I]))
+
+    x[valid, :] = LB + (UB - LB) * yprime
+
+    if transpose:
+        x = x.T
+    return x.reshape(shape_ori)
 
 
 def fillin_fixed_value(X: List[List], fixed: Dict, search_space):
@@ -85,6 +184,7 @@ def partial_argument(
         N = 1 if len(X.shape) == 1 else X.shape[1]
         X_ = np.empty((N, len(masks)), dtype=object)
         X_[:, ~masks] = X
+        # this is needed if `values` contains tuples
         for i in range(N):
             X_[i, masks] = values
         out_ = func(X_)

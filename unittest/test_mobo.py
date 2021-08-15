@@ -5,10 +5,9 @@ import pytest
 
 sys.path.insert(0, "../")
 from bayes_optim import MOBO
-from bayes_optim._exception import RecommendationUnavailableError
-from bayes_optim.search_space import (BoolSpace, DiscreteSpace, IntegerSpace,
-                                      RealSpace)
+from bayes_optim.search_space import BoolSpace, DiscreteSpace, IntegerSpace, RealSpace
 from bayes_optim.surrogate import GaussianProcess, RandomForest
+from bayes_optim.utils.exception import RecommendationUnavailableError
 
 np.random.seed(123)
 

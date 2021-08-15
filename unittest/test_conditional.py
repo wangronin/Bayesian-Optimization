@@ -38,6 +38,3 @@ def test_conditional():
     )
     bo = ConditionalBO(space, obj_fun=fitness, DoE_size=5, max_FEs=20, verbose=True, n_point=3)
     bo.run()
-
-
-test_conditional()

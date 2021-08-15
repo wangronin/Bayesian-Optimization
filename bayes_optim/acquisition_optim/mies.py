@@ -4,10 +4,9 @@ import numpy as np
 from numpy import argsort, ceil, exp, mod, zeros
 from numpy.random import geometric, rand, randint, randn
 
-from ..misc import handle_box_constraint
 from ..search_space import SearchSpace
 from ..solution import Solution
-from ..utils import dynamic_penalty
+from ..utils import dynamic_penalty, handle_box_constraint
 
 __author__ = "Hao Wang"
 

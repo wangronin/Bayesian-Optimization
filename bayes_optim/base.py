@@ -1,26 +1,25 @@
 import functools
 import logging
 import os
-import sys
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from copy import copy
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import dill
 import numpy as np
-from joblib import Parallel, delayed
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
+from bayes_optim.utils.logger import dump_logger, get_logger, load_logger
+
 from . import acquisition_fun as AcquisitionFunction
-from ._exception import AskEmptyError, FlatFitnessError, RecommendationUnavailableError
+from ._base import BaseOptimizer
 from .acquisition_optim import argmax_restart
 from .acquisition_optim.option import (
     default_AQ_max_FEs,
     default_AQ_n_restart,
     default_AQ_wait_iter,
 )
-from .misc import LoggerFormatter
-from .search_space import RealSpace, SearchSpace
+from .search_space import RealSpace
 from .solution import Solution
 from .utils import (
     arg_to_int,
@@ -30,37 +29,25 @@ from .utils import (
     partial_argument,
     timeit,
 )
+from .utils.exception import AskEmptyError, FlatFitnessError
 
 __authors__ = ["Hao Wang"]
 
 
-class BaseBO(ABC):
+class BaseBO(BaseOptimizer):
     """Bayesian Optimization base class, which implements the Ask-Evaluate-Tell interface"""
 
     def __init__(
         self,
-        search_space: SearchSpace,
-        obj_fun: Optional[Callable] = None,
-        parallel_obj_fun: Optional[Callable] = None,
-        eq_fun: Optional[Callable] = None,
-        ineq_fun: Optional[Callable] = None,
         model: Optional[Any] = None,
         eval_type: str = "list",
         DoE_size: Optional[int] = None,
-        warm_data: Tuple = (),
+        warm_data: Tuple = None,
         n_point: int = 1,
         acquisition_fun: str = "EI",
-        acquisition_par: dict = {},
-        acquisition_optimization: dict = {},
-        ftarget: Optional[float] = None,
-        max_FEs: Optional[int] = None,
-        minimize: bool = True,
-        n_job: int = 1,
+        acquisition_par: dict = None,
+        acquisition_optimization: dict = None,
         data_file: Optional[str] = None,
-        verbose: bool = False,
-        random_seed: Optional[int] = None,
-        logger: Optional[str] = None,
-        instance_name: Optional[str] = None,
         **kwargs,
     ):
         """The base class for Bayesian Optimization
@@ -120,35 +107,20 @@ class BaseBO(ABC):
         logger : str, optional
             Name of the logger file, by default None, which turns off the logging behaviour
         """
-        self.obj_fun = obj_fun
-        self.parallel_obj_fun = parallel_obj_fun
-        self.h = eq_fun
-        self.g = ineq_fun
-        self.n_obj: int = 1
-        self.n_job: int = max(1, int(n_job))
+        super().__init__(**kwargs)
         self.n_point: int = max(1, int(n_point))
-        self.ftarget = ftarget
-        self.minimize = minimize
-        self.verbose = verbose
         self.data_file = data_file
-        self.max_FEs = int(max_FEs) if max_FEs else np.inf
-        self.instance_name = instance_name
         self.metric_meta = None
-
-        self.search_space = search_space
         self.DoE_size = DoE_size
 
         self.acquisition_fun = acquisition_fun
-        self._acquisition_par = acquisition_par
-        self._acquisition_callbacks = []  # the callback functions executed after
-        # every call of `arg_max_acquisition`
+        self._acquisition_par = acquisition_par if acquisition_par else {}
+        # the callback functions executed after every call of `arg_max_acquisition`
+        self._acquisition_callbacks = []
         self.model = model
-        self.logger = logger
-        self.random_seed = random_seed
 
         self._eval_type = eval_type
-        self._set_internal_optimization(**acquisition_optimization)
-        self._get_best = np.min if self.minimize else np.max
+        self._set_internal_optimization(acquisition_optimization)
         self._init_flatfitness_trial = 2
         self._set_aux_vars()
         self.warm_data = warm_data
@@ -182,36 +154,6 @@ class BaseBO(ABC):
             self._DoE_size = int(self.dim * 5)
 
     @property
-    def random_seed(self):
-        return self._random_seed
-
-    @random_seed.setter
-    def random_seed(self, seed):
-        if seed:
-            self._random_seed = int(seed)
-            if self._random_seed:
-                np.random.seed(self._random_seed)
-
-    @property
-    def search_space(self):
-        return self._search_space
-
-    @search_space.setter
-    def search_space(self, search_space):
-        self._search_space = search_space
-        self.dim = len(self._search_space)
-        self.var_names = self._search_space.var_name
-        self.r_index = self._search_space.real_id  # indices of continuous variable
-        self.i_index = self._search_space.integer_id  # indices of integer variable
-        # indices of categorical variable
-        self.d_index = self._search_space.categorical_id
-
-        self.param_type = self._search_space.var_type
-        self.N_r = len(self.r_index)
-        self.N_i = len(self.i_index)
-        self.N_d = len(self.d_index)
-
-    @property
     def warm_data(self):
         return self._warm_data
 
@@ -237,51 +179,7 @@ class BaseBO(ABC):
             self._warm_data = X
             self.tell(X, y, warm_start=True)
 
-    @property
-    def logger(self):
-        return self._logger
-
-    @logger.setter
-    def logger(self, logger):
-        if isinstance(logger, logging.Logger):
-            self._logger = logger
-            self._logger.propagate = False
-            return
-
-        # NOTE: logging.getLogger create new instance based on `name`
-        # no new instance will be created if the same name is provided
-        name = self.instance_name if self.instance_name else str(id(self))
-        self._logger = logging.getLogger(f"{self.__class__.__name__} ({name})")
-        self._logger.setLevel(logging.DEBUG)
-        fmt = LoggerFormatter()
-
-        # create console handler and set level to the vebosity
-        SH = list(filter(lambda h: isinstance(h, logging.StreamHandler), self._logger.handlers))
-        if self.verbose and len(SH) == 0:
-            sh = logging.StreamHandler(sys.stdout)
-            sh.setLevel(logging.INFO)
-            sh.setFormatter(fmt)
-            self._logger.addHandler(sh)
-
-        # create file handler and set level to debug
-        # TODO: perhaps also according to the verbosity?
-        # TODOL perhaps create a logger class
-        FH = list(filter(lambda h: isinstance(h, logging.FileHandler), self._logger.handlers))
-        if logger is not None and len(FH) == 0:
-            fh = logging.FileHandler(logger)
-            fh.setLevel(logging.DEBUG)
-            fh.setFormatter(fmt)
-            self._logger.addHandler(fh)
-
-        if hasattr(self, "logger"):
-            self._logger.propagate = False
-
     def _set_aux_vars(self):
-        self.iter_count = 0
-        self.eval_count = 0
-        self.stop_dict = {}
-        self.hist_f = []
-
         if self._eval_type == "list":
             self._to_pheno = lambda x: copy(x.tolist())
             self._to_geno = lambda x, index=None, n_eval=1, fitness=None: Solution(
@@ -298,7 +196,10 @@ class BaseBO(ABC):
                 x, index=index, n_obj=self.n_obj
             )
 
-    def _set_internal_optimization(self, **kwargs):
+    def _set_internal_optimization(self, kwargs):
+        if kwargs is None:
+            kwargs = {}
+
         # TODO: turn this into an Option Class
         if "optimizer" in kwargs:
             self._optimizer = kwargs["optimizer"]
@@ -357,27 +258,9 @@ class BaseBO(ABC):
 
         assert hasattr(AcquisitionFunction, self._acquisition_fun)
 
-    def _compare(self, f1: float, f2: float) -> bool:
-        """Test if objecctive value f1 is better than f2"""
-        return f1 < f2 if self.minimize else f2 > f1
-
-    @property
-    def xopt(self):
-        if not hasattr(self, "data"):
-            return None
-        fopt = self._get_best(self.data.fitness)
-        self._xopt = self.data[np.where(self.data.fitness == fopt)[0][0]]
-        return self._xopt
-
-    def run(self) -> Tuple[List[Solution], dict]:
-        while not self.check_stop():
-            self.step()
-        return self._to_pheno(self.xopt), self.xopt.fitness, self.stop_dict
-
     def step(self):
         self.logger.info(f"iteration {self.iter_count} starts...")
         X = self.ask()
-        # TODO: add exception handling for evaluating the objective function
         func_vals = self.evaluate(X)
         self.tell(X, func_vals)
 
@@ -487,24 +370,6 @@ class BaseBO(ABC):
             self.iter_count += 1
             self.hist_f.append(xopt.fitness)
 
-    @timeit
-    def evaluate(self, X) -> List[float]:
-        """Evaluate the candidate points and update evaluation info in the dataframe"""
-        # Parallelization is handled by the objective function itself
-        if self.parallel_obj_fun is not None:
-            func_vals = self.parallel_obj_fun(X)
-        else:
-            if self.n_job > 1:  # or by ourselves..
-                func_vals = Parallel(n_jobs=self.n_job)(delayed(self.obj_fun)(x) for x in X)
-            else:  # or sequential execution
-                func_vals = [self.obj_fun(x) for x in X]
-        return func_vals
-
-    def recommend(self) -> Solution:
-        if self.xopt is None or len(self.xopt) == 0:
-            raise RecommendationUnavailableError()
-        return self.xopt
-
     def create_DoE(self, n_point: int, fixed: Dict = None) -> List:
         """get the initial sample points using Design of Experiemnt (DoE) methods
 
@@ -560,7 +425,6 @@ class BaseBO(ABC):
             the candidate solutions
 
         """
-        raise NotImplementedError
 
     def post_eval_check(self, X: Solution) -> Solution:
         _ = np.isnan(X.fitness) | np.isinf(X.fitness)
@@ -650,16 +514,6 @@ class BaseBO(ABC):
     def _batch_arg_max_acquisition(self, n_point: int, return_dx: int, fixed: Dict):
         raise NotImplementedError
 
-    def check_stop(self):
-        if self.eval_count >= self.max_FEs:
-            self.stop_dict["max_FEs"] = self.eval_count
-
-        if self.ftarget is not None and self.xopt is not None:
-            if self._compare(self.xopt.fitness[0], self.ftarget):
-                self.stop_dict["ftarget"] = self.xopt.fitness[0]
-
-        return bool(self.stop_dict)
-
     def save(self, filename: str):
         # creat the folder if not exist
         dirname = os.path.dirname(filename)
@@ -672,14 +526,8 @@ class BaseBO(ABC):
             if hasattr(self, "data"):
                 self.data = dill.dumps(self.data)
 
-            FHs = list(filter(lambda h: isinstance(h, logging.FileHandler), self.logger.handlers))
-            if len(FHs) == 0:
-                _logger = None
-            else:
-                _logger = FHs[0].baseFilename  # Only take the first log file
-
             logger = self.logger
-            self.logger = _logger
+            self.logger = dump_logger(self.logger)
 
             dill.dump(self, f)
 
@@ -694,5 +542,5 @@ class BaseBO(ABC):
             obj = dill.load(f)
             if hasattr(obj, "data"):
                 obj.data = dill.loads(obj.data)
-            obj.logger = getattr(obj, "_logger")
+            obj.logger = load_logger(obj.logger)
         return obj

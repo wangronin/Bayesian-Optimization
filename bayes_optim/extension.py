@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import logging
 from copy import copy, deepcopy
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
@@ -15,7 +16,7 @@ from .bayes_opt import BO, ParallelBO
 from .search_space import RealSpace, SearchSpace
 from .solution import Solution
 from .surrogate import GaussianProcess, RandomForest
-from .utils import timeit
+from .utils import get_logger, timeit
 
 
 class LinearTransform(PCA):
@@ -222,7 +223,8 @@ class ConditionalBO(ParallelBO):
         minimize: bool = True,
         verbose: bool = False,
         random_seed: Optional[int] = None,
-        logger: Optional[str] = None,
+        logger_file: Optional[str] = None,
+        instance_id: Optional[str] = None,
         **kwargs,
     ):
         self.obj_fun = obj_fun
@@ -241,8 +243,8 @@ class ConditionalBO(ParallelBO):
         self.random_seed = random_seed
         self.minimize = minimize
         self.instance_name = None
-        self.logger = logger
         self.hist_f = []
+        self.instance_id: str = instance_id if instance_id else str(id(self))
 
         self._create_optimizer(search_space, **kwargs)
         self._ucb = np.zeros(self.n_subspace)
@@ -250,6 +252,11 @@ class ConditionalBO(ParallelBO):
         self._to_geno = lambda x, **kwargs: Solution.from_dict(x, **kwargs)
         self._bo_idx: List[int] = list()
         self._get_best = np.min if self.minimize else np.max
+        self.logger: logging.Logger = get_logger(
+            logger_id=f"{self.__class__.__name__} ({self.instance_id})",
+            file=logger_file,
+            console=verbose,
+        )
 
     def _create_optimizer(self, search_space: SearchSpace, **kwargs):
         self.subspaces = search_space.get_unconditional_subspace()

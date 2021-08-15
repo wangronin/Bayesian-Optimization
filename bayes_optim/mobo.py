@@ -9,10 +9,10 @@ from torch import Tensor
 
 from .acquisition_optim import argmax_restart
 from .bayes_opt import BO
-from .extra.multi_objective import Hypervolume, is_non_dominated
-from .extra.multi_objective.box_decompositions import NondominatedPartitioning
 from .multi_objective import EHVI
 from .utils import dynamic_penalty, partial_argument, timeit
+from .utils.multi_objective import Hypervolume, is_non_dominated
+from .utils.multi_objective.box_decompositions import NondominatedPartitioning
 
 __authors__ = ["Hao Wang"]
 

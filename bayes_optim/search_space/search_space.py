@@ -13,10 +13,9 @@ import numpy as np
 from numpy.random import rand
 from py_expression_eval import Parser
 from pyDOE import lhs
-from scipy.special import logit
 from sobol_seq import i4_sobol_generate
 
-from .._exception import ConstraintEvaluationError
+from ..utils.exception import ConstraintEvaluationError
 from .node import Node
 from .samplers import SCMC
 from .variable import Bool, Discrete, Integer, Ordinal, Real, Subset, Variable

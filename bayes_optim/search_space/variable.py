@@ -8,9 +8,9 @@ from itertools import chain, combinations
 from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
+import scipy as sp
 from numpy.random import randint
 from py_expression_eval import Parser
-from scipy.special import logit
 
 __authors__ = ["Hao Wang"]
 
@@ -19,7 +19,7 @@ TRANS = {
     "linear": [lambda x: x, [-MAX, MAX]],
     "log": [np.log, [1e-300, MAX]],
     "log10": [np.log10, [1e-300, MAX]],
-    "logit": [logit, [1e-300, 1]],
+    "logit": [sp.special.logit, [1e-300, 1]],
     "bilog": [lambda x: np.sign(x) * np.log(1 + np.abs(x)), [-MAX, MAX]],
 }
 INV_TRANS = {

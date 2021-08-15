@@ -5,9 +5,9 @@ import pytest
 
 sys.path.insert(0, "../")
 from bayes_optim import BO, IntegerSpace, RealSpace
-from bayes_optim._exception import ConstraintEvaluationError
 from bayes_optim.search_space import DiscreteSpace
 from bayes_optim.surrogate import GaussianProcess, RandomForest
+from bayes_optim.utils.exception import ConstraintEvaluationError
 
 
 def obj_fun2(x):

@@ -1,14 +1,12 @@
 import logging
-import sys
 from copy import copy
 from typing import Callable, Dict, List, Union
 
 import numpy as np
 from scipy.linalg import solve_triangular
 
-from ..misc import LoggerFormatter, handle_box_constraint
 from ..search_space import RealSpace, SearchSpace
-from ..utils import dynamic_penalty, set_bounds
+from ..utils import dynamic_penalty, get_logger, handle_box_constraint, set_bounds
 
 Vector = List[float]
 Matrix = List[Vector]
@@ -36,7 +34,7 @@ class OnePlusOne_CMA(object):
         xtol: float = 1e-4,
         ftol: float = 1e-4,
         verbose: bool = False,
-        logger: str = None,
+        logger_file: str = None,
         random_seed: int = 42,
         **kwargs,
     ):
@@ -129,7 +127,9 @@ class OnePlusOne_CMA(object):
         self.stop_dict: Dict = {}
         self._exception: bool = False
         self.verbose: bool = verbose
-        self.logger = logger
+        self.logger: logging.Logger = get_logger(
+            logger_id=self.__class__.__name__, file=logger_file, console=verbose
+        )
         self.random_seed = random_seed
 
         # parameters for stopping criteria
@@ -182,42 +182,6 @@ class OnePlusOne_CMA(object):
             self._random_seed = int(seed)
             if self._random_seed:
                 np.random.seed(self._random_seed)
-
-    @property
-    def logger(self):
-        return self._logger
-
-    @logger.setter
-    def logger(self, logger):
-        if isinstance(logger, logging.Logger):
-            self._logger = logger
-            self._logger.propagate = False
-            return
-
-        self._logger = logging.getLogger(self.__class__.__name__)
-        self._logger.setLevel(logging.DEBUG)
-        fmt = LoggerFormatter()
-
-        # create console handler and set level to the vebosity
-        SH = list(filter(lambda h: isinstance(h, logging.StreamHandler), self._logger.handlers))
-        if self.verbose and len(SH) == 0:
-            sh = logging.StreamHandler(sys.stdout)
-            sh.setLevel(logging.INFO)
-            sh.setFormatter(fmt)
-            self._logger.addHandler(sh)
-
-        # create file handler and set level to debug
-        # TODO: perhaps also according to the verbosity?
-        # TODOL perhaps create a logger class
-        FH = list(filter(lambda h: isinstance(h, logging.FileHandler), self._logger.handlers))
-        if logger is not None and len(FH) == 0:
-            fh = logging.FileHandler(logger)
-            fh.setLevel(logging.DEBUG)
-            fh.setFormatter(fmt)
-            self._logger.addHandler(fh)
-
-        if hasattr(self, "logger"):
-            self._logger.propagate = False
 
     @property
     def C(self):

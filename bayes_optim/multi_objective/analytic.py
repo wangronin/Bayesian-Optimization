@@ -24,7 +24,7 @@ from torch import Tensor
 from torch.distributions import Normal
 from torch.nn import Module
 
-from ..extra.multi_objective.box_decompositions.non_dominated import NondominatedPartitioning
+from ..utils.multi_objective.box_decompositions.non_dominated import NondominatedPartitioning
 
 
 class AcquisitionFunction(Module, ABC):

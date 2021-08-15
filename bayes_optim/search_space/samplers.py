@@ -12,7 +12,7 @@ from scipy.stats import norm
 from torch import Tensor
 from torch.nn import Module
 
-from .._exception import ConstraintEvaluationError
+from ..utils.exception import ConstraintEvaluationError
 
 __author__ = "Hao Wang"
 
