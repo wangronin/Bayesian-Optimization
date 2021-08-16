@@ -25,7 +25,7 @@ class BaseOptimizer:
         max_FEs: Optional[int] = None,
         minimize: bool = True,
         verbose: bool = False,
-        logger_file: Optional[str] = None,
+        log_file: Optional[str] = None,
         random_seed: Optional[int] = None,
         instance_id: Optional[str] = None,
     ):
@@ -54,7 +54,7 @@ class BaseOptimizer:
         self._to_geno = lambda x: x
         self.logger: logging.Logger = get_logger(
             logger_id=f"{self.__class__.__name__} ({self.instance_id})",
-            file=logger_file,
+            file=log_file,
             console=verbose,
         )
 

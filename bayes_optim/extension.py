@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import functools
-import logging
 from copy import copy, deepcopy
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Union
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -16,7 +15,7 @@ from .bayes_opt import BO, ParallelBO
 from .search_space import RealSpace, SearchSpace
 from .solution import Solution
 from .surrogate import GaussianProcess, RandomForest
-from .utils import get_logger, timeit
+from .utils import timeit
 
 
 class LinearTransform(PCA):
@@ -103,7 +102,7 @@ class PCABO(BO):
     def __init__(self, n_components: Union[float, int] = None, **kwargs):
         super().__init__(**kwargs)
         if self.model is not None:
-            self.logger.warn(
+            self.logger.warning(
                 "The surrogate model will be created automatically by PCA-BO. "
                 "The input argument `model` will be ignored"
             )
@@ -210,56 +209,22 @@ class PCABO(BO):
 
 
 class ConditionalBO(ParallelBO):
-    def __init__(
-        self,
-        search_space: List[Tuple[dict, SearchSpace]],
-        obj_fun: Optional[Callable] = None,
-        parallel_obj_fun: Optional[Callable] = None,
-        DoE_size: int = 1,
-        n_point: int = 1,
-        ftarget: Optional[float] = None,
-        max_FEs: Optional[int] = None,
-        n_job: int = 1,
-        minimize: bool = True,
-        verbose: bool = False,
-        random_seed: Optional[int] = None,
-        logger_file: Optional[str] = None,
-        instance_id: Optional[str] = None,
-        **kwargs,
-    ):
-        self.obj_fun = obj_fun
-        self.n_job = n_job
-        self.search_space = search_space
-        self.var_name = set(self.search_space.var_name)
-        self.parallel_obj_fun = parallel_obj_fun
-        self.DoE_size = DoE_size
-        self.ftarget = ftarget
-        self.max_FEs = max_FEs
-        self.n_point = n_point
-        self.eval_count = 0
-        self.iter_count = 0
-        self.stop_dict = {}
-        self.verbose = verbose
-        self.random_seed = random_seed
-        self.minimize = minimize
-        self.instance_name = None
-        self.hist_f = []
-        self.instance_id: str = instance_id if instance_id else str(id(self))
-
-        self._create_optimizer(search_space, **kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._create_optimizer(**kwargs)
         self._ucb = np.zeros(self.n_subspace)
         self._to_pheno = lambda x: x.to_dict()
         self._to_geno = lambda x, **kwargs: Solution.from_dict(x, **kwargs)
         self._bo_idx: List[int] = list()
-        self._get_best = np.min if self.minimize else np.max
-        self.logger: logging.Logger = get_logger(
-            logger_id=f"{self.__class__.__name__} ({self.instance_id})",
-            file=logger_file,
-            console=verbose,
-        )
 
-    def _create_optimizer(self, search_space: SearchSpace, **kwargs):
-        self.subspaces = search_space.get_unconditional_subspace()
+    def _create_optimizer(self, **kwargs):
+        _kwargs = kwargs.copy()
+        _kwargs.pop("DoE_size", None)
+        _kwargs.pop("n_point", None)
+        _kwargs.pop("search_space", None)
+        _kwargs.pop("eval_type", None)
+        _kwargs.pop("model", None)
+        self.subspaces = self.search_space.get_unconditional_subspace()
         self._bo = [
             BO(
                 search_space=cs,
@@ -267,7 +232,7 @@ class ConditionalBO(ParallelBO):
                 n_point=1,
                 eval_type="dict",
                 model=RandomForest(levels=cs.levels),
-                **kwargs,
+                **_kwargs,
             )
             for _, cs in self.subspaces
         ]
@@ -301,7 +266,7 @@ class ConditionalBO(ParallelBO):
         # fill in the value for conditioning and irrelative variables (None)
         for i, k in enumerate(idx):
             X[i].update(self._fixed_vars[k])
-            X[i].update({k: None for k in self.var_name - set(X[i].keys())})
+            X[i].update({k: None for k in set(self.var_names) - set(X[i].keys())})
             self.logger.info(f"#{i + 1} - {X[i]}")
         return X
 

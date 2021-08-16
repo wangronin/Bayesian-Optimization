@@ -34,7 +34,7 @@ class OnePlusOne_CMA(object):
         xtol: float = 1e-4,
         ftol: float = 1e-4,
         verbose: bool = False,
-        logger_file: str = None,
+        log_file: str = None,
         random_seed: int = 42,
         **kwargs,
     ):
@@ -128,7 +128,7 @@ class OnePlusOne_CMA(object):
         self._exception: bool = False
         self.verbose: bool = verbose
         self.logger: logging.Logger = get_logger(
-            logger_id=self.__class__.__name__, file=logger_file, console=verbose
+            logger_id=self.__class__.__name__, file=log_file, console=verbose
         )
         self.random_seed = random_seed
 

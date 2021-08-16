@@ -36,5 +36,7 @@ def test_conditional():
             Real([-5, 5], "zz"),
         ],
     )
-    bo = ConditionalBO(space, obj_fun=fitness, DoE_size=5, max_FEs=20, verbose=True, n_point=3)
+    bo = ConditionalBO(
+        search_space=space, obj_fun=fitness, DoE_size=5, max_FEs=20, verbose=True, n_point=3
+    )
     bo.run()

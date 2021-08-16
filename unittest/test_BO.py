@@ -6,14 +6,8 @@ sys.path.insert(0, "../")
 import numpy as np
 import pytest
 from bayes_optim import BO, ParallelBO
-from bayes_optim.search_space import (
-    BoolSpace,
-    DiscreteSpace,
-    IntegerSpace,
-    OrdinalSpace,
-    RealSpace,
-    SubsetSpace,
-)
+from bayes_optim.search_space import (BoolSpace, DiscreteSpace, IntegerSpace,
+                                      OrdinalSpace, RealSpace, SubsetSpace)
 from bayes_optim.surrogate import GaussianProcess, RandomForest, trend
 from bayes_optim.utils.exception import AskEmptyError, FlatFitnessError
 
@@ -57,7 +51,7 @@ def test_pickling():
         max_FEs=10,
         verbose=True,
         n_point=1,
-        logger_file="log",
+        log_file="log",
     )
     opt.save("test")
     opt = BO.load("test")
