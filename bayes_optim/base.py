@@ -542,5 +542,17 @@ class BaseBO(BaseOptimizer):
             obj = dill.load(f)
             if hasattr(obj, "data"):
                 obj.data = dill.loads(obj.data)
-            obj.logger = load_logger(obj.logger)
+            # backwards compatibility
+            if hasattr(obj, "_logger"):
+                obj.logger = getattr(obj, "_logger")
+            else:
+                obj.logger = load_logger(obj.logger)
+
+            # backwards compatibility
+            _h, _g = obj.h, obj.g
+            _eval_type = getattr(obj, "_eval_type")
+            if _h is not None:
+                setattr(obj, "_h", func_with_list_arg(_h, _eval_type, obj.search_space.var_name))
+            if _g is not None:
+                setattr(obj, "_g", func_with_list_arg(_g, _eval_type, obj.search_space.var_name))
         return obj

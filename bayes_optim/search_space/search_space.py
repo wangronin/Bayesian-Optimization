@@ -181,7 +181,7 @@ class SearchSpace:
             _structure = structure
         # scan for all conditions defined in variables
         for var in self.data:
-            if var.conditions is None:
+            if not hasattr(var, "conditions") or var.conditions is None:
                 continue
             # TODO: support more dependent variables in the condition
             key = var.conditions["vars"][0]
@@ -259,7 +259,9 @@ class SearchSpace:
             out = data
         elif isinstance(data, list):
             out = SearchSpace(data, self.random_seed)
-            getattr(out, "_set_structure")(self.structure)
+            # backwards compatibility
+            if hasattr(self, "structure"):
+                getattr(out, "_set_structure")(self.structure)
         return out
 
     def __setitem__(self, index, value):
@@ -338,7 +340,9 @@ class SearchSpace:
         _index = [self.var_name.index(_) for _ in _res]
         data = [copy(self.data[i]) for i in range(self.dim) if i in _index]
         cs = SearchSpace(data, random_seed)
-        getattr(cs, "_set_structure")(self.structure)
+        # backwards compatibility
+        if hasattr(self, "structure"):
+            getattr(cs, "_set_structure")(self.structure)
         return cs
 
     def __rsub__(self, space) -> SearchSpace:
@@ -440,7 +444,8 @@ class SearchSpace:
     def pop(self, index: int = -1) -> Variable:
         value = self.data.pop(index)
         self._set_data(self.data)
-        self._set_structure(self.structure)
+        if hasattr(self, "structure"):
+            self._set_structure(self.structure)
         SearchSpace.__set_type(self)
         return value
 
@@ -457,7 +462,9 @@ class SearchSpace:
 
         self.data.pop(_index)
         self._set_data(self.data)
-        self._set_structure(self.structure)
+        # backwards compatibility
+        if hasattr(self, "structure"):
+            self._set_structure(self.structure)
         return SearchSpace.__set_type(self)
 
     def update(self, space: SearchSpace) -> SearchSpace:
