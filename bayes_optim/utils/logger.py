@@ -61,10 +61,13 @@ def get_logger(
     if file is not None and len(FH) == 0:
         file = [file] if isinstance(file, str) else file
         for f in set(file) - set(fh.baseFilename for fh in FH):
-            fh = logging.FileHandler(f)
-            fh.setLevel(logging.DEBUG)
-            fh.setFormatter(fmt)
-            logger.addHandler(fh)
+            try:
+                fh = logging.FileHandler(f)
+                fh.setLevel(logging.DEBUG)
+                fh.setFormatter(fmt)
+                logger.addHandler(fh)
+            except FileNotFoundError as _:
+                pass
 
     logger.propagate = False
     return logger
