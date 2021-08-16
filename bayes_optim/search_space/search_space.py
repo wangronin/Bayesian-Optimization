@@ -318,9 +318,12 @@ class SearchSpace:
         # NOTE: the random seed of `self` has the priority
         random_seed = self.random_seed if self.random_seed else space.random_seed
         data = deepcopy(self.data) + space.data
-        structure = [t.deepcopy() for t in self.structure] + [
-            t.deepcopy() for t in space.structure
-        ]
+        if hasattr(self, "structure"):
+            structure = [t.deepcopy() for t in self.structure] + [
+                t.deepcopy() for t in space.structure
+            ]
+        else:
+            structure = {}
         return SearchSpace(data, random_seed, structure)
 
     def __radd__(self, space) -> SearchSpace:
@@ -371,8 +374,8 @@ class SearchSpace:
         """
         data = [deepcopy(var) for _ in range(max(1, int(N))) for var in self.data]
         # TODO: this is not working yet..
-        structure = [t.deepcopy() for _ in range(max(1, int(N))) for t in self.structure]
-        obj = SearchSpace(data, self.random_seed, structure)
+        # structure = [t.deepcopy() for _ in range(max(1, int(N))) for t in self.structure]
+        obj = SearchSpace(data, self.random_seed)
         obj.__class__ = type(self)
         return obj
 
