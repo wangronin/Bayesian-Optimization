@@ -6,7 +6,7 @@ from typing import Callable
 import numpy as np
 
 # import torch
-from gpytorch.distributions import MultivariateNormal
+# from gpytorch.distributions import MultivariateNormal
 
 # from scipy.optimize import root_scalar
 from scipy.stats import norm
