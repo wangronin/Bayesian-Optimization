@@ -25,6 +25,8 @@ __authors__ = "Hao Wang"
 _reduce = lambda iterable: functools.reduce(lambda a, b: a + b, iterable)
 _get_var = lambda c: Parser().parse(c).variables()[0]
 
+# TODO: add sampling method for the tree structure
+
 
 def _get_val(condition):
     c = ast.parse(condition).body[0].value.comparators[0]
@@ -758,6 +760,7 @@ class RealSpace(SearchSpace):
             X[:, i] = var.round(X[:, i])
         return X
 
+    # TODO: implement a transformation class/function and make this generic
     def to_linear_scale(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
         X = np.atleast_2d(X).astype(float)
         assert X.shape[1] == self.dim

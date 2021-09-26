@@ -8,6 +8,15 @@ class Node:
     r"""Node of a tree used to represent the conditional search space"""
 
     def __init__(self, name: str, data: Any = None):
+        """create a node in a tree structure
+
+        Parameters
+        ----------
+        name : str
+            name of the node
+        data : Any, optional
+            any data stored in this node, by default None
+        """
         self.name: str = name
         self.data: Any = data
         self.is_root: bool = True  # is this node a root?
@@ -15,12 +24,42 @@ class Node:
         self.branches: List = []  # branching conditions
 
     def add_child(self, node: Node, branch: str = None) -> Node:
+        """add a child node to a node
+
+        Parameters
+        ----------
+        node : Node
+            the child node to add
+        branch : str, optional
+            the branching condition to this child, which is an Python expression evaluated to
+            `True` when the conditiion is satisfied, by default None
+
+        Returns
+        -------
+        Node
+            return the updated node
+        """
         node.is_root = False
         self.children.append(node)
         self.branches.append(branch)
         return self
 
     def add_child_from_dict(self, d: dict, cache: dict = None) -> Node:
+        """enumerate a dictionary describing a tree structure and add children nodes to the current
+        one recursively.
+
+        Parameters
+        ----------
+        d : dict
+            The input dictionary describing the tree structure. See below for an example.
+        cache : dict, optional
+            intermediate cache used in the recursion, by default None
+
+        Returns
+        -------
+        Node
+            the updated current node with all its children nodes added from the input dictionary.
+        """
         if cache is None:
             cache = dict()
         children = d.get(self.name, None)
@@ -35,11 +74,31 @@ class Node:
         return self
 
     def deepcopy(self) -> Node:
+        """copy the whole tree recursively, starting from the root node
+
+        Returns
+        -------
+        Node
+            the root node of the copied tree
+        """
         return self.remove([])
 
     def remove(self, node_names: List[str], invert: bool = False) -> Node:
         """remove the node listed in `node_names` where the entire sub-tree is dropped if its
         root node is removed. The resulting node is a copy of the original one.
+
+        Parameters
+        ----------
+        node_names : List[str]
+            a list of name to drop/keep
+        invert : bool, optional
+            whether to drop `node_names` (`invert = False`) or keep (`invert = True`),
+            by default False
+
+        Returns
+        -------
+        Node
+            the updated root node
         """
         op = lambda e, S: e not in S if invert else lambda e, S: e in S
         if op(self.name, node_names):
@@ -53,6 +112,18 @@ class Node:
 
     @classmethod
     def from_dict(cls, d: dict) -> List[Node]:
+        """create trees recursively from a dictionary
+
+        Parameters
+        ----------
+        d : dict
+            The input dictionary describing the tree structure. See below for an example.
+
+        Returns
+        -------
+        List[Node]
+            a list of root nodes as the user can specify multiple trees in the input.
+        """
         cache = dict()
         for k in d.keys():
             if k in cache:
@@ -96,7 +167,7 @@ class Node:
         return out
 
     def get_all_path(self) -> Dict[Tuple[str], List[str]]:
-        """get all path to leaf nodes"""
+        """Traverse the tree in pre-order get all path to leaf nodes"""
         if not self.children:
             return {(): None}
 

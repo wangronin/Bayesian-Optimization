@@ -221,7 +221,7 @@ class Real(Variable):
         """
         X = deepcopy(X)
         if self.precision is not None:
-            X = np.round(X, self.precision)
+            X = np.clip(np.round(X, self.precision), self.bounds[0], self.bounds[1])
         return X
 
 
