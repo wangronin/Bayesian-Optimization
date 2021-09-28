@@ -10,6 +10,7 @@ from .utils import (
     partial_argument,
     set_bounds,
     timeit,
+    safe_divide,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "handle_box_constraint",
     "load_logger",
     "dump_logger",
+    "safe_divide",
 ]

@@ -456,7 +456,7 @@ class BaseBO(BaseOptimizer):
         self.fmin, self.fmax = np.min(fitness_), np.max(fitness_)
         self.frange = self.fmax - self.fmin
 
-        self.model.fit(data, fitness_)
+        self.model.fit(data, fitness_.reshape(-1, 1))
         fitness_hat = self.model.predict(data)
 
         r2 = r2_score(fitness_, fitness_hat)

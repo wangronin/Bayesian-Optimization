@@ -44,6 +44,8 @@ class AcquisitionFunction(ABC):
     def _gradient(self, X):
         X_ = np.array(X, dtype=float)
         y_dx, sd2_dx = self._model.gradient(X_)
+        y_dx = y_dx.T
+        sd2_dx = sd2_dx.T
         if not self.minimize:
             y_dx = -y_dx
         return y_dx, sd2_dx

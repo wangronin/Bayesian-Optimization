@@ -58,6 +58,11 @@ class bcolors:
     UNDERLINE = "\033[4m"
 
 
+def safe_divide(x1, x2):
+    """Divide x1 / x2, return 0 where x2 == 0"""
+    return np.divide(x1, x2, out=np.zeros(np.broadcast(x1, x2).shape), where=(x2 != 0))
+
+
 def random_string(k: int = 15):
     return "".join(random.choices(string.ascii_letters + string.digits, k=k))
 
