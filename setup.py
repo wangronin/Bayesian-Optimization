@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="bayes-optim",
-    version="0.2.5.7",
+    version="0.2.5.8",
     author="Hao Wang",
     author_email="wangronin@gmail.com",
     packages=find_packages(),
@@ -25,7 +25,7 @@ setup(
         "joblib>=1.0.0",
         "numpy>=1.19.2",
         "pyDOE>=0.3.8",
-        "scikit-learn>=0.24.2",
+        "scikit-learn>=0.23.2",
         "scipy>=1.5.4",
         "sklearn==0.0",
         "tabulate>=0.8.7",
@@ -34,5 +34,6 @@ setup(
         "requests-oauthlib>=1.3.0",
         "sobol-seq>=0.2.0",
         "py-expression-eval>=0.3.13",
+        "torch>=1.9.0",
     ],
 )

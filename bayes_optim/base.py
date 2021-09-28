@@ -9,7 +9,7 @@ import dill
 import numpy as np
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
-from bayes_optim.utils.logger import dump_logger, get_logger, load_logger
+from bayes_optim.utils.logger import dump_logger, load_logger
 
 from . import acquisition_fun as AcquisitionFunction
 from ._base import BaseOptimizer
