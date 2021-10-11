@@ -11,7 +11,7 @@ sys.path.insert(0, "../")
 from bayes_optim import NarrowingBO, RealSpace
 from bayes_optim.surrogate import GaussianProcess, trend
 
-np.random.seed(123)
+np.random.seed(3108)
 dim = 25 # Should be greater than 2
 lb, ub = -5, 15
 
@@ -112,14 +112,14 @@ opt = NarrowingBO(
     search_space=space,
     obj_fun=branin,
     model=model,
-    DoE_size=5,
-    max_FEs=20,
+    DoE_size=50,
+    max_FEs=500,
     verbose=True,
     n_point=1,
     minimize=True,
     var_selector=corr_fsel,
     search_space_improving_fun=min_mean_improvement,
-    var_selection_FEs=5
+    var_selection_FEs=10
 )
 
 print(opt.run())
