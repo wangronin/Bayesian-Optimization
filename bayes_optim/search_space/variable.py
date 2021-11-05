@@ -65,7 +65,7 @@ def _gen_map_func(bounds, step=0):
         if hasattr(bounds, "__iter__"):
             return bounds[i]
         else:
-            bounds + i * step
+            return bounds + i * step
 
     return _map_func
 
