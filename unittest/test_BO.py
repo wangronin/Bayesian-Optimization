@@ -122,7 +122,7 @@ def test_homogenous(var_type):
         elif var_type == "c":
             space = DiscreteSpace(list(range(10))) * dim
         elif var_type == "o":
-            space = OrdinalSpace(list(string.ascii_lowercase))
+            space = OrdinalSpace(list(string.string.ascii_letters))
         elif var_type == "s":
             space = SubsetSpace(list(string.ascii_lowercase)[:5])
         model = RandomForest(levels=space.levels)
@@ -137,6 +137,9 @@ def test_homogenous(var_type):
         n_point=1,
     )
     print(opt.run())
+
+
+# test_homogenous()
 
 
 def test_fixed_var():
