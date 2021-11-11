@@ -382,9 +382,7 @@ class OnePlusOne_CMA(object):
             self._C = (1 - self.ccov) * self._C + self.ccov * np.outer(self.pc, self.pc)
         else:
             self.pc = (1 - self.cc) * self.pc
-            self._C = (1 - self.ccov * (1 - self._coeff)) * self._C + self.ccov * np.outer(
-                self.pc, self.pc
-            )
+            self._C = (1 - self.ccov * (1 - self._coeff)) * self._C + self.ccov * np.outer(self.pc, self.pc)
 
         self._C = np.triu(self._C) + np.triu(self._C, 1).T
         self._update_A(self._C)
@@ -393,8 +391,6 @@ class OnePlusOne_CMA(object):
         prob_target = self.prob_target
         self.success_rate = (1 - self.cp) * self.success_rate + self.cp * success
         self._sigma *= np.exp((self.success_rate - prob_target) / (1 - prob_target) / self.d)
-        if self._sigma is None:
-            breakpoint()
 
     def _update_A(self, C):
         if np.any(np.isinf(C)):

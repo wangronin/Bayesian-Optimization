@@ -110,9 +110,7 @@ def test_SearchSpace_remove():
 
 
 def test_SearchSpace_mul():
-    cs = (
-        RealSpace([0, 5], "x") + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C"], "z")
-    )
+    cs = RealSpace([0, 5], "x") + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C"], "z")
     __ = ["x0", "y0", "z0", "x1", "y1", "z1"]
     assert (cs * 2).dim == 6
     assert all(np.array((2 * cs).var_name) == np.asarray(__))
@@ -123,11 +121,7 @@ def test_SearchSpace_mul():
 
 def test_SearchSpace_sub():
     for _ in range(3):
-        cs = (
-            RealSpace([0, 5], "x")
-            + IntegerSpace([-10, 10], "y")
-            + DiscreteSpace(["A", "B", "C"], "z")
-        )
+        cs = RealSpace([0, 5], "x") + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C"], "z")
         _cs = DiscreteSpace(["A", "B", "C"], "z") + IntegerSpace([10, 20], "p")
 
         cs2 = cs - cs[1:]
@@ -162,11 +156,7 @@ def test_SearchSpace_iadd():
 
 
 def test_SearchSpace_slice():
-    cs = (
-        RealSpace([1, 5], "x", 2, scale="log")
-        + IntegerSpace([-10, 10], "y")
-        + DiscreteSpace(["A", "B", "C"], "z")
-    )
+    cs = RealSpace([1, 5], "x", 2, scale="log") + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C"], "z")
     assert isinstance(cs[[0]], RealSpace)
     assert isinstance(cs[[1]], IntegerSpace)
     assert isinstance(cs[[2]], DiscreteSpace)
@@ -176,11 +166,7 @@ def test_SearchSpace_slice():
     assert isinstance(cs[2], Discrete)
     assert isinstance(cs["z"], Discrete)
 
-    cs = (
-        RealSpace([1, 5], "x", 2, scale="log") * 2
-        + IntegerSpace([-10, 10], "y")
-        + DiscreteSpace(["A", "B", "C"], "z")
-    )
+    cs = RealSpace([1, 5], "x", 2, scale="log") * 2 + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C"], "z")
     assert isinstance(cs[:2], RealSpace)
     assert isinstance(cs[["x0", "x1"]], RealSpace)
     assert isinstance(cs[[False, False, True, False]], IntegerSpace)
@@ -250,11 +236,7 @@ def test_precision():
     X = Solution(cs.sample(10, method="LHS"))
     cs.round(X)
 
-    cs = (
-        RealSpace([0, 1], "x", precision=2)
-        + IntegerSpace([-10, 10], "y")
-        + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
-    )
+    cs = RealSpace([0, 1], "x", precision=2) + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
 
     X = cs.sample(1, method="LHS")[0][0]
     X = re.sub(r"^-?\d+\.(\d+)$", r"\1", str(X))

@@ -105,11 +105,7 @@ class RandomForest(RandomForestRegressor):
     def _check_X(self, X: Union[Solution, List, np.ndarray]) -> Solution:
         X_ = array(X, dtype=object)
         if hasattr(self, "_levels"):
-            X_cat = X_[:, self._cat_idx]
-            try:
-                X_cat = self._enc.transform(X_cat)
-            except Exception:
-                X_cat = self._enc.fit_transform(X_cat)
+            X_cat = self._enc.fit_transform(X_[:, self._cat_idx])
             X = np.c_[np.delete(X_, self._cat_idx, 1).astype(float), X_cat]
         return X
 
@@ -148,8 +144,7 @@ class RandomForest(RandomForestRegressor):
         )
         # parallel loop
         Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
-            delayed(_save_prediction)(e.predict, X, i, y_hat_all)
-            for i, e in enumerate(self.estimators_)
+            delayed(_save_prediction)(e.predict, X, i, y_hat_all) for i, e in enumerate(self.estimators_)
         )
         y_hat = np.mean(y_hat_all, axis=-1)
 

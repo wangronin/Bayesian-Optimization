@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copyreg
 import sys
 import warnings
 from abc import ABC
@@ -14,21 +15,59 @@ from py_expression_eval import Parser
 
 __authors__ = ["Hao Wang"]
 
+
+def identity(x):
+    return x
+
+
+def bilog(x):
+    return np.sign(x) * np.log(1 + np.abs(x))
+
+
+def logit_inv(x):
+    return 1 / (1 + np.exp(-x))
+
+
+def bilog_inv(x):
+    return np.sign(x) * (np.exp(np.abs(x)) - 1)
+
+
+def log10_inv(x):
+    return np.power(10, x)
+
+
 MAX = sys.float_info.max
 TRANS = {
-    "linear": [lambda x: x, [-MAX, MAX]],
+    "linear": [identity, [-MAX, MAX]],
     "log": [np.log, [1e-300, MAX]],
     "log10": [np.log10, [1e-300, MAX]],
     "logit": [sp.special.logit, [1e-300, 1]],
-    "bilog": [lambda x: np.sign(x) * np.log(1 + np.abs(x)), [-MAX, MAX]],
+    "bilog": [bilog, [-MAX, MAX]],
 }
 INV_TRANS = {
-    "linear": lambda x: x,
+    "linear": identity,
     "log": np.exp,
-    "log10": lambda x: np.power(10, x),
-    "logit": lambda x: 1 / (1 + np.exp(-x)),
-    "bilog": lambda x: np.sign(x) * (np.exp(np.abs(x)) - 1),
+    "log10": log10_inv,
+    "logit": logit_inv,
+    "bilog": bilog_inv,
 }
+
+
+def _gen_action(v):
+    def _action(_):
+        return v
+
+    return _action
+
+
+def _gen_map_func(bounds, step=0):
+    def _map_func(i):
+        if hasattr(bounds, "__iter__"):
+            return bounds[i]
+        else:
+            return bounds + i * step
+
+    return _map_func
 
 
 class Variable(ABC):
@@ -40,7 +79,7 @@ class Variable(ABC):
         name: str,
         default_value: Union[int, float, str] = None,
         conditions: str = None,
-        action: Union[callable, int, float, str] = lambda x: x,
+        action: Union[callable, int, float, str] = 0,
     ):
         """Base class for decision variables
 
@@ -100,9 +139,7 @@ class Variable(ABC):
     def copyfrom(self, var: Variable):
         """copy from another variable of the same type"""
         if not isinstance(var, type(self)):
-            raise TypeError(
-                f"copying from variable {var} which has a type different type than {type(self)}"
-            )
+            raise TypeError(f"copying from variable {var} which has a type different type than {type(self)}")
         self.__dict__.update(**deepcopy(var.__dict__))
 
     def set_default_value(self, value):
@@ -111,19 +148,18 @@ class Variable(ABC):
             assert self.__contains__(value)
         self.default_value = value
 
-    def set_conditions(
-        self, conditions: str, action: Union[callable, int, float, str] = lambda x: x
-    ):
+    def set_conditions(self, conditions: str, action: Union[callable, int, float, str] = 0):
         self.conditions = None
         if conditions is not None:
             # TODO: add parsing exceptions here
             expr = Parser().parse(conditions)
             self.conditions = {"string": conditions, "expr": expr, "vars": expr.variables()}
 
-        if isinstance(action, (int, float, str)):
-            self.action = lambda _: action
-        elif hasattr(action, "__call__"):
-            self.action = action
+        self.action = None
+        # if isinstance(action, (int, float, str)):
+        #     self.action = _gen_action(action)
+        # elif hasattr(action, "__call__"):
+        #     self.action = action
 
 
 class Real(Variable):
@@ -251,7 +287,7 @@ class Discrete(_Discrete):
 
     def __init__(self, bounds, name: str = "d", default_value: Union[int, str] = None, **kwargs):
         super().__init__(bounds, name, default_value, **kwargs)
-        self._map_func = lambda i: self.bounds[i]
+        self._map_func = _gen_map_func(self.bounds)
         self._size = len(self.bounds)
 
 
@@ -260,9 +296,7 @@ class Subset(Discrete):
 
     def __init__(self, bounds, name: str = "s", default_value: Union[int, str] = None, **kwargs):
         self._bounds = bounds
-        bounds = list(
-            chain.from_iterable(map(lambda r: combinations(bounds, r), range(1, len(bounds) + 1)))
-        )
+        bounds = list(chain.from_iterable(map(lambda r: combinations(bounds, r), range(1, len(bounds) + 1))))
         super().__init__(bounds, name, default_value, **kwargs)
 
     def __str__(self):
@@ -277,7 +311,7 @@ class Ordinal(_Discrete):
 
     def __init__(self, bounds, name: str = "ordinal", default_value: int = None, **kwargs):
         super().__init__(bounds, name, default_value, **kwargs)
-        self._map_func = lambda i: self.bounds[i]
+        self._map_func = _gen_map_func(self.bounds)
         self._size = len(self.bounds)
 
 
@@ -297,7 +331,7 @@ class Integer(_Discrete):
         assert self.bounds[0] < self.bounds[1]
         assert all(map(lambda x: isinstance(x, (int, float)), self.bounds))
         self.step = step
-        self._map_func = lambda i: self.bounds[0] + i * self.step
+        self._map_func = _gen_map_func(self.bounds[0], self.step)
         self._size = int(np.floor((self.bounds[1] - self.bounds[0]) / self.step) + 1)
 
     def __contains__(self, x: int) -> bool:
