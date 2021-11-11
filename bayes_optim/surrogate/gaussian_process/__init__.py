@@ -1,18 +1,16 @@
 from __future__ import annotations
-from typing import Tuple
+
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
-
 from scipy.linalg import solve_triangular
 from scipy.spatial.distance import cdist
 from sklearn.gaussian_process import GaussianProcessRegressor as sk_gpr
-from sklearn.gaussian_process.kernels import ConstantKernel, Matern
+from sklearn.gaussian_process.kernels import ConstantKernel, Kernel, Matern
 
-from .utils import SMSE, MSLL
-
-# from .gpr import GaussianProcess
+from ...search_space import RealSpace, SearchSpace
 from ...utils import safe_divide
-
+from .utils import MSLL, SMSE
 
 __author__ = "Hao Wang"
 __all__ = ["SMSE", "MSLL", "GaussianProcess"]
@@ -23,32 +21,43 @@ class GaussianProcess:
 
     def __init__(
         self,
-        dim: int,
+        domain: SearchSpace,
+        codomain: SearchSpace = None,
         n_obj: int = 1,
-        kernel=None,
+        kernel: Optional[Kernel] = None,
         alpha: float = 1e-4,
         optimizer: str = "fmin_l_bfgs_b",
         n_restarts_optimizer: int = 0,
         normalize_y: bool = True,
+        length_scale_bounds: Union[Tuple[float, float], List[Tuple[float, float]]] = (1e-5, 1e5),
+        constant_value_bounds: Union[Tuple[float, float], List[Tuple[float, float]]] = (1e-5, 1e5),
         **kwargs,
     ):
-        self.dim = dim
+        assert isinstance(domain, RealSpace)
+        assert codomain is None or isinstance(codomain, RealSpace)
+        self.domain = domain
+        # TODO: this is not used for now, which should implement restriction on the co-domain
+        self.codomain = codomain
+        self.dim = self.domain.dim
         self.n_obj = n_obj
         self.nu = 1.5
         self.is_fitted = False
 
         if kernel is None:
+            bounds = np.atleast_2d(self.domain.bounds)
+            length_scale_bounds = self._set_length_scale_bounds(length_scale_bounds, bounds)
             kernel = Matern(
-                length_scale=np.ones(dim),
-                length_scale_bounds=(1e-6, 1e4),
+                length_scale=np.ones(self.dim),
+                length_scale_bounds=length_scale_bounds,
                 nu=self.nu,
             )
-            kernel *= ConstantKernel(constant_value=1.0, constant_value_bounds=(1e-6, 1e4))
+            kernel *= ConstantKernel(constant_value=1.0, constant_value_bounds=constant_value_bounds)
 
         if n_restarts_optimizer == 0:
-            n_restarts_optimizer = int(5 * dim)
+            n_restarts_optimizer = int(5 * self.dim)
 
         self._gpr = list()
+        # create GPRs for each objective function
         for _ in range(n_obj):
             self._gpr.append(
                 sk_gpr(
@@ -61,19 +70,48 @@ class GaussianProcess:
                 )
             )
 
+    def _set_length_scale_bounds(self, length_scale_bounds, bounds) -> np.ndarray:
+        length_scale_bounds = np.atleast_2d(length_scale_bounds)
+        if len(length_scale_bounds) == 1:
+            length_scale_bounds = np.repeat(length_scale_bounds, self.dim, axis=0)
+        length_scale_bounds *= bounds[:, [1]] - bounds[:, [0]]
+        return length_scale_bounds
+
+    def _check_dims(self, X: np.ndarray, y: np.ndarray):
+        """check if the input/output dimensions are consistent with dimensions of the domain/co-domain"""
+        if self.dim != X.shape[1]:
+            raise ValueError(
+                f"X has {X.shape[1]} variables, which does not match the dimension of the domain {self.dim}"
+            )
+        if len(y.shape) == 1:
+            if self.n_obj != 1:
+                raise ValueError(
+                    f"y has one variable, which does not match "
+                    f"the dimension of the co-domain {self.n_obj}"
+                )
+        else:
+            if self.n_obj != y.shape[1]:
+                raise ValueError(
+                    f"y has {y.shape[1]} variables, which does not match "
+                    f"the dimension of the co-domain {self.n_obj}"
+                )
+
     def fit(self, X: np.ndarray, y: np.ndarray) -> GaussianProcess:
         """Fit Gaussian process regression model.
+
         Parameters
         ----------
         X : array-like of shape (n_samples, n_features) or list of object
             Feature vectors or other representations of training data.
         y : array-like of shape (n_samples,) or (n_samples, n_targets)
             Target values.
+
         Returns
         -------
         self : object
-            GaussianProcessRegressor class instance.
+            `GaussianProcess` class instance.
         """
+        self._check_dims(X, y)
         for i, gp in enumerate(self._gpr):
             gp.fit(X, y[:, i])
             setattr(gp, "_K_inv", None)

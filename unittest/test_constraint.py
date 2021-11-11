@@ -29,16 +29,9 @@ def g(x):
 def test_BO_equality():
     dim = 2
     search_space = RealSpace([0, 1]) * dim
-    thetaL = 1e-5 * np.ones(dim)
-    thetaU = np.ones(dim)
-    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
     model = GaussianProcess(
-        corr="squared_exponential",
-        theta0=theta0,
-        thetaL=thetaL,
-        thetaU=thetaU,
-        nugget=1e-1,
-        random_state=42,
+        domain=search_space,
+        n_restarts_optimizer=dim,
     )
     xopt, _, __ = BO(
         search_space=search_space,

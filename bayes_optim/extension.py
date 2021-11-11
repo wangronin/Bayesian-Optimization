@@ -8,6 +8,7 @@ import numpy as np
 from joblib import Parallel, delayed
 from scipy.stats import rankdata
 from sklearn.decomposition import PCA
+from sklearn.gaussian_process.kernels import ConstantKernel, Matern
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
 from . import acquisition_fun as AcquisitionFunction
@@ -108,9 +109,7 @@ class PCABO(BO):
             )
         assert isinstance(self._search_space, RealSpace)
         self.__search_space = deepcopy(self._search_space)  # the original search space
-        self._pca = LinearTransform(
-            n_components=n_components, svd_solver="full", minimize=self.minimize
-        )
+        self._pca = LinearTransform(n_components=n_components, svd_solver="full", minimize=self.minimize)
 
     @staticmethod
     def _compute_bounds(pca: PCA, search_space: SearchSpace) -> List[float]:
@@ -181,18 +180,7 @@ class PCABO(BO):
         # NOTE: the GPR model will be created since the effective search space (the reduced space
         # is dynamic)
         dim = self._search_space.dim
-        bounds = np.array(self._search_space.bounds)
-        _range = bounds[:, 1] - bounds[:, 0]
-        thetaL, thetaU = 1e-8 * _range, 10 * _range
-        self.model = GaussianProcess(
-            theta0=np.random.rand(dim) * (thetaU - thetaL) + thetaL,
-            thetaL=thetaL,
-            thetaU=thetaU,
-            nugget=1e-8,
-            noise_estim=False,
-            random_start=dim,
-            eval_budget=100 * dim,
-        )
+        self.model = GaussianProcess(domain=self._search_space, n_restarts_optimizer=dim, alpha=1e-8)
 
         _std = np.std(y)
         y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
@@ -246,9 +234,7 @@ class ConditionalBO(ParallelBO):
         return np.random.choice(self.n_subspace, n_point).tolist()
 
     @timeit
-    def ask(
-        self, n_point: int = None, fixed: Dict[str, Union[float, int, str]] = None
-    ) -> Union[List[dict]]:
+    def ask(self, n_point: int = None, fixed: Dict[str, Union[float, int, str]] = None) -> List[dict]:
         n_point = self.n_point if n_point is None else n_point
         idx = []
         # initial DoE

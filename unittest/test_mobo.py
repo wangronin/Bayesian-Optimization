@@ -40,18 +40,12 @@ def test_3D():
     f2 = lambda x: x["Kp"] + x["Ki"] ** 2 + x["Kd"] ** 2
     f3 = lambda x: x["Kp"] ** 2 + x["Ki"] + x["Kd"]
     dim = search_space.dim
-    thetaL = 1e-10 * 100 * np.ones(dim)
-    thetaU = 10 * 100 * np.ones(dim)
-    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
     model = GaussianProcess(
-        theta0=theta0,
-        thetaL=thetaL,
-        thetaU=thetaU,
-        nugget=0,
-        noise_estim=False,
-        likelihood="concentrated",
+        domain=search_space,
+        n_obj=3,
+        n_restarts_optimizer=dim,
     )
+
     opt = MOBO(
         search_space=search_space,
         obj_fun=(f1, f2, f3),
@@ -83,17 +77,10 @@ def test_with_constraints():
     f2 = lambda x: 10 * x["left"] - x["up"] ** 2 + x["right"]
     g = lambda x: x["left"] + x["up"] + x["right"] - 100
     dim = search_space.dim
-    thetaL = 1e-10 * 100 * np.ones(dim)
-    thetaU = 10 * 100 * np.ones(dim)
-    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
     model = GaussianProcess(
-        theta0=theta0,
-        thetaL=thetaL,
-        thetaU=thetaU,
-        nugget=0,
-        noise_estim=False,
-        likelihood="concentrated",
+        domain=search_space,
+        n_obj=2,
+        n_restarts_optimizer=dim,
     )
     opt = MOBO(
         search_space=search_space,

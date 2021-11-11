@@ -68,11 +68,11 @@ def fmin(
     y0: Union[Vector, None] = None,
     n_point: int = 1,
     args: Tuple = (),
-    xtol: float = 1e-4,
-    ftol: float = 1e-4,
+    # xtol: float = 1e-4,
+    # ftol: float = 1e-4,
     max_FEs: Optional[int] = None,
     verbose: Optional[bool] = False,
-    callback: Optional[Callable] = None,
+    # callback: Optional[Callable] = None,
     seed: Optional[int] = None,
     **kwargs,
 ) -> Tuple[Vector, float, int, int, List[np.ndarray]]:
@@ -105,19 +105,10 @@ def fmin(
         The number of trial points generated in each iteration, by default 1
     args : Tuple, optional
         Extra arguments passed to `func`, i.e., ``func(x, *args)``.
-    xtol : float, optional
-        Absolute error in xopt between iterations that is acceptable for convergence,
-        by default 1e-4.
-    ftol : float, optional
-        Absolute error in func(xopt) between iterations that is acceptable for convergence,
-        by default 1e-4.
     max_FEs : Optional[int], optional
         Maximal number of function evaluations to make, by default None.
     verbose : Optional[bool], optional
         Verbosity of the output, by default False.
-    callback : Optional[Callable], optional
-        Called after each iteration, as `callback(X)`, where `X` is the current parameter
-        vectors, by default None.
     seed : Optional[int], optional
         Seeding the random number generator in `numpy`, by default None.
 
@@ -152,31 +143,14 @@ def fmin(
     obj_func = lambda x: func(x, *args)
 
     if isinstance(lower, float) and isinstance(upper, float):
-        dim = 1
         space = RealSpace([lower, upper])
     elif isinstance(lower, list) and isinstance(upper, list):
         assert len(lower) == len(upper)
-        dim = len(lower)
         space = RealSpace(list(zip(lower, upper)))
-        lower, upper = np.array(lower), np.array(upper)
 
-    mean = trend.constant_trend(dim, beta=0)
-    thetaL = 1e-10 * (upper - lower) * np.ones(dim)
-    thetaU = 10 * (upper - lower) * np.ones(dim)
-    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
     model = GaussianProcess(
-        mean=mean,
-        corr="squared_exponential",
-        theta0=theta0,
-        thetaL=thetaL,
-        thetaU=thetaU,
-        nugget=0,
-        noise_estim=False,
-        optimizer="BFGS",
-        wait_iter=3,
-        random_start=dim,
-        likelihood="concentrated",
-        eval_budget=100 * dim,
+        domain=space,
+        n_restarts_optimizer=space.dim,
     )
 
     # set up the warm-starting and DoE size
@@ -203,6 +177,7 @@ def fmin(
         max_FEs=max_FEs,
         verbose=verbose,
         n_point=n_point,
+        **kwargs,
     )
     opt.run()
 
@@ -213,16 +188,12 @@ def fmin(
     _data, data = opt.data[:N, :], opt.data[N:, :]
 
     data_per_iteration = [np.asarray(data[:N, :])]
-    data_per_iteration += [
-        np.asarray(data[(i * n) : ((i + 1) * n), :]) for i in range(opt.iter_count - 1)
-    ]
+    data_per_iteration += [np.asarray(data[(i * n) : ((i + 1) * n), :]) for i in range(opt.iter_count - 1)]
 
     print(
         "Optimization terminated successfully.\n"
         "        Current function value: {}\n"
         "        Iterations: {}\n"
-        "        Function evaluations: {}\n".format(
-            opt.xopt.fitness, opt.iter_count, opt.eval_count
-        )
+        "        Function evaluations: {}\n".format(opt.xopt.fitness, opt.iter_count, opt.eval_count)
     )
     return opt.xopt, opt.xopt.fitness, opt.iter_count, opt.eval_count, data_per_iteration

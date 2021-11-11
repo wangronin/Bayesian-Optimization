@@ -30,22 +30,9 @@ def test_warm_data_with_GPR():
     X = np.random.rand(5, dim) * (ub - lb) + lb
     y = [fitness(x) for x in X]
     space = RealSpace([lb, ub]) * dim
-
-    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-    thetaU = 10 * (ub - lb) * np.ones(dim)
-    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
     model = GaussianProcess(
-        theta0=theta0,
-        thetaL=thetaL,
-        thetaU=thetaU,
-        nugget=0,
-        noise_estim=False,
-        optimizer="BFGS",
-        wait_iter=3,
-        random_start=dim,
-        likelihood="concentrated",
-        eval_budget=100 * dim,
+        domain=space,
+        n_restarts_optimizer=dim,
     )
     opt = BO(
         search_space=space,

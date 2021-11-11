@@ -29,32 +29,16 @@ def test_pickling():
         return np.sum(x ** 2)
 
     space = RealSpace([lb, ub]) * dim
-
-    mean = trend.constant_trend(dim, beta=None)
-    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-    thetaU = 10 * (ub - lb) * np.ones(dim)
-    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
     model = GaussianProcess(
-        mean=mean,
-        corr="squared_exponential",
-        theta0=theta0,
-        thetaL=thetaL,
-        thetaU=thetaU,
-        nugget=0,
-        noise_estim=False,
-        optimizer="BFGS",
-        wait_iter=3,
-        random_start=dim,
-        likelihood="concentrated",
-        eval_budget=100 * dim,
+        domain=space,
+        n_restarts_optimizer=dim,
     )
     opt = BO(
         search_space=space,
         obj_fun=fitness,
         model=model,
         DoE_size=5,
-        max_FEs=10,
+        max_FEs=20,
         verbose=True,
         n_point=1,
         log_file="log",
@@ -67,14 +51,14 @@ def test_pickling():
     os.remove("test")
     os.remove("log")
 
-    opt = ParallelBO(
+    opt = BO(
         search_space=space,
         obj_fun=fitness,
         model=model,
         DoE_size=5,
-        max_FEs=10,
+        max_FEs=20,
         verbose=True,
-        n_point=3,
+        n_point=1,
         log_file="log",
     )
     opt.save("test")
@@ -95,24 +79,9 @@ def test_homogenous(var_type):
     if var_type == "r":
         lb, ub = -1, 5
         space = RealSpace([lb, ub]) * dim
-        mean = trend.constant_trend(dim, beta=None)
-        thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-        thetaU = 10 * (ub - lb) * np.ones(dim)
-        theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
         model = GaussianProcess(
-            mean=mean,
-            corr="squared_exponential",
-            theta0=theta0,
-            thetaL=thetaL,
-            thetaU=thetaU,
-            nugget=0,
-            noise_estim=False,
-            optimizer="BFGS",
-            wait_iter=3,
-            random_start=dim,
-            likelihood="concentrated",
-            eval_budget=100 * dim,
+            domain=space,
+            n_restarts_optimizer=dim,
         )
     else:
         if var_type == "b":
@@ -184,25 +153,9 @@ def test_flat_continuous():
         return 1
 
     space = RealSpace([lb, ub]) * dim
-
-    mean = trend.constant_trend(dim, beta=None)
-    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-    thetaU = 10 * (ub - lb) * np.ones(dim)
-    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
     model = GaussianProcess(
-        mean=mean,
-        corr="squared_exponential",
-        theta0=theta0,
-        thetaL=thetaL,
-        thetaU=thetaU,
-        nugget=0,
-        noise_estim=False,
-        optimizer="BFGS",
-        wait_iter=3,
-        random_start=dim,
-        likelihood="concentrated",
-        eval_budget=100 * dim,
+        domain=space,
+        n_restarts_optimizer=dim,
     )
     opt = BO(
         search_space=space,
