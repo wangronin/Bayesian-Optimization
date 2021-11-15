@@ -1,6 +1,8 @@
 import os
 import sys
 
+sys.path.insert(0, "../")
+
 import dill
 import numpy as np
 
@@ -14,8 +16,7 @@ def test_1D():
     s.fitness = 3
     assert s.ndim == 1
     assert s.fitness == 3
-
-    s = s.reshape(1, -1)
+    assert all(s.unique() == s)
 
 
 def test_2D():
@@ -29,12 +30,18 @@ def test_2D():
     s[:, 0] = np.asarray(["wa"] * 5).reshape(-1, 1)
     assert np.all(s[:, 0] == "wa")
 
+    s[3].fitness = 12
+    assert s.fitness[3] == 12
+
     a = s[0]
     a.fitness = 3
     assert s.fitness[0] == 3
 
     s[2:4].fitness = 1
     assert np.all(s.fitness[2:4] == 1)
+
+    s[0].index = "5"
+    assert s.index[0] == "5"
 
     print(s[0:1])
     print(s[0, 0:3])
@@ -50,6 +57,9 @@ def test_to_dict():
     s = Solution(np.random.randn(10, 5))
     print(s.to_dict(orient="index"))
 
+    s = Solution(np.random.randn(10))
+    s.to_dict()
+
 
 def test_pickling():
     s = Solution(np.random.randn(10, 5))
@@ -59,9 +69,8 @@ def test_pickling():
 
 
 def test_to_csv():
-    # # test saving to csv
     s = Solution(np.random.randn(10, 5))
-    s.to_csv("test.csv", header=True, show_attr=True, index=True)
+    s.to_csv("test.csv", header=True, attribute=True, index=True)
     os.remove("test.csv")
 
 

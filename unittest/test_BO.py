@@ -1,17 +1,30 @@
 import os
+import string
 import sys
 
+import pytest
+
+sys.path.insert(0, "../")
 import numpy as np
 import pytest
 
 sys.path.insert(0, "../")
 from bayes_optim import BO, ParallelBO
-from bayes_optim.search_space import BoolSpace, DiscreteSpace, IntegerSpace, RealSpace
-from bayes_optim.surrogate import GaussianProcess, RandomForest, trend
+from bayes_optim.search_space import (
+    BoolSpace,
+    DiscreteSpace,
+    IntegerSpace,
+    OrdinalSpace,
+    RealSpace,
+    SubsetSpace,
+)
+from bayes_optim.surrogate import GaussianProcess, RandomForest
+from bayes_optim.utils.exception import AskEmptyError, FlatFitnessError
 
 np.random.seed(123)
 
 
+@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_pickling():
     dim = 5
     lb, ub = -1, 5
@@ -21,25 +34,9 @@ def test_pickling():
         return np.sum(x ** 2)
 
     space = RealSpace([lb, ub]) * dim
-
-    mean = trend.constant_trend(dim, beta=None)
-    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-    thetaU = 10 * (ub - lb) * np.ones(dim)
-    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
     model = GaussianProcess(
-        mean=mean,
-        corr="squared_exponential",
-        theta0=theta0,
-        thetaL=thetaL,
-        thetaU=thetaU,
-        nugget=0,
-        noise_estim=False,
-        optimizer="BFGS",
-        wait_iter=3,
-        random_start=dim,
-        likelihood="concentrated",
-        eval_budget=100 * dim,
+        domain=space,
+        n_restarts_optimizer=dim,
     )
     opt = BO(
         search_space=space,
@@ -49,7 +46,7 @@ def test_pickling():
         max_FEs=10,
         verbose=True,
         n_point=1,
-        logger="log",
+        log_file="log",
     )
     opt.save("test")
     opt = BO.load("test")
@@ -59,46 +56,6 @@ def test_pickling():
     os.remove("test")
     os.remove("log")
 
-
-@pytest.mark.parametrize("var_type", ["r", "b", "c", "i"])
-def test_homogenous(var_type):
-    dim = 5
-
-    def fitness(x):
-        x = np.asarray(x)
-        return np.sum(x ** 2)
-
-    if var_type == "r":
-        lb, ub = -1, 5
-        space = RealSpace([lb, ub]) * dim
-        mean = trend.constant_trend(dim, beta=None)
-        thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-        thetaU = 10 * (ub - lb) * np.ones(dim)
-        theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
-        model = GaussianProcess(
-            mean=mean,
-            corr="squared_exponential",
-            theta0=theta0,
-            thetaL=thetaL,
-            thetaU=thetaU,
-            nugget=0,
-            noise_estim=False,
-            optimizer="BFGS",
-            wait_iter=3,
-            random_start=dim,
-            likelihood="concentrated",
-            eval_budget=100 * dim,
-        )
-    else:
-        if var_type == "b":
-            space = BoolSpace() * dim
-        elif var_type == "i":
-            space = IntegerSpace([0, 10]) * dim
-        elif var_type == "c":
-            space = DiscreteSpace(list(range(10))) * dim
-        model = RandomForest(levels=space.levels)
-
     opt = BO(
         search_space=space,
         obj_fun=fitness,
@@ -107,10 +64,98 @@ def test_homogenous(var_type):
         max_FEs=10,
         verbose=True,
         n_point=1,
+        log_file="log",
+    )
+    opt.save("test")
+    opt = BO.load("test")
+    print(opt.run())
+
+    os.remove("test")
+    os.remove("log")
+
+
+@pytest.mark.filterwarnings("ignore:The optimal value")
+@pytest.mark.parametrize("var_type", ["r", "b", "c", "i", "o", "s"])
+def test_homogenous(var_type):
+    dim = 5
+
+    def fitness(_):
+        return np.random.rand()
+
+    if var_type == "r":
+
+        def fitness(x):
+            return np.sum(np.asarray(x) ** 2)
+
+        lb, ub = -1, 5
+        space = RealSpace([lb, ub]) * dim
+        model = GaussianProcess(
+            domain=space,
+            n_restarts_optimizer=dim,
+        )
+    else:
+        if var_type == "b":
+            space = BoolSpace() * dim
+        elif var_type == "i":
+            space = IntegerSpace([0, 10], step=1) * dim
+        elif var_type == "c":
+            space = DiscreteSpace(list(range(10))) * dim
+        elif var_type == "o":
+            space = OrdinalSpace(list(string.ascii_letters))
+        elif var_type == "s":
+            space = SubsetSpace(list(string.ascii_lowercase)[:5])
+        model = RandomForest(levels=space.levels)
+
+    opt = BO(
+        search_space=space,
+        obj_fun=fitness,
+        model=model,
+        DoE_size=5,
+        max_FEs=5,
+        verbose=False,
+        n_point=1,
     )
     print(opt.run())
 
 
+def test_fixed_var():
+    def obj_fun(x):
+        return (
+            x["continuous"] ** 2
+            + abs(x["ordinal"] - 10) / 123.0
+            + (x["nominal"] != "OK") * 2
+            + int(x["bool"]) * 3
+            + (x["subset"] == ["A"]) * 5
+        )
+
+    search_space = (
+        BoolSpace(var_name="bool")
+        + IntegerSpace([5, 15], var_name="ordinal")
+        + RealSpace([-5, 5], var_name="continuous")
+        + DiscreteSpace(["OK", "A", "B", "C", "D", "E", "F", "G"], var_name="nominal")
+        + SubsetSpace(["A", "B", "C"], var_name="subset")
+    )
+    opt = ParallelBO(
+        search_space=search_space,
+        obj_fun=obj_fun,
+        model=RandomForest(levels=search_space.levels),
+        max_FEs=100,
+        DoE_size=3,  # the initial DoE size
+        eval_type="dict",
+        acquisition_fun="MGFI",
+        acquisition_par={"t": 2},
+        n_job=1,  # number of processes
+        n_point=3,  # number of the candidate solution proposed in each iteration
+        verbose=True,  # turn this off, if you prefer no output
+    )
+    X = opt.ask(3, fixed={"ordinal": 5, "continuous": 3.2})
+    assert all([x["ordinal"] == 5 and x["continuous"] == 3.2 for x in X])
+    opt.tell(X, [obj_fun(x) for x in X])
+    X = opt.ask(3, fixed={"nominal": "OK", "bool": False})
+    assert all([x["nominal"] == "OK" and not x["bool"] for x in X])
+
+
+@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_flat_continuous():
     dim = 5
     lb, ub = -1, 5
@@ -119,28 +164,10 @@ def test_flat_continuous():
         return 1
 
     space = RealSpace([lb, ub]) * dim
-
-    mean = trend.constant_trend(dim, beta=None)
-    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-    thetaU = 10 * (ub - lb) * np.ones(dim)
-    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
     model = GaussianProcess(
-        mean=mean,
-        corr="squared_exponential",
-        theta0=theta0,
-        thetaL=thetaL,
-        thetaU=thetaU,
-        nugget=0,
-        noise_estim=False,
-        optimizer="BFGS",
-        wait_iter=3,
-        random_start=dim,
-        likelihood="concentrated",
-        eval_budget=100 * dim,
+        domain=space,
+        n_restarts_optimizer=dim,
     )
-
-    # model = RandomForest(levels=space.levels)
     opt = BO(
         search_space=space,
         obj_fun=fitness,
@@ -150,12 +177,31 @@ def test_flat_continuous():
         verbose=True,
         n_point=1,
     )
-    print(opt.run())
+    with pytest.raises(FlatFitnessError):
+        opt.run()
 
 
-# @pytest.mark.parametrize("", ["list", "dict"])
-# def test_homogeneous():
-#     pass
+def test_infeasible_constraints():
+    dim = 5
+    lb, ub = -5, 5
+
+    def fitness(_):
+        return 1
+
+    space = RealSpace([lb, ub]) * dim
+    model = RandomForest(levels=space.levels)
+    opt = BO(
+        search_space=space,
+        obj_fun=fitness,
+        model=model,
+        DoE_size=5,
+        ineq_fun=lambda x: x[0] + 5.1,
+        max_FEs=10,
+        verbose=True,
+        n_point=1,
+    )
+    with pytest.raises(AskEmptyError):
+        opt.run()
 
 
 @pytest.mark.parametrize("eval_type", ["list", "dict"])  # type: ignore
@@ -175,8 +221,8 @@ def test_mix_space(eval_type):
 
         def obj_fun(x):
             x_r = np.array([x[i] for i in range(dim_r)])
-            x_i = x[-2]
-            x_d = x[-1]
+            x_i = x[dim_r]
+            x_d = x[dim_r + 1]
             _ = 0 if x_d == "OK" else 1
             return np.sum(x_r ** 2) + abs(x_i - 10) / 123.0 + _ * 2
 
@@ -187,10 +233,9 @@ def test_mix_space(eval_type):
         RealSpace([-5, 5], var_name="continuous") * dim_r
         + IntegerSpace([5, 15], var_name="ordinal")
         + DiscreteSpace(["OK", "A", "B", "C", "D", "E", "F", "G"], var_name="nominal")
+        + SubsetSpace(["A", "B", "C"], var_name="subset")
     )
-
     model = RandomForest(levels=search_space.levels)
-
     opt = ParallelBO(
         search_space=search_space,
         obj_fun=obj_fun,
@@ -200,7 +245,7 @@ def test_mix_space(eval_type):
         eval_type=eval_type,
         acquisition_fun="MGFI",
         acquisition_par={"t": 2},
-        n_job=3,  # number of processes
+        n_job=1,  # number of processes
         n_point=3,  # number of the candidate solution proposed in each iteration
         verbose=True,  # turn this off, if you prefer no output
     )

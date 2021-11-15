@@ -1,12 +1,24 @@
-import json
 import re
 import sys
 
+sys.path.insert(0, "../")
+
 import numpy as np
 import pytest
-
-sys.path.insert(0, "../")
-from bayes_optim.search_space import DiscreteSpace, IntegerSpace, Real, RealSpace, SearchSpace
+from bayes_optim.search_space import (
+    Bool,
+    Discrete,
+    DiscreteSpace,
+    Integer,
+    IntegerSpace,
+    Node,
+    Real,
+    RealSpace,
+    SearchSpace,
+    Subset,
+    SubsetSpace,
+    Variable,
+)
 from bayes_optim.solution import Solution
 
 
@@ -21,9 +33,15 @@ def test_Variable():
     assert all(np.asarray(x.var_type) == np.asarray(["Integer"] * 3))
 
 
+def test_real_warning():
+    with pytest.warns(UserWarning):
+        x = Real([-np.inf, 5], "x", 2, scale="log10")
+    assert x.bounds[0] == 1e-300
+
+
 def test_SearchSpace_var_name():
     cs = (
-        RealSpace([1e-10, 1e-1], "x", 7, scale="log")
+        RealSpace([1e-10, 1e-1], "x", 1e-3, scale="log")
         + IntegerSpace([-10, 10], "y")
         + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
     )
@@ -54,21 +72,36 @@ def test_contains():
     assert RealSpace([1e-10, 1e-1], "x", 0.01, scale="log") in cs
 
 
+def test_in():
+    cs = (
+        IntegerSpace([-10, 10], "y")
+        + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
+        + RealSpace([1e-10, 1e-1], "x", 0.01, scale="log")
+    )
+    x = Solution(cs.sample(1)[0], var_name=cs.var_name)
+    assert RealSpace([1e-10, 1e-1], "x", 0.01, scale="log") in cs
+    assert "x" in cs
+    assert "xx" not in cs
+    assert x.tolist() in cs
+    assert x.to_dict() in cs
+
+
 def test_sample_with_constraints():
+    g = lambda x: x - 0.1
     cs = RealSpace([1e-10, 1e-1], "x", 0.01, scale="log")
-    # NOTE: `h` and `g` are ineffective now
-    cs.sample(10, method="LHS", h=lambda x: x == 0.05, g=lambda x: x > 0.05)
+    X = cs.sample(10, g=g)
+    assert all(list(map(lambda x: g(x) <= 0, X)))
 
 
 def test_SearchSpace_remove():
     cs = (
-        RealSpace([1e-10, 1e-1], "x", 7, scale="log")
+        RealSpace([1e-10, 1e-1], "x", 1e-3, scale="log")
         + IntegerSpace([-10, 10], "y")
         + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
     )
 
     cs.remove(0)
-    assert isinstance(cs[0], IntegerSpace)
+    assert isinstance(cs[[0]], IntegerSpace)
 
     cs.remove("z")
     assert isinstance(cs, IntegerSpace)
@@ -78,9 +111,7 @@ def test_SearchSpace_remove():
 
 
 def test_SearchSpace_mul():
-    cs = (
-        RealSpace([0, 5], "x") + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C"], "z")
-    )
+    cs = RealSpace([0, 5], "x") + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C"], "z")
     __ = ["x0", "y0", "z0", "x1", "y1", "z1"]
     assert (cs * 2).dim == 6
     assert all(np.array((2 * cs).var_name) == np.asarray(__))
@@ -91,11 +122,7 @@ def test_SearchSpace_mul():
 
 def test_SearchSpace_sub():
     for _ in range(3):
-        cs = (
-            RealSpace([0, 5], "x")
-            + IntegerSpace([-10, 10], "y")
-            + DiscreteSpace(["A", "B", "C"], "z")
-        )
+        cs = RealSpace([0, 5], "x") + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C"], "z")
         _cs = DiscreteSpace(["A", "B", "C"], "z") + IntegerSpace([10, 20], "p")
 
         cs2 = cs - cs[1:]
@@ -135,14 +162,30 @@ def test_SearchSpace_slice():
         + IntegerSpace([-10, 10], "y")
         + DiscreteSpace(["A", "B", "C"], "z")
     )
-    assert isinstance(cs[0], RealSpace)
-    assert isinstance(cs[1], IntegerSpace)
-    assert isinstance(cs[2], DiscreteSpace)
+    assert isinstance(cs[[0]], RealSpace)
+    assert isinstance(cs[[1]], IntegerSpace)
+    assert isinstance(cs[[2]], DiscreteSpace)
+
+    assert isinstance(cs[0], Real)
+    assert isinstance(cs[1], Integer)
+    assert isinstance(cs[2], Discrete)
+    assert isinstance(cs["z"], Discrete)
+
+    cs = (
+        RealSpace([1, 5], "x", 2, scale="log") * 2
+        + IntegerSpace([-10, 10], "y")
+        + DiscreteSpace(["A", "B", "C"], "z")
+    )
+    assert isinstance(cs[:2], RealSpace)
+    assert isinstance(cs[["x0", "x1"]], RealSpace)
+    assert isinstance(cs[[False, False, True, False]], IntegerSpace)
+
+    assert isinstance(cs.filter(["x0", "x1"]), RealSpace)
 
 
 def test_sample():
     cs = (
-        RealSpace([1e-10, 1e-1], "x", 7, scale="log")
+        RealSpace([1e-10, 1e-1], "x", 1e-3, scale="log")
         + IntegerSpace([-10, 10], "y")
         + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
     )
@@ -151,6 +194,16 @@ def test_sample():
     cs.sample(5, method="LHS")
     X = cs.sample(5, method="uniform")
     cs.to_linear_scale(X)
+
+
+def test_constraints():
+    cs = RealSpace([-5, 5], "x") * 2
+    g = lambda x: x[0] + x[1] - 5
+    X = cs.sample(10, g=g)
+    assert all([g(x) <= 0 for x in X])
+
+    X = cs.sample(10, g=lambda x: x[0] + 5.1)
+    assert len(X) == 0
 
 
 def test_scale():
@@ -205,14 +258,14 @@ def test_precision():
 
 def test_iter():
     cs = (
-        RealSpace([1e-10, 1e-1], "x", 7, scale="log")
+        RealSpace([1e-10, 1e-1], "x", 1e-3, scale="log")
         + IntegerSpace([-10, 10], "y")
         + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
     )
     cs *= 2
 
-    for _cs in iter(cs):
-        assert _cs.dim == 1
+    for var in iter(cs):
+        assert isinstance(var, Variable)
 
 
 def test_from_dict():
@@ -245,5 +298,111 @@ def test_update():
     cs2 = RealSpace([-100, 100], "x1") + IntegerSpace([0, 10], "y")
     cs.update(cs2)
     assert "y" in cs.var_name
-    assert cs[1].data[0].bounds[0] == -100
-    assert cs[1].data[0].bounds[1] == 100
+    assert cs[[1]].data[0].bounds[0] == -100
+    assert cs[[1]].data[0].bounds[1] == 100
+
+
+def test_filter():
+    cs = (
+        RealSpace([1e-10, 1e-1], "x", 0.01, scale="log")
+        + IntegerSpace([-10, 10], "y")
+        + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
+    )
+    cs *= 2
+    assert cs.filter(["x1"]).var_name == ["x1"]
+    assert "x1" not in cs.filter(["x1"], invert=True).var_name
+
+
+def test_subset():
+    x = SubsetSpace(["a", "b", "c", "d"]) * 2
+    s = x.sample().tolist()
+
+    xx = Subset(["a", "b", "c", "d"])
+    xx.sample(10)
+    assert s[0] in x
+
+
+def test_node():
+    info = {
+        "ccc2": [{"name": "cccc", "condition": "ccc2 == 2"}],
+        "c1": [
+            {"name": "cc1", "condition": "c1 == 1"},
+            {"name": "cc2", "condition": "c1 == 10"},
+        ],
+        "p1": [
+            {"name": "c1", "condition": "p1 == 1"},
+            {"name": "c2", "condition": "p1 == 2"},
+            {"name": "c3", "condition": "p1 == 3"},
+        ],
+        "cc2": [
+            {"name": "ccc1", "condition": "cc2 == 1"},
+            {"name": "ccc2", "condition": "cc2 == 2"},
+        ],
+        "p2": [{"name": "a", "condition": "p2 == 'a'"}, {"name": "b", "condition": "p2 == 'b'"}],
+    }
+    roots = Node.from_dict(info)
+    assert roots[0].name == "p1"
+    assert roots[1].name == "p2"
+
+    root = roots[0]
+    print(root.pprint())
+    print(root.get_all_path())
+    print(root.to_dict())
+
+
+def test_condition():
+    structure = {
+        "z2": [{"name": "q", "condition": "z2 == 3.14"}],
+        "y1": [
+            {"name": "z1", "condition": "y1 == 'A'"},
+            {"name": "z2", "condition": "y1 == 'B'"},
+        ],
+        "x": [
+            {"name": "y1", "condition": "x == 1"},
+            {"name": "y2", "condition": "x == 2"},
+            {"name": "y3", "condition": "x == 3"},
+        ],
+        "x1": [{"name": "a", "condition": "x1 == 3"}, {"name": "b", "condition": "x1 == 2"}],
+    }
+    cs = SearchSpace(
+        [
+            Integer([0, 5], "x"),
+            Discrete(["A", "B", "C"], "y1"),
+            Discrete(["A", "B", "C"], "y2"),
+            Discrete(["A", "B", "C"], "y3"),
+            Real([-5, 5], "z1"),
+            Real([-5, 5], "z2"),
+            Bool("q"),
+            Integer([0, 5], "x1"),
+            Real([-5, 5], "a"),
+            Real([-5, 5], "b"),
+            Real([-5, 5], "xx"),
+            Real([-5, 5], "yy"),
+            Real([-5, 5], "zz"),
+        ],
+        structure=structure,
+    )
+    subcs = cs.get_unconditional_subspace()
+    assert len(subcs) == 8
+
+
+def test_condition2():
+    cs = SearchSpace(
+        [
+            Integer([0, 5], "x"),
+            Discrete(["A", "B", "C"], "y1", conditions="x == 1"),
+            Discrete(["A", "B", "C"], "y2", conditions="x == 2"),
+            Discrete(["A", "B", "C"], "y3", conditions="x == 3"),
+            Real([-5, 5], "z1", conditions="y1 == 'A'"),
+            Real([-5, 5], "z2", conditions="y1 == 'B'"),
+            Bool("q", conditions="z1 == 3.14"),
+            Integer([0, 5], "x1"),
+            Real([-5, 5], "a", conditions="x1 == 3"),
+            Integer([-5, 5], "b", conditions="x1 == 2"),
+            Real([-5, 5], "xx"),
+            Real([-5, 5], "yy"),
+            Real([-5, 5], "zz"),
+        ],
+    )
+    subcs = cs.get_unconditional_subspace()
+    assert len(subcs) == 8

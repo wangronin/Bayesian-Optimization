@@ -1,4 +1,6 @@
-from typing import List, Optional, Sequence, Union
+from __future__ import annotations
+
+from typing import Dict, List, Optional, Sequence, Union
 
 import numpy as np
 from tabulate import tabulate
@@ -7,7 +9,6 @@ __authors__ = ["Hao Wang"]
 
 # TODO: maybe set var_name as a constant attribute
 # TODO: register the objective function the class and implement an eval function
-# TODO: fix the maximum recursion problem when debugging
 # TODO: make this class work with numpy's ufunc, e.g., ``np.round``
 
 
@@ -19,9 +20,6 @@ class Solution(np.ndarray):
      3) extra attributes (e.g., fitness) sliced together with the solution
     """
 
-    # TODO: get rid of self.__dict__ for speed concern
-    # But __slots__ does NOT work with dill yet...
-    # __slots__ = 'N', 'dim', 'var_name', 'index', 'fitness', 'n_eval', 'verbose', 'n_obj'
     def __new__(
         cls,
         x: Sequence,
@@ -73,7 +71,14 @@ class Solution(np.ndarray):
             For slicing and view casting, the extra attributes are handled in function
             `__array_finalize__`.
         """
-        obj = np.asarray(x, dtype="object").view(cls)
+        if isinstance(x[0], list) and isinstance(x[0][0], tuple):
+            dim = len(x[0])
+            obj = np.asarray([_ + [1] for _ in x], dtype="object")[:, 0:dim].view(cls)
+        elif isinstance(x[0], tuple):
+            dim = len(x)
+            obj = np.asarray(x + [1], dtype="object")[:, 0:dim].view(cls)
+        else:
+            obj = np.asarray(x, dtype="object").view(cls)
 
         if len(obj.shape) > 2:
             raise Exception("More than 2D is not supported")
@@ -82,6 +87,7 @@ class Solution(np.ndarray):
         obj.dim = obj.shape[0] if len(obj.shape) == 1 else obj.shape[1]
         obj.n_obj = int(n_obj)
 
+        # TODO: convert those as decorators
         if obj.n_obj > 1:  # multi-objective
             if not hasattr(fitness, "__iter__"):
                 fitness = [[fitness] * obj.n_obj] * obj.N
@@ -95,13 +101,14 @@ class Solution(np.ndarray):
         assert len(fitness) == obj.N
 
         if not hasattr(n_eval, "__iter__"):
+            assert isinstance(n_eval, int)
             n_eval = [n_eval] * obj.N
+        else:
+            assert all(list(map(lambda n: isinstance(n, int), n_eval)))
 
         if index is None:
             index = list(map(str, range(obj.N)))
-        elif isinstance(index, str):
-            index = [index]
-        elif isinstance(index, int):
+        elif isinstance(index, (str, int)):
             index = [index]
         assert len(index) == obj.N
 
@@ -122,8 +129,7 @@ class Solution(np.ndarray):
             fitness_name = [fitness_name]
         assert len(fitness_name) == obj.n_obj
 
-        # a np.ndarray is used for those attributes because slicing it returns references
-        # avoid calling self.__setattr__ for attributes fitness, n_eval and index
+        # TODO: a np.ndarray is used for those attributes because slicing it returns references
         super(Solution, obj).__setattr__("fitness", np.asarray(fitness, dtype=float))
         super(Solution, obj).__setattr__("n_eval", np.asarray(n_eval, dtype=int))
         super(Solution, obj).__setattr__("index", np.asarray(index, dtype=str))
@@ -132,17 +138,11 @@ class Solution(np.ndarray):
         obj.verbose = verbose
         return obj
 
-    def _check_attr(self):
-        # TODO: check for the compatibility of fitness and n_eval
-        pass
-
-    def __iadd__(self, other):
+    def __iadd__(self, other: Solution) -> Solution:
         return self.__add__(other)
 
-    def __add__(self, other):
-        """
-        Concatenate two sets of solutions
-        """
+    def __add__(self, other: Solution) -> Solution:
+        """Concatenate two Solution objects"""
         assert isinstance(other, Solution)
         assert self.dim == other.dim
         assert self.n_obj == other.n_obj
@@ -162,10 +162,8 @@ class Solution(np.ndarray):
             verbose=self.verbose,
         )
 
-    def __mul__(self, N):
-        """
-        repeat a solution N times
-        """
+    def __mul__(self, N: int) -> Solution:
+        """repeat a solution N times"""
         assert isinstance(N, int)
         if self.N > 1:
             raise Exception("Replication is not supported for 2D")
@@ -179,19 +177,32 @@ class Solution(np.ndarray):
             verbose=self.verbose,
         )
 
-    def __rmul__(self, N):
+    def __rmul__(self, N: int) -> Solution:
         return self.__mul__(N)
 
     def __setattr__(self, name, value):
         attr = getattr(self, name, None)
         if hasattr(attr, "__iter__") and name in ["fitness", "n_eval", "index"]:
-            attr[:] = value  # IMPORTANT: copy the value (not reference) to the attribute
+            attr[:] = value  # NOTE: copy the value (not reference) to the attribute
         else:
             super(Solution, self).__setattr__(name, value)
 
-    # def __setitem__(self, index, value):
-    #     # TODO: maybe add variable type checker here...
-    #     super(Solution, self).__setitem__(index, value)
+    def __str__(self) -> str:
+        var_name = self.var_name.tolist()
+        headers = var_name + ["n_eval"] + self.fitness_name if self.verbose else var_name
+        if len(self.shape) == 1:
+            t = (
+                [self.tolist() + self.n_eval.tolist() + self.fitness.tolist()]
+                if self.verbose
+                else [self.tolist()]
+            )
+        else:
+            t = np.c_[self, self.n_eval, self.fitness].tolist() if self.verbose else self.tolist()
+
+        return tabulate(t, headers=headers, showindex=self.index.tolist(), tablefmt="grid")
+
+    def __repr__(self) -> str:
+        return self.__str__()
 
     def __getitem__(self, index):
         _, __ = index, slice(None, None)
@@ -223,20 +234,14 @@ class Solution(np.ndarray):
                 super(Solution, subarr).__setattr__("fitness", fitness)
                 super(Solution, subarr).__setattr__("n_eval", subarr.n_eval[_])
                 super(Solution, subarr).__setattr__("index", subarr.index[_])
-
-                # multiple solutions and the column is indexed
-                subarr.var_name = subarr.var_name[__]
+                super(Solution, subarr).__setattr__("var_name", subarr.var_name[__])
 
             subarr.N = 1 if len(subarr.shape) == 1 else subarr.shape[0]
             subarr.dim = subarr.shape[0] if len(subarr.shape) == 1 else subarr.shape[1]
 
         return subarr
 
-    def unique(self):
-        _, index = np.unique(self.tolist(), axis=0, return_index=True)
-        return self[np.sort(index)]
-
-    def __array_finalize__(self, obj):
+    def __array_finalize__(self, obj: Solution):
         """
         `__array_finalize__` is called after new `Solution` instance is created: from calling
         1) `__new__`, 2) view casting (`ndarray`.`view()`) or 3) slicing (`__getitem__`)
@@ -260,19 +265,44 @@ class Solution(np.ndarray):
         self.n_obj: int = getattr(obj, "n_obj", None)
 
     @classmethod
-    def from_dict(cls, x, index=None):
+    def from_dict(
+        cls,
+        x: Union[List[dict], dict],
+        index: List[int, str] = None,
+        var_name: Union[str, List[str]] = None,
+        **kwargs,
+    ) -> Solution:
         if isinstance(x, dict):
             var_name = list(x.keys())
-            res = cls.__new__(cls, x=list(x.values()), var_name=var_name, index=index)
+            res = cls.__new__(cls, x=list(x.values()), var_name=var_name, index=index, **kwargs)
         elif isinstance(x, list):
             var_name = list(x[0].keys())
             _x = [list(_.values()) for _ in x]
-            res = cls.__new__(cls, x=_x, var_name=var_name, index=index)
+            res = cls.__new__(cls, x=_x, var_name=var_name, index=index, **kwargs)
         return res
 
-    def to_dict(self, orient="index", with_index=False, **kwargs):
-        # NOTE: avoid calling self.__getitem__
-        # TODO: the following code only work 2D array
+    def unique(self) -> Solution:
+        if len(self.shape) == 1:
+            return self
+        _, index = np.unique(self.tolist(), axis=0, return_index=True)
+        return self[np.sort(index)]
+
+    def to_list(self) -> List:
+        return super().tolist()
+
+    def to_dict(self, orient: str = "index", with_index: bool = False) -> Union[List, Dict]:
+        """A Solution object to a dictionary
+
+        Parameters
+        ----------
+        orient : str, optional
+            orientation of the dictionary, which is either `index` or `var`, by default "index"
+        with_index : bool, optional
+            whether indices of solutions should be used in the dictionary, by default False
+        """
+        if orient not in ("index", "var"):
+            raise ValueError(f"`orient` value {orient} is invalid")
+
         obj = np.atleast_2d(self.view(np.ndarray))
         if orient == "index":
             if with_index:
@@ -285,9 +315,8 @@ class Solution(np.ndarray):
                     {self.var_name[k]: obj[i, k] for k in range(self.dim)}
                     for i, _index in enumerate(self.index)
                 ]
-                # TODO: perhaps we need this..
-                # if len(res) == 1:
-                #     res = res[0]
+                if len(self.shape) == 1:
+                    res = res[0]
         elif orient == "var":
             if with_index:
                 res = {
@@ -298,30 +327,39 @@ class Solution(np.ndarray):
                 res = {_name: list(obj[:, k]) for k, _name in enumerate(self.var_name)}
         return res
 
-    def __str__(self):
-        var_name = self.var_name.tolist()
-        headers = var_name + ["n_eval"] + self.fitness_name if self.verbose else var_name
-        if len(self.shape) == 1:
-            t = (
-                [self.tolist() + self.n_eval.tolist() + self.fitness.tolist()]
-                if self.verbose
-                else [self.tolist()]
-            )
-        else:
-            t = np.c_[self, self.n_eval, self.fitness].tolist() if self.verbose else self.tolist()
+    def to_csv(
+        self,
+        fname: str,
+        delimiter: str = ",",
+        append: bool = False,
+        header: bool = True,
+        index: bool = True,
+        attribute: bool = True,
+    ):
+        """Convert to the CSV format
 
-        return tabulate(t, headers=headers, showindex=self.index.tolist(), tablefmt="grid")
-
-    def __repr__(self):
-        return self.__str__()
-
-    def to_csv(self, fname, delimiter=",", append=False, header=True, index=True, show_attr=True):
+        Parameters
+        ----------
+        fname : str
+            the name of the output CSV file
+        delimiter : str, optional
+            column-separating delimiter, by default ","
+        append : bool, optional
+            whether to append to an existing file, by default False
+        header : bool, optional
+            whether to write a header in the CSV, by default True
+        index : bool, optional
+            wheter to include the index, by default True
+        attribute : bool, optional
+            whether to include the atttributes, i.e., `self.n_eval` and `self.fitness`,
+            by default True
+        """
         var_name = self.var_name.tolist()
         if header:
             _header = var_name
             if index:
                 _header = [""] + _header
-            if show_attr:
+            if attribute:
                 attr_name = ["n_eval"] + self.fitness_name
                 _header += attr_name
             _header = delimiter.join(_header) + "\n"
@@ -329,7 +367,7 @@ class Solution(np.ndarray):
         data = self.reshape(1, -1) if len(self.shape) == 1 else self
         if index:
             data = np.c_[self.index, data]
-        if show_attr:
+        if attribute:
             data = np.c_[data, self.n_eval, self.fitness]
 
         out = [delimiter.join(map(str, row)) + "\n" for row in data.tolist()]

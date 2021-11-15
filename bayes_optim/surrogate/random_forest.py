@@ -1,22 +1,29 @@
+from __future__ import annotations
+
+from collections import OrderedDict
+from typing import List, Union
+
 import numpy as np
 from joblib import Parallel, delayed
-from numpy import array, atleast_2d, std
+from numpy import array
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble._base import _partition_estimators
-from sklearn.metrics import r2_score
-from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder
 from sklearn.utils.validation import check_is_fitted
 
+from ..solution import Solution
 
-# TODO: implement multi-output/objetive surrogate models, better to model the c
-# orrelation among targets
+__authors__ = ["Hao Wang"]
+
+
 class SurrogateAggregation(object):
+    """Linear aggregation of surrogate models used for multi-obvjective optimization"""
+
     def __init__(self, surrogates, aggregation="WS", **kwargs):
         self.surrogates = surrogates
         self.N = len(self.surrogates)
         self.aggregation = aggregation
         self.weights = np.asarray(kwargs["weights"], dtype="float").ravel()
-
         assert self.aggregation in ["WS", "Tchebycheff"]
 
     def fit(self, X, y):
@@ -42,27 +49,31 @@ class SurrogateAggregation(object):
         return (y_hat, MSE) if eval_MSE else y_hat
 
     def gradient(self, X):
-        # TODO: implement
+        # TODO: this model is not differentiable?
         pass
 
 
 def _save_prediction(predict, X, index, out):
-    """
-    It can't go locally in ForestClassifier or ForestRegressor, because joblib
+    """It can't go locally in ForestClassifier or ForestRegressor, because joblib
     complains that it cannot pickle it when placed there.
     """
     out[..., index] = predict(X, check_input=False)
 
 
 class RandomForest(RandomForestRegressor):
-    """Extension on the sklearn's `RandomForestRegressor`
+    r"""Extension on the sklearn's `RandomForestRegressor`
     Added functionality:
         1) MSE estimate,
         2) OneHotEncoding to handle categorical variables
     """
 
     def __init__(
-        self, n_estimators=100, max_features=5 / 6, min_samples_leaf=2, levels=None, **kwargs
+        self,
+        n_estimators: int = 100,
+        max_features: float = 5 / 6,
+        min_samples_leaf: int = 2,
+        levels: dict = None,
+        **kwargs,
     ):
         """
         parameter
@@ -71,44 +82,41 @@ class RandomForest(RandomForestRegressor):
             keys: indices of categorical variables
             values: list of levels of categorical variables
         """
-        super(RandomForest, self).__init__(
+        super().__init__(
             n_estimators=n_estimators,
             max_features=max_features,
             min_samples_leaf=min_samples_leaf,
-            **kwargs
+            **kwargs,
         )
+        assert isinstance(levels, dict)
+        self.levels = levels
         self.is_fitted = False
 
         # for categorical levels/variable number
         # in the future, maybe implement binary/multi-value split
-        if levels is not None:
-            assert isinstance(levels, dict)
-            self._levels = levels
+        if self.levels:
+            self._levels = OrderedDict(sorted(levels.items()))
             self._cat_idx = list(self._levels.keys())
-            self._categories = [list(l) for l in self._levels.values()]
-
+            self._categories = list(self._levels.values())
             # encode categorical variables to binary values
             self._enc = OneHotEncoder(categories=self._categories, sparse=False)
 
-    def _check_X(self, X):
+    def _check_X(self, X: Union[Solution, List, np.ndarray]) -> Solution:
         X_ = array(X, dtype=object)
         if hasattr(self, "_levels"):
-            X_cat = X_[:, self._cat_idx]
-            try:
-                X_cat = self._enc.transform(X_cat)
-            except:
-                X_cat = self._enc.fit_transform(X_cat)
+            X_cat = self._enc.fit_transform(X_[:, self._cat_idx])
             X = np.c_[np.delete(X_, self._cat_idx, 1).astype(float), X_cat]
         return X
 
-    def fit(self, X, y):
-        X = self._check_X(X)
-        y = y.ravel()
+    def fit(self, X: Union[Solution, List, np.ndarray], y: np.ndarray):
+        if y.ndim == 2 and y.shape[1] == 1:
+            y = y.ravel()
+        self.X = self._check_X(X)
         self.y = y
         self.is_fitted = True
-        return super(RandomForest, self).fit(X, y)
+        return super().fit(self.X, self.y)
 
-    def predict(self, X, eval_MSE=False):
+    def predict(self, X: Union[Solution, List, np.ndarray], eval_MSE=False) -> np.ndarray:
         """Predict regression target for `X`.
         The predicted regression target of an input sample is computed as the
         mean predicted regression targets of the trees in the forest.
@@ -124,88 +132,24 @@ class RandomForest(RandomForestRegressor):
             The predicted values.
         """
         check_is_fitted(self)
-        # Check data
+        # check data
         X = self._check_X(X)
         X = self._validate_X_predict(X)
-
-        # Assign chunk of trees to jobs
+        # assign chunk of trees to jobs
         n_jobs, _, _ = _partition_estimators(self.n_estimators, self.n_jobs)
-
         # storing the output of every estimator since those are required to estimate the MSE
-        if self.n_outputs_ > 1:
-            y_hat_all = np.zeros(
-                (X.shape[0], self.n_outputs_, self.n_estimators), dtype=np.float64
-            )
-        else:
-            y_hat_all = np.zeros((X.shape[0], self.n_estimators), dtype=np.float64)
-
-        # Parallel loop
-        Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
-            delayed(_save_prediction)(e.predict, X, i, y_hat_all)
-            for i, e in enumerate(self.estimators_)
+        y_hat_all = (
+            np.zeros((X.shape[0], self.n_outputs_, self.n_estimators), dtype=np.float64)
+            if self.n_outputs_ > 1
+            else np.zeros((X.shape[0], self.n_estimators), dtype=np.float64)
         )
+        # parallel loop
+        Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
+            delayed(_save_prediction)(e.predict, X, i, y_hat_all) for i, e in enumerate(self.estimators_)
+        )
+        y_hat = np.mean(y_hat_all, axis=-1)
 
-        y_hat = np.mean(y_hat_all, axis=1).flatten()
         if eval_MSE:
             # TODO: implement the jackknife estimate of variance
-            _MSE_hat = np.std(y_hat_all, axis=1, ddof=1) ** 2.0
-            _MSE_hat = _MSE_hat.flatten()
-
-        return (y_hat, _MSE_hat) if eval_MSE else y_hat
-
-
-if __name__ == "__main__":
-    # TODO: this part goes into test
-    # simple test for mixed variables...
-    np.random.seed(12)
-
-    n_sample = 110
-    levels = ["OK", "A", "B", "C", "D", "E"]
-    X = np.c_[
-        np.random.randn(n_sample, 2).astype(object), np.random.choice(levels, size=(n_sample, 1))
-    ]
-    y = np.sum(X[:, 0:-1] ** 2.0, axis=1) + 5 * (X[:, -1] == "OK")
-
-    X_train, y_train = X[:100, :], y[:100]
-    X_test, y_test = X[100:, :], y[100:]
-
-    # sklearn-random forest
-    rf = RandomForest(levels={2: levels}, max_features="sqrt")
-    rf.fit(X_train, y_train)
-    y_hat, mse = rf.predict(X_test, eval_MSE=True)
-
-    print("sklearn random forest:")
-    print("target :", y_test)
-    print("predicted:", y_hat)
-    print("MSE:", mse)
-    print("r2:", r2_score(y_test, y_hat))
-    print()
-
-    if 11 < 2:
-        X = np.c_[
-            np.random.randn(n_sample, 2).astype(object),
-            np.random.choice(levels, size=(n_sample, 1)),
-        ]
-        y = np.sum(X[:, 0:-1] ** 2.0, axis=1) + 5 * (X[:, -1] == "OK")
-
-        X_train, y_train = X[:100, :], y[:100]
-        X_test, y_test = X[100:, :], y[100:]
-
-        rf_ = RandomForest(levels={2: levels}, max_features="sqrt")
-        rf_.fit(X_train, y_train)
-
-        rf_aggr = SurrogateAggregation((rf, rf_), weights=(0.1, 0.9))
-        y_hat, mse = rf_aggr.predict(X_test, eval_MSE=True)
-
-        print("sklearn random forest:")
-        print("target :", y_test)
-        print("predicted:", y_hat)
-        print("MSE:", mse)
-        print("r2:", r2_score(y_test, y_hat))
-        print()
-
-    # TODO: those settings should be in test file as inputs to surroagtes
-    # leaf_size = max(1, int(n_sample / 20.))
-    # ntree=100,
-    # mtry=ceil(self.n_feature * 5 / 6.),
-    # nodesize=leaf_size
+            MSE_hat = np.std(y_hat_all, axis=-1, ddof=1) ** 2.0
+        return (y_hat, MSE_hat) if eval_MSE else y_hat

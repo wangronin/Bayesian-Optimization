@@ -11,33 +11,36 @@ from numpy import pi, log
 
 ## SMSE measurement
 # test_y is the target, pred_y the predicted target, both 1D arrays of same length
-def SMSE(test_y,pred_y):
-	se = []
-	target_variance = np.var(test_y)
-	for i in range(len(test_y)):
-		temp = (pred_y[i] - test_y[i])**2
-		se.append(temp)
-	mse = np.mean(se)
-	smse = mse / target_variance
-	return smse
+def SMSE(test_y, pred_y):
+    se = []
+    target_variance = np.var(test_y)
+    for i in range(len(test_y)):
+        temp = (pred_y[i] - test_y[i]) ** 2
+        se.append(temp)
+    mse = np.mean(se)
+    smse = mse / target_variance
+    return smse
+
 
 ## MSLL = mean standardized log loss
 ## logprob = 0.5*log(2*pi.*varsigmaVec) + sserror - 0.5*log(2*pi*varyTrain)...
 ##           - ((yTestVec - meanyTrain).^2)./(2*varyTrain);
-def MSLL(train_y,test_y,pred_y,variances):
-	sll = []
-	mean_y = np.mean(train_y)
-	var_y = np.var(train_y)
-	for i in range(len(variances)):
-		if variances[i] == 0:
-			variances[i] += 0.0000001 #hack
-		sll_trivial = 0.5*log(2 * pi * var_y) + ((test_y[i] - mean_y)**2 / (2* var_y))
-		sllv = ( 0.5*log(2 * pi * variances[i]) + \
-      ((test_y[i] - pred_y[i])**2 / (2* variances[i])) ) - sll_trivial
-		sll.append(sllv)
-	sll = np.array(sll)
-	msll = np.mean(sll)
-	return msll
+def MSLL(train_y, test_y, pred_y, variances):
+    sll = []
+    mean_y = np.mean(train_y)
+    var_y = np.var(train_y)
+    for i in range(len(variances)):
+        if variances[i] == 0:
+            variances[i] += 0.0000001  # hack
+        sll_trivial = 0.5 * log(2 * pi * var_y) + ((test_y[i] - mean_y) ** 2 / (2 * var_y))
+        sllv = (
+            0.5 * log(2 * pi * variances[i]) + ((test_y[i] - pred_y[i]) ** 2 / (2 * variances[i]))
+        ) - sll_trivial
+        sll.append(sllv)
+    sll = np.array(sll)
+    msll = np.mean(sll)
+    return msll
+
 
 # # Obtain the initial design locations
 # def get_design_sites(dim, n_sample, x_lb, x_ub, sampling_method='lhs'):
@@ -87,10 +90,10 @@ def MSLL(train_y,test_y,pred_y,variances):
 # #       fitness = (fitness - np.min(fitness)) / (np.max(fitness) - np.min(fitness)) + foo
 #    if is_log:
 #        fitness = np.log(fitness)
-       
+
 #    CS = ax.contour(X, Y, fitness, n_level, cmap=plt.cm.Spectral, linewidths=1)
 #    plt.clabel(CS, inline=1, fontsize=10)
-       
+
 #    if grad is not None:
 #        # calculate function gradients
 #        x1 = np.linspace(x_lb[0], x_ub[0], np.floor(n_per_axis / 10))
@@ -101,30 +104,30 @@ def MSLL(train_y,test_y,pred_y,variances):
 #            np.save('grad.npy', dx)
 #        else:
 #            dx = grad_data
-           
+
 #        dx_norm = np.sqrt(np.sum(dx ** 2.0, axis=1)) # in case of zero gradients
 #        dx /= dx_norm.reshape(-1, 1)
 #        dx1 = dx[:, 0].reshape(-1, len(x1))
 #        dx2 = dx[:, 1].reshape(-1, len(x1))
-       
+
 #        CS = ax.quiver(X1, X2, dx1, dx2, dx_norm, cmap=plt.cm.jet,
 #                       #norm=colors.LogNorm(vmin=1e-100, vmax=dx_norm.max()),
 #                       headlength=5)
 
 # #        fig.colorbar(CS, ax=ax)
-    
+
 #    ax.set_xlabel('$x_1$')
 #    ax.set_ylabel('$x_2$')
 #    ax.grid(True)
 #    ax.set_title(title)
 #    ax.set_xlim(x_lb[0], x_ub[0])
 #    ax.set_ylim(x_lb[1], x_ub[1])
-   
-   
-# def plot_surface_contour(ax, f, grad, x_lb, x_ub, title='f', 
+
+
+# def plot_surface_contour(ax, f, grad, x_lb, x_ub, title='f',
 #                          log_transform=False, n_level=30, foo=0,
 #                          f_data=None, grad_data=None,n_per_axis=200):
-    
+
 #     fig = ax.figure
 #     x = np.linspace(x_lb[0], x_ub[0], n_per_axis)
 #     y = np.linspace(x_lb[1], x_ub[1], n_per_axis)
@@ -143,7 +146,7 @@ def MSLL(train_y,test_y,pred_y,variances):
 #             fitness = np.log(fitness)
 #         CS = ax.contour(X, Y, fitness, n_level, cmap=plt.cm.winter, linewidths=1, offset=0)
 #         plt.clabel(CS, inline=1, fontsize=15)
-        
+
 #         tri = mtri.Triangulation(X, Y)
 #         ax.plot_trisurf(X, Y, fitness, rstride=1, cstride=1, cmap=plt.cm.Spectral, linewidth=0, alpha=0.3)
 # #        fig.colorbar(CS, ax=ax, fraction=0.046, pad=0.04)
@@ -172,7 +175,7 @@ def MSLL(train_y,test_y,pred_y,variances):
 #                       headlength=5)
 
 # #        fig.colorbar(CS, ax=ax)
-    
+
 #     ax.set_xlabel('$x_1$')
 #     ax.set_ylabel('$x_2$')
 #     ax.grid(True)

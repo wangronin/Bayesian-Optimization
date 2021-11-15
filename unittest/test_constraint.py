@@ -5,7 +5,9 @@ import pytest
 
 sys.path.insert(0, "../")
 from bayes_optim import BO, IntegerSpace, RealSpace
-from bayes_optim.surrogate import RandomForest
+from bayes_optim.search_space import DiscreteSpace
+from bayes_optim.surrogate import GaussianProcess, RandomForest
+from bayes_optim.utils.exception import ConstraintEvaluationError
 
 
 def obj_fun2(x):
@@ -24,26 +26,28 @@ def g(x):
     return [-x["pc"], x["mu"] - 1.9]
 
 
-@pytest.mark.skip(reason="OnePlusOne_Cholesky_CMA does not work this constraints yet..")
+@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_BO_equality():
-    search_space = RealSpace([0, 1]) * 2
-    model = RandomForest(levels=search_space.levels)
+    dim = 5
+    search_space = RealSpace([0, 1]) * dim
+    model = GaussianProcess(domain=search_space)
     xopt, _, __ = BO(
         search_space=search_space,
         obj_fun=obj_fun,
         eq_fun=h,
         model=model,
-        max_FEs=10,
+        max_FEs=20,
         DoE_size=3,
         acquisition_fun="MGFI",
         acquisition_par={"t": 2},
-        acquisition_optimization={"optimizer": "MIES"},
+        acquisition_optimization={"optimizer": "BFGS"},
         verbose=True,
         random_seed=42,
     ).run()
-    assert np.isclose(h(xopt), 0, atol=1e-2)
+    assert np.isclose(h(xopt), 0, atol=1e-1)
 
 
+@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_BO_constraints():
     search_space = (
         IntegerSpace([1, 10], var_name="mu")
@@ -51,7 +55,6 @@ def test_BO_constraints():
         + RealSpace([0, 1], var_name="pc")
         + RealSpace([0.005, 0.5], var_name="p")
     )
-
     model = RandomForest(levels=search_space.levels)
     xopt, _, __ = BO(
         search_space=search_space,
@@ -70,3 +73,28 @@ def test_BO_constraints():
     ).run()
     assert isinstance(xopt, dict)
     assert all(np.array(g(xopt)) <= 0)
+
+
+def test_BO_bad_constraints():
+    search_space = (
+        DiscreteSpace(["1", "2", "3"], var_name="lambda")
+        + RealSpace([0, 1], var_name="pc")
+        + RealSpace([0.005, 0.5], var_name="p")
+    )
+    model = RandomForest(levels=search_space.levels)
+    with pytest.raises(ConstraintEvaluationError):
+        BO(
+            search_space=search_space,
+            obj_fun=lambda x: 10 * (x[0] == "3") + x[1] * x[2],
+            ineq_fun=lambda x: sum(np.array(x) ** 2),
+            model=model,
+            max_FEs=10,
+            DoE_size=3,
+            eval_type="list",
+            acquisition_fun="MGFI",
+            acquisition_par={"t": 2},
+            n_job=1,
+            n_point=1,
+            verbose=True,
+            random_seed=42,
+        ).run()

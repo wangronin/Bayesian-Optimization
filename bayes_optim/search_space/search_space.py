@@ -1,288 +1,42 @@
 from __future__ import annotations
 
+import ast
+import functools
+import itertools
 import json
-import re
-from abc import ABC
 from collections import Counter
 from copy import copy, deepcopy
 from itertools import chain
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from numpy.random import rand, randint
+from numpy.random import rand
+from py_expression_eval import Parser
 from pyDOE import lhs
-from scipy.special import logit
+from sobol_seq import i4_sobol_generate
+
+from ..utils.exception import ConstraintEvaluationError
+from .node import Node
+from .samplers import SCMC
+from .variable import Bool, Discrete, Integer, Ordinal, Real, Subset, Variable
 
 __authors__ = "Hao Wang"
 
-TRANS = {
-    "linear": [lambda x: x, [-np.inf, np.inf]],
-    "log": [np.log, [0, np.inf]],
-    "log10": [np.log10, [0, np.inf]],
-    "logit": [logit, [0, 1]],
-    "bilog": [lambda x: np.sign(x) * np.log(1 + np.abs(x)), [-np.inf, np.inf]],
-}
-INV_TRANS = {
-    "linear": lambda x: x,
-    "log": np.exp,
-    "log10": lambda x: np.power(10, x),
-    "logit": lambda x: 1 / (1 + np.exp(-x)),
-    "bilog": lambda x: np.sign(x) * (np.exp(np.abs(x)) - 1),
-}
+_reduce = lambda iterable: functools.reduce(lambda a, b: a + b, iterable)
+_get_var = lambda c: Parser().parse(c).variables()[0]
 
-# TODO: discuss and fix the return value of `sample`, `round`, and `to_linear_scale`
+# TODO: add sampling method for the tree structure
 
 
-class Variable(ABC):
-    """Base class for decision variables"""
-
-    def __init__(
-        self,
-        bounds: List[int, float, str],
-        name: str,
-        default_value: Union[int, float, str] = None,
-        conditions: str = None,
-        action: Union[callable, int, float, str] = lambda x: x,
-    ):
-        """Base class for decision variables
-
-        Parameters
-        ----------
-        bounds : List[int, float, str]
-            a list/tuple giving the range of the variable.
-                * For `Real`, `Integer`: (lower, upper)
-                * For `Ordinal` and `Discrete`: (value1, value2, ...)
-        name : str
-            variable name
-        default_value : Union[int, float, str], optional
-            default value, by default None
-        conditions : str, optional
-            a string specifying the condition on which the variable is problematic, e.g.,
-            being either invalid or ineffective, by default None. The variable name in
-            this string should be quoted as `var name`. Also, you could use multiple
-            variables and logic conjunctions/disjunctions therein.
-            Example: "`var1` == True and `var2` == 2"
-        action : Union[callable, int, float, str], optional
-            the action to take when `condition` evaluates to True, by default `lambda x: x`.
-            It can be simply a fixed value to which the variable will be set, or a callable
-            that determines which value to take.
-        """
-        if len(bounds) > 0 and isinstance(bounds[0], list):
-            bounds = bounds[0]
-        self.name: str = name
-        self.bounds = tuple(bounds)
-        self.default_value = default_value
-        self.add_conditions(conditions, action)
-
-    def __repr__(self):
-        return self.__str__()
-
-    def __str__(self):
-        msg = f"{self.name} -> {type(self).__name__} | range: {self.bounds}"
-        if self.default_value is not None:
-            msg += f" | default: {self.default_value}"
-        return msg
-
-    def __eq__(self, var: Variable) -> bool:
-        return (
-            self.__class__ == type(var)
-            and self.bounds == var.bounds
-            and self.default_value == var.default_value
-            and self.name == var.name
-            and self._conditions == var._conditions
-        )  # TODO: verify this!
-
-    def __ne__(self, var: Variable) -> bool:
-        return not self.__eq__(var)
-
-    def add_conditions(self, conditions: str, action: Union[callable, int, float, str]):
-        self._conditions = None
-        if conditions is not None:
-            self.var_in_conditions = re.findall(r"`([^`]*)`", conditions)
-            for i, var_name in enumerate(self.var_in_conditions):
-                conditions = conditions.replace(f"`{var_name}`", f"#{i}")
-            self._conditions = conditions
-
-        if isinstance(action, (int, float, str)):
-            self._action = lambda x: action
-        elif hasattr(action, "__call__"):
-            self._action = action
-
-    @property
-    def conditions(self):
-        if self._conditions is None:
-            return None
-        out = copy(self._conditions)
-        for i, var_name in enumerate(self.var_in_conditions):
-            out = out.replace(f"#{i}", f"{var_name}")
-        return out
-
-    @property
-    def action(self):
-        return self._action
+def _get_val(condition):
+    c = ast.parse(condition).body[0].value.comparators[0]
+    if hasattr(c, "n"):
+        return c.n
+    if hasattr(c, "s"):
+        return c.s
 
 
-class Real(Variable):
-    """Real-valued variable taking its value in a continuum"""
-
-    def __init__(
-        self,
-        bounds: Tuple[float, float],
-        name: str = "r",
-        default_value: float = None,
-        precision: int = None,
-        scale: str = "linear",
-        **kwargs,
-    ):
-        """Real-valued variable taking its value in a continuum
-
-        Parameters
-        ----------
-        bounds : [Tuple[float, float]
-            the lower and upper bound
-        name : str, optional
-            the variable name, by default 'r'
-        default_value : float, optional
-            the default value, by default None
-        precision : int, optional
-            the number of digits after decimal, by default None
-        scale : str, optional
-            the scale on which uniform sampling is performed, by default 'linear'
-        """
-        assert bounds[0] < bounds[1]
-        assert scale in TRANS.keys()
-        assert precision is None or isinstance(precision, int)
-        super().__init__(bounds, name, default_value, **kwargs)
-        self.precision: int = precision
-        self.scale = scale
-
-    def __hash__(self):
-        return hash((self.name, self.bounds, self.default_value, self.precision, self.scale))
-
-    def __str__(self):
-        msg = super().__str__()
-        if self.precision:
-            msg += f" | precision: .{self.precision}f"
-        msg += f" | scale: {self.scale}"
-        return msg
-
-    @property
-    def scale(self):
-        return self._scale
-
-    @scale.setter
-    def scale(self, scale):
-        if scale is None:
-            scale = "linear"
-
-        assert scale in TRANS.keys()
-        self._scale: str = scale
-        self._trans: Callable = TRANS[scale][0]
-        self._inv_trans: Callable = INV_TRANS[scale]
-        _range = TRANS[scale][1]
-
-        if (self.bounds[0] < _range[0]) or (self.bounds[0] > _range[1]):
-            raise ValueError(
-                f"lower bound {self.bounds[0]} not in the working "
-                f"range of the given scale {self._scale}"
-            )
-
-        if (self.bounds[1] < _range[0]) or (self.bounds[1] > _range[1]):
-            raise ValueError(
-                f"upper bound {self.bounds[1]} not in the working"
-                f"of the given scale {self._scale}"
-            )
-        self._bounds_transformed = self._trans(self.bounds)
-
-    def to_linear_scale(self, X):
-        return X if self.scale == "linear" else self._inv_trans(X)
-
-    def round(self, X):
-        """Round the real-valued components of `X` to the
-        corresponding numerical precision, if given
-        """
-        X = deepcopy(X)
-        if self.precision is not None:
-            X = np.round(X, self.precision)
-        return X
-
-
-class _Discrete(Variable):
-    """Represents Integer, Ordinal, Bool, and Discrete"""
-
-    def __init__(self, bounds, *args, **kwargs):
-        bounds = list(dict.fromkeys(bounds))  # get rid of duplicated levelss
-        # map discrete values (bounds) to integers for sampling
-        self._map_func: callable = None
-        self._size: int = None
-        super().__init__(bounds, *args, **kwargs)
-
-    def __hash__(self):
-        return hash((self.name, self.bounds, self.default_value))
-
-    def sample(
-        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
-    ) -> List:
-        # TODO: to handle `h` and `g`...
-        # TODO: `method` is not take into account for now..
-        return list(map(self._map_func, randint(0, self._size, N)))
-
-
-class Discrete(_Discrete):
-    """Discrete variable, whose values should come with a linear order"""
-
-    def __init__(self, bounds, name: str = "d", default_value: Union[int, str] = None, **kwargs):
-        super().__init__(bounds, name, default_value, **kwargs)
-        self._map_func = lambda i: self.bounds[i]
-        self._size = len(self.bounds)
-
-
-# TODO: `bounds` -> `range_`?
-class Ordinal(_Discrete):
-    """A generic ordinal variable, whose values should come with a linear order"""
-
-    def __init__(self, bounds, name: str = "ordinal", default_value: int = None, **kwargs):
-        super().__init__(bounds, name, default_value, **kwargs)
-        self._map_func = lambda i: self.bounds[i]
-        self._size = len(self.bounds)
-
-
-class Integer(_Discrete):
-    """Integer variable, whose values are contiguous"""
-
-    def __init__(
-        self, bounds, name: str = "i", default_value: int = None, step: Optional[int, float] = 1
-    ):
-        super().__init__(bounds, name, default_value)
-        assert len(self.bounds) == 2
-        assert self.bounds[0] < self.bounds[1]
-        assert all(map(lambda x: isinstance(x, (int, float)), self.bounds))
-        self.step = step
-        self._map_func = lambda i: self.bounds[0] + i * self.step
-        self._size = int(np.floor((self.bounds[1] - self.bounds[0]) / self.step) + 1)
-
-    def __hash__(self):
-        return hash((self.name, self.bounds, self.default_value, self.step))
-
-    def __str__(self):
-        msg = super().__str__()
-        msg += f" | step: {self.step}"
-        return msg
-
-
-class Bool(_Discrete):
-    """Boolean variable"""
-
-    def __init__(self, name: str = "bool", default_value: int = True, **kwargs):
-        # NOTE: remove `bounds` if it presents in the input
-        kwargs.pop("bounds", None)
-        assert default_value is None or isinstance(default_value, bool)
-        super().__init__((False, True), name, default_value, **kwargs)
-        self._map_func = bool
-        self._size = 2
-
-
-class SearchSpace(object):
+class SearchSpace:
     """Search Space Base Class
 
     Attributes
@@ -317,16 +71,22 @@ class SearchSpace(object):
             the corresponding discrete variable serves as the dictionary key.
     """
 
-    _supported_types = (Real, Integer, Ordinal, Discrete, Bool)
+    _supported_types = (Real, Integer, Ordinal, Discrete, Bool, Subset)
 
-    def __init__(self, data: List[Variable], random_seed: int = None):
-        """
+    def __init__(
+        self,
+        data: List[Variable],
+        random_seed: int = None,
+        structure: Union[dict, List[Node]] = None,
+    ):
+        """Search Space
+
         Parameters
         ----------
-        data : List
-            It should be a list of instances of class `Variable`
+        data : List[Variable]
+            a list of variables consistuting the search space
         random_seed : int, optional
-            The random seed controlling the `sample` function, by default None
+            random seed controlling the `sample` function, by default None
         """
         # declarations to fix the pylint warnings..
         self._var_name: List[str] = []
@@ -336,13 +96,12 @@ class SearchSpace(object):
 
         self.random_seed: int = random_seed
         self._set_data(data)
+        self._set_structure(structure)
         SearchSpace.__set_type(self)
-        self.__set_conditions()
 
     @property
     def var_name(self):
         return self._var_name
-        # return (self._var_name[0] if self.dim == 1 else self._var_name)
 
     @var_name.setter
     def var_name(self, var_name):
@@ -412,26 +171,35 @@ class SearchSpace(object):
                 for i, k in enumerate(idx):
                     data[k].name = _names[i]
 
+    def _set_structure(self, structure: Union[dict, List[Node]] = None):
+        if structure is None:
+            _structure = dict()
+        # a list of tree/nodes
+        elif isinstance(structure, list) and all([isinstance(t, Node) for t in structure]):
+            _structure = dict()
+            for t in structure:
+                _structure.update(t.to_dict())
+        elif isinstance(structure, dict):
+            _structure = structure
+        # scan for all conditions defined in variables
+        for var in self.data:
+            if not hasattr(var, "conditions") or var.conditions is None:
+                continue
+            # TODO: support more dependent variables in the condition
+            key = var.conditions["vars"][0]
+            if key not in var.conditions["vars"]:
+                raise ValueError(f"variable {var} not in {self}")
+            _structure.setdefault(key, []).append(
+                {"name": var.name, "condition": var.conditions["string"]}
+            )
+        self.structure = [t.remove(self.var_name, invert=True) for t in Node.from_dict(_structure)]
+        self.structure = [t for t in self.structure if t]
+
     @staticmethod
     def __set_type(obj: SearchSpace) -> SearchSpace:
         _type = np.unique(obj.var_type)
-        if len(_type) == 1:
-            obj.__class__ = eval(_type[0] + "Space")
-        else:
-            obj.__class__ = SearchSpace
+        obj.__class__ = eval(_type[0] + "Space") if len(_type) == 1 else SearchSpace
         return obj
-
-    def __set_conditions(self):
-        # TODO: perhaps implement a `conditions` property (list of all conditions)
-        # TODO: to validate the conditions specified in variables
-        # TODO: add conditions when the prefix of some variables appears (conditional parameters)
-        for var in self.data:
-            if var.conditions is not None:
-                pre, _, __ = var.name.rpartition(".")
-                if pre:
-                    for i, var_name in enumerate(var.var_in_conditions):
-                        if not var_name.startswith(pre):
-                            var.var_in_conditions[i] = pre + "." + var_name
 
     def _set_data(self, data):
         """Sanity check on the input data and set the auxiliary variables"""
@@ -455,51 +223,86 @@ class SearchSpace(object):
                 self.__dict__[attr_mask] = mask
                 self.__dict__[attr_id] = np.nonzero(mask)[0]
 
-            self.categorical_id = np.r_[self.discrete_id, self.ordinal_id, self.bool_id]
+            self.categorical_id = np.r_[
+                self.discrete_id, self.ordinal_id, self.bool_id, self.subset_id
+            ]
             self.categorical_mask = np.bitwise_or(
-                self.bool_mask, np.bitwise_or(self.discrete_mask, self.ordinal_mask)
+                self.bool_mask,
+                np.bitwise_or(self.discrete_mask, self.ordinal_mask, self.subset_mask),
             )
 
     def _set_levels(self):
         # TODO: check if this is still needed
         """Set categorical levels for all nominal variables"""
         if self.dim > 0:
-            if len(self.categorical_id) > 0:
-                self.levels = {i: self._bounds[i] for i in self.categorical_id}
-            else:
-                self.levels = None
+            self.levels = (
+                {i: self._bounds[i] for i in self.categorical_id}
+                if len(self.categorical_id) > 0
+                else {}
+            )
 
-    def __getitem__(self, index) -> SearchSpace:
-        if isinstance(index, slice):
+    def __getitem__(self, index) -> Union[SearchSpace, Variable]:
+        if isinstance(index, (int, slice)):
             data = self.data[index]
-            if not isinstance(data, list):
-                data = [data]
-        elif isinstance(index, (list, np.ndarray)):
-            data = [self.data[index[0]]] if len(index) == 1 else [self.data[i] for i in index]
+        elif hasattr(index, "__iter__") and not isinstance(index, str):
+            index = np.array(index)
+            if index.dtype.type is np.str_:  # list of variable names
+                index = [np.nonzero(np.array(self.var_name) == i)[0][0] for i in index]
+            elif index.dtype == bool:  # mask array
+                index = np.nonzero(index)[0]
+            data = [self.data[i] for i in index]
+        elif isinstance(index, str):  # slicing one variable by name
+            index = np.nonzero(np.array(self.var_name) == index)[0][0]
+            data = self.data[index]
         else:
-            data = [self.data[index]]
-        return SearchSpace(data, self.random_seed)
+            raise Exception(f"index type {type(index)} is not supported")
+
+        if isinstance(data, Variable):
+            out = data
+        elif isinstance(data, list):
+            out = SearchSpace(data, self.random_seed)
+            # backwards compatibility
+            if hasattr(self, "structure"):
+                getattr(out, "_set_structure")(self.structure)
+        return out
 
     def __setitem__(self, index, value):
         if isinstance(index, (int, slice)):
             self.data[index] = value
-        elif isinstance(index, list):
+        elif isinstance(index, str):
+            index = np.nonzero(np.array(self.var_name) == index)[0][0]
+            self.data[index] = value
+        elif hasattr(index, "__iter__") and not isinstance(index, str):
+            if not hasattr(value, "__iter__") or isinstance(value, str):
+                value = [value] * len(index)
             for i, v in zip(index, value):
-                self.data[i] = v
+                if isinstance(i, str):
+                    k = np.nonzero(np.array(self.var_name) == i)[0][0]
+                    self.data[k] = v
+                elif isinstance(i, int):
+                    self.data[i] = v
+                else:
+                    raise Exception(f"index type {type(i)} is not supported")
         self._set_data(self.data)
 
-    def __contains__(self, item: Union[str, Variable, SearchSpace]) -> bool:
+    def __contains__(self, item: Union[str, Variable, SearchSpace, list, dict]) -> bool:
+        """check if a name, a variable, a space, or a sample point in the the search space"""
         if isinstance(item, str):
             return item in self.var_name
         if isinstance(item, Variable):
             return item in self.data
         if isinstance(item, SearchSpace):
             return all(map(lambda x: x in self.data, item.data))
+        if isinstance(item, list):
+            return all([v in self.__getitem__(i) for i, v in enumerate(item)])
+        if isinstance(item, dict):
+            return all([v in self.__getitem__(i) for i, v in item.items()])
+        raise ValueError(f"type {type(item)} is not supported")
 
     def __len__(self):
         return self.dim
 
-    def __iter__(self):
+    def __iter__(self) -> Variable:
         i = 0
         while i < self.dim:
             yield self.__getitem__(i)
@@ -517,15 +320,20 @@ class SearchSpace(object):
         # NOTE: the random seed of `self` has the priority
         random_seed = self.random_seed if self.random_seed else space.random_seed
         data = deepcopy(self.data) + space.data
-        return SearchSpace(data, random_seed)
+        if hasattr(self, "structure"):
+            structure = [t.deepcopy() for t in self.structure] + [
+                t.deepcopy() for t in space.structure
+            ]
+        else:
+            structure = {}
+        return SearchSpace(data, random_seed, structure)
 
     def __radd__(self, space) -> SearchSpace:
         return self.__add__(space)
 
     def __iadd__(self, space) -> SearchSpace:
         assert isinstance(space, SearchSpace)
-        self.data += space.data
-        self._set_data(self.data)
+        self._set_data(self.data + space.data)
         SearchSpace.__set_type(self)
         return self
 
@@ -536,7 +344,11 @@ class SearchSpace(object):
         _res = set(self.var_name) - set(space.var_name)
         _index = [self.var_name.index(_) for _ in _res]
         data = [copy(self.data[i]) for i in range(self.dim) if i in _index]
-        return SearchSpace(data, random_seed)
+        cs = SearchSpace(data, random_seed)
+        # backwards compatibility
+        if hasattr(self, "structure"):
+            getattr(cs, "_set_structure")(self.structure)
+        return cs
 
     def __rsub__(self, space) -> SearchSpace:
         return self.__sub__(space)
@@ -545,23 +357,49 @@ class SearchSpace(object):
         assert isinstance(space, SearchSpace)
         _res = set(self.var_name) - set(space.var_name)
         _index = [self.var_name.index(_) for _ in _res]
-        self.data = [self.data[i] for i in range(self.dim) if i in _index]
-        self._set_data(self.data)
+        self._set_data([self.data[i] for i in range(self.dim) if i in _index])
         SearchSpace.__set_type(self)
         return self
 
-    def __mul__(self, N) -> SearchSpace:
-        """Replicate a `SearchSpace` N times"""
+    def __mul__(self, N: int) -> SearchSpace:
+        """Replicate `self` by copy
+
+        Parameters
+        ----------
+        N : int
+            Replicate `self` N times as a copt
+
+        Returns
+        -------
+        SearchSpace
+            a copy of replicated `self`
+        """
         data = [deepcopy(var) for _ in range(max(1, int(N))) for var in self.data]
+        # TODO: this is not working yet..
+        # structure = [t.deepcopy() for _ in range(max(1, int(N))) for t in self.structure]
         obj = SearchSpace(data, self.random_seed)
         obj.__class__ = type(self)
         return obj
 
-    def __rmul__(self, N) -> SearchSpace:
+    def __rmul__(self, N: int) -> SearchSpace:
         return self.__mul__(N)
 
-    def __imul__(self, N) -> SearchSpace:
-        self._set_data(deepcopy(self.data) * max(1, int(N)))
+    def __imul__(self, N: int) -> SearchSpace:
+        """Incrementally replicate
+
+        Parameters
+        ----------
+        N : int
+            Replicate `self` N times
+
+        Returns
+        -------
+        SearchSpace
+            `self`
+        """
+        self._set_data(
+            self.data + [deepcopy(var) for _ in range(max(1, int(N - 1))) for var in self.data]
+        )
         return self
 
     def __repr__(self):
@@ -573,20 +411,47 @@ class SearchSpace(object):
             msg += str(var) + "\n"
         return msg
 
+    def pprint(self):
+        if self.structure:
+            for root in self.structure:
+                root.pprint(data={k: self[k] for k in self.var_name})
+        else:
+            print(self.__str__())
+
+    def filter(self, keys: List[str], invert=False) -> SearchSpace:
+        """filter a search space based on a list of variable names
+
+        Parameters
+        ----------
+        keys : List[str]
+            the list of variable names to keep
+
+        Returns
+        -------
+        Union[Variable, SearchSpace]
+            the resulting subspace
+        """
+        masks = [v in keys for v in self.var_name]
+        if invert:
+            masks = np.bitwise_not(masks)
+        return self[masks]
+
     @classmethod
     def concat(cls, *args: Tuple[SearchSpace]):
         if len(args) == 1:
             return args[0]
 
         assert isinstance(args[0], SearchSpace)
-        data = list(chain.from_iterable([deepcopy(_.data) for _ in args]))
-        return SearchSpace(data)
+        data = list(chain.from_iterable([deepcopy(cs.data) for cs in args]))
+        structure = [t.deepcopy() for cs in args for t in cs.structure]
+        return SearchSpace(data, structure=structure)
 
     def pop(self, index: int = -1) -> Variable:
         value = self.data.pop(index)
         self._set_data(self.data)
+        if hasattr(self, "structure"):
+            self._set_structure(self.structure)
         SearchSpace.__set_type(self)
-        self.__set_conditions()
         return value
 
     def remove(self, index: Union[int, str]) -> SearchSpace:
@@ -594,8 +459,7 @@ class SearchSpace(object):
             _index = np.nonzero(np.array(self._var_name) == index)[0]
             if len(_index) == 0:
                 raise KeyError(f"The input key {index} not found in `var_name`!")
-            else:
-                _index = _index[0]
+            _index = _index[0]
         elif hasattr(index, "__iter__"):
             raise KeyError("Multiple indices are not allowed!")
         else:
@@ -603,13 +467,15 @@ class SearchSpace(object):
 
         self.data.pop(_index)
         self._set_data(self.data)
-        self.__set_conditions()
+        # backwards compatibility
+        if hasattr(self, "structure"):
+            self._set_structure(self.structure)
         return SearchSpace.__set_type(self)
 
     def update(self, space: SearchSpace) -> SearchSpace:
         """Update the search space based on the var_name of the input search space,
         which behaves similarly to the dictionary update. Please note its difference
-        to ``self.__add__``
+        to ``self.__add__``. This function will not update the structure of the search space.
 
         Parameters
         ----------
@@ -632,7 +498,12 @@ class SearchSpace(object):
         return SearchSpace.__set_type(self)
 
     def sample(
-        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
+        self,
+        N: int = 1,
+        method: str = "uniform",
+        h: Callable = None,
+        g: Callable = None,
+        tol: float = 1e-2,
     ) -> np.ndarray:
         """Sample random points from the search space
 
@@ -646,12 +517,43 @@ class SearchSpace(object):
             equality constraints, by default None
         g : Callable, optional
             inequality constraints, by default None
+        tol : float, optional
+            the tolerance on the constraint
+
+        NOTES
+        -----
+        At this moment, the constraints are handled using the simple Monte Carlo sampling
 
         Returns
         -------
         np.ndarray
             the sample points in shape `(N, self.dim)`
         """
+        # 10 is the minimal number of sample points to take under constraints
+        n = max(N, 10) if h or g else N
+        constraints = lambda x: np.r_[np.abs(h(x)) if h else [], np.array(g(x)) if g else []]
+        S = SCMC(self, constraints, tol=tol).sample(n) if h or g else self._sample(N, method)
+        try:
+            # NOTE: equality constraints are converted to an epsilon-tude around the
+            # corresponding manifold
+            idx_h = (
+                list(map(lambda x: all(np.isclose(np.abs(h(x)), 0, atol=tol)), S))
+                if h
+                else [True] * n
+            )
+            idx_g = list(map(lambda x: np.all(np.asarray(g(x)) <= 0), S)) if g else [True] * n
+            idx = np.bitwise_and(idx_h, idx_g)
+            S = S[idx, :]
+        except Exception as e:
+            raise ConstraintEvaluationError(S, str(e)) from None
+
+        # get unique rows
+        # S = np.array([list(x) for x in set(tuple(x) for x in S)], dtype=object)
+        if len(S) > N:
+            S = S[np.random.choice(len(S), N, replace=False)]
+        return S
+
+    def _sample(self, N: int = 1, method: str = "uniform") -> np.ndarray:
         # in case this space is empty after slicing
         if self.dim == 0:
             return np.empty(0)
@@ -662,7 +564,7 @@ class SearchSpace(object):
             attr_id = var_type.__name__.lower() + "_id"
             index = self.__dict__[attr_id]
             if len(index) > 0:  # if such a type of variables exist.
-                X[:, index] = self.__getitem__(index).sample(N, method, h=h, g=g)
+                X[:, index] = getattr(self[index], "_sample")(N, method)
         return X
 
     def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
@@ -710,7 +612,7 @@ class SearchSpace(object):
             json.dump(self.to_dict(), f)
 
     @classmethod
-    def from_dict(cls, param: dict, source="default", **kwargs) -> SearchSpace:
+    def from_dict(cls, param: dict) -> SearchSpace:
         """Create a search space object from input dictionary
 
         Parameters
@@ -734,17 +636,17 @@ class SearchSpace(object):
         assert isinstance(param, dict)
 
         variables = []
-        if source == "irace":
-            for k, v in param.items():
-                if "range" in v:
-                    bounds = v["range"]
-                    if not hasattr(bounds[0], "__iter__") or isinstance(bounds[0], str):
-                        bounds = tuple(bounds)
-                else:
-                    bounds = ()
+        for k, v in param.items():
+            if "range" in v:
+                bounds = v["range"]
+                if not hasattr(bounds[0], "__iter__") or isinstance(bounds[0], str):
+                    bounds = tuple(bounds)
+            else:
+                bounds = ()
 
-                N = range(int(v["N"])) if "N" in v else range(1)
-                default_value = v["defualt"] if "default" in v else None
+            N = range(int(v["N"])) if "N" in v else range(1)
+            default_value = v["defualt"] if "default" in v else None
+            try:
                 if v["type"] in ["r", "real"]:  # real-valued parameter
                     precision = v["precision"] if "precision" in v else None
                     scale = v["scale"] if "scale" in v else "linear"
@@ -767,24 +669,13 @@ class SearchSpace(object):
                     _vars = [Ordinal(bounds, name=k, default_value=default_value) for _ in N]
                 elif v["type"] in ["c", "cat"]:  # category-valued parameter
                     _vars = [Discrete(bounds, name=k, default_value=default_value) for _ in N]
+                elif v["type"] in ["s", "subset"]:  # subset parameter
+                    _vars = [Subset(bounds, name=k, default_value=default_value) for _ in N]
                 elif v["type"] in ["b", "bool"]:  # Boolean-valued
                     _vars = [Bool(name=k, default_value=default_value) for _ in N]
                 variables += _vars
-        elif source == "irace": # the configuration space from irace
-            param_names = param["names"]
-            cont_params = [x for (x, y) in zip(param_names, param["types"]) if y == "r"]
-            ordinal_params = [x for (x, y) in zip(param_names, param["types"]) if y == "i"]
-            nominal_params = [
-                x for (x, y) in zip(param_names, param["types"]) if y == "c" or y == "o"
-            ]
-            if len(cont_params) > 0:
-                variables += [Real(param["domain"][par], name=par) for par in cont_params]
-            if len(ordinal_params) > 0:
-                variables += [Ordinal(param["domain"][par], name=par) for par in ordinal_params]
-            if len(nominal_params) > 0:
-                variables += [Discrete(param["domain"][par], name=par) for par in nominal_params]
-        else:
-            raise ValueError("This source is not currently supported")
+            except:
+                print(param)
         return SearchSpace(variables)
 
     @classmethod
@@ -804,9 +695,32 @@ class SearchSpace(object):
         with open(file, "r") as f:
             return cls.from_dict(json.load(f))
 
+    def get_unconditional_subspace(self) -> List[Tuple[dict, SearchSpace]]:
+        """get all unconditional subspaces"""
+        if self.structure:
+            # all variables in the conditional structure
+            _var = _reduce([t.get_all_name() for t in self.structure])
+            # remaining variables not affected by conditions
+            isolated_var = [self[v] for v in set(self.var_name) - set(_var)]
+            out, d = list(), dict()
+            # all paths in the conditional tree
+            paths = [list(root.get_all_path().items()) for root in self.structure]
+            idx = [list(range(len(_))) for _ in paths]
+            # get all combinations of paths from all trees
+            for item in itertools.product(*idx):
+                condition = _reduce([paths[i][k][0] for i, k in enumerate(item)])
+                variables = _reduce([paths[i][k][1] for i, k in enumerate(item)])
+                d[condition] = variables
+            # create all unconditional subspaces
+            for condition, var in d.items():
+                key = {_get_var(c): _get_val(c) for c in condition}
+                out.append((key, SearchSpace(isolated_var + [self[v] for v in var])))
+            # TODO: consider the case where selector/conditioning variable has other values
+        else:
+            out = [({}, self)]
+        return out
 
-# TODO: those classes might not be necessary.. we could move the `sample` method to
-# the corresponding variables
+
 class RealSpace(SearchSpace):
     """Space of real values"""
 
@@ -825,13 +739,9 @@ class RealSpace(SearchSpace):
         data = [Real(**_) for _ in out]
         super().__init__(data, **kwargs)
 
-    def sample(
-        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
-    ) -> np.ndarray:
-        # TODO: to handle `h` and `g`
+    def _sample(self, N: int = 1, method: str = "uniform") -> np.ndarray:
         bounds = np.array([var._bounds_transformed for var in self.data])
         lb, ub = bounds[:, 0], bounds[:, 1]
-
         if method == "uniform":  # uniform random samples
             X = (ub - lb) * rand(N, self.dim) + lb
         elif method == "LHS":  # Latin hypercube sampling
@@ -839,6 +749,8 @@ class RealSpace(SearchSpace):
                 X = (ub - lb) * rand(N, self.dim) + lb
             else:
                 X = (ub - lb) * lhs(self.dim, samples=N, criterion="maximin") + lb
+        elif method == "sobol":
+            X = (ub - lb) * i4_sobol_generate(self.dim, N) + lb
         return self.round(self.to_linear_scale(X))
 
     def round(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
@@ -848,6 +760,7 @@ class RealSpace(SearchSpace):
             X[:, i] = var.round(X[:, i])
         return X
 
+    # TODO: implement a transformation class/function and make this generic
     def to_linear_scale(self, X: Union[np.ndarray, List[List]]) -> np.ndarray:
         X = np.atleast_2d(X).astype(float)
         assert X.shape[1] == self.dim
@@ -867,9 +780,7 @@ class _DiscreteSpace(SearchSpace):
         """do nothing since this method is not valid for this class"""
         return X
 
-    def sample(
-        self, N: int = 1, method: str = "uniform", h: Callable = None, g: Callable = None
-    ) -> np.ndarray:
+    def _sample(self, N: int = 1, method: str = "uniform") -> np.ndarray:
         if isinstance(self, IntegerSpace):
             dtype = int
         elif isinstance(self, BoolSpace):
@@ -879,8 +790,23 @@ class _DiscreteSpace(SearchSpace):
 
         X = np.empty((N, self.dim), dtype=dtype)
         for i in range(self.dim):
-            X[:, i] = self.data[i].sample(N, method=method, h=h, g=g)
+            X[:, i] = self.data[i].sample(N, method=method)
         return X
+
+
+class SubsetSpace(_DiscreteSpace):
+    """A discrete space created by enumerating all subsets of the input `bounds`"""
+
+    def __init__(
+        self,
+        bounds: List,
+        var_name: Union[str, List[str]] = "subset",
+        default_value: Union[int, List[int]] = None,
+        **kwargs,
+    ):
+        out = self._ready_args(bounds, var_name, default_value=default_value)
+        data = [Subset(**_) for _ in out]
+        super().__init__(data, **kwargs)
 
 
 class IntegerSpace(_DiscreteSpace):
@@ -891,7 +817,7 @@ class IntegerSpace(_DiscreteSpace):
         bounds: List,
         var_name: Union[str, List[str]] = "integer",
         default_value: Union[int, List[int]] = None,
-        step: Optional[int, float] = 1,
+        step: Optional[Union[int, float]] = 1,
         **kwargs,
     ):
         out = self._ready_args(bounds, var_name, default_value=default_value, step=step)

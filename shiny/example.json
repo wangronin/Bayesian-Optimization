@@ -1,0 +1,30 @@
+{
+    "search_param" : {
+        "continuous" : {
+            "type" : "r",
+            "range" : [-5, 5],
+            "N" : 2,
+            "precision" : 2
+        },
+
+        "ordinal" : {
+            "type" : "i",
+            "range" : [-100, 100],
+            "N" : 1
+        },
+
+        "nominal" : {
+            "type" : "c",
+            "range" : ["OK", "A", "B", "C", "D", "E"],
+            "N" : 1
+        }
+    },
+
+    "bo_param" : {
+        "n_job" : 3,
+        "n_point" : 3,
+        "DoE_size" : 3,
+        "minimize" : true,
+        "n_obj": 1
+    }
+}

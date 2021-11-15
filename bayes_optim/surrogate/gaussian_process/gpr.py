@@ -1,30 +1,27 @@
-# Author: Hao Wang
-# Email: wangronin@gmail.com
-
-from pdb import set_trace
 import warnings
 
 import numpy as np
+from numpy import array, dot, exp, log, log10, pi, sqrt
 from numpy.random import uniform
-from numpy import log, pi, log10, exp, dot, sqrt, array
-
 from scipy import linalg
-from scipy.linalg import cho_solve, solve_triangular, cholesky, LinAlgError
+from scipy.linalg import LinAlgError, cho_solve, cholesky, solve_triangular
 from scipy.optimize import fmin_l_bfgs_b
-
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics.pairwise import manhattan_distances
-from sklearn.utils import check_random_state, check_array, check_X_y
-from sklearn.utils.validation import check_is_fitted
+from sklearn.utils import check_array, check_random_state, check_X_y
 
 from .cma_es import cma_es
-from .trend import constant_trend
-from .kernel import absolute_exponential, squared_exponential, generalized_exponential, \
-    cubic, pure_nugget, matern
-
-from .trend import BasisExpansionTrend, NonparametricTrend
+from .kernel import (
+    absolute_exponential,
+    cubic,
+    generalized_exponential,
+    matern,
+    squared_exponential,
+)
+from .trend import BasisExpansionTrend, NonparametricTrend, constant_trend
 
 MACHINE_EPSILON = np.finfo(np.double).eps
+
 
 def l1_cross_distances(X):
     """
@@ -58,9 +55,10 @@ def l1_cross_distances(X):
         ll_1 = ll_0 + n_samples - k - 1
         ij[ll_0:ll_1, 0] = k
         ij[ll_0:ll_1, 1] = np.arange(k + 1, n_samples)
-        D[ll_0:ll_1] = np.abs(X[k] - X[(k + 1):n_samples])
+        D[ll_0:ll_1] = np.abs(X[k] - X[(k + 1) : n_samples])
 
     return D, ij
+
 
 def my_dot(x, y):
     n_row = x.shape[0]
@@ -71,8 +69,10 @@ def my_dot(x, y):
             res[i, j] = np.sum(x[i, :] * y[:, j])
     return res
 
+
 # TODO: remove the dependences from sklearn
 # TODO: simplify this code, which is way too lengthy
+
 
 class GaussianProcess(BaseEstimator, RegressorMixin):
     """The Gaussian Process model class.
@@ -195,28 +195,38 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         The optimal reduced likelihood function value.
 
     """
-    _optimizer_types = ['BFGS', 'CMA']
+
+    _optimizer_types = ["BFGS", "CMA"]
     _correlation_types = {
-        'absolute_exponential': absolute_exponential,
-        'squared_exponential': squared_exponential,
-        'generalized_exponential': generalized_exponential,
-        'cubic': cubic,
-        'matern': matern
+        "absolute_exponential": absolute_exponential,
+        "squared_exponential": squared_exponential,
+        "generalized_exponential": generalized_exponential,
+        "cubic": cubic,
+        "matern": matern,
     }
-    _likelihood_functions = ['concentrated', 'restricted']
+    _likelihood_functions = ["concentrated", "restricted"]
 
     # TODO: separater the kernel function from here
     def __init__(
         self,
         mean=None,
-        corr='squared_exponential',
-        theta0=None, thetaL=None, thetaU=None, sigma2=None,
-        nugget=1e-6, noise_estim=False, optimizer='BFGS',
-        likelihood='concentrated', random_start=1, wait_iter=5,
-        eval_budget=None, random_state=None, verbose=False
-        ):
-        self.mean = mean      # Prior mean function
-        self.corr = corr      # Prior correlation function
+        corr="squared_exponential",
+        theta0=None,
+        thetaL=None,
+        thetaU=None,
+        sigma2=None,
+        nugget=1e-6,
+        noise_estim=False,
+        optimizer="BFGS",
+        likelihood="concentrated",
+        random_start=1,
+        wait_iter=5,
+        eval_budget=None,
+        random_state=None,
+        verbose=False,
+    ):
+        self.mean = mean  # Prior mean function
+        self.corr = corr  # Prior correlation function
         self.sigma2 = sigma2  # variance of the stationary process
         self.verbose = verbose
         self.corr_type = corr
@@ -230,25 +240,26 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         if not (np.isfinite(self.thetaL).all() and np.isfinite(self.thetaU).all()):
             raise ValueError("all bounds are required finite.")
 
-        # hyperparameter optimization parameters
+        # hyperparameter: optimization parameters
         self.optimizer = optimizer
         self.random_start = random_start
         self.random_state = random_state
         self.wait_iter = wait_iter
         self.eval_budget = eval_budget
 
+        self.nugget = nugget
         self.noise_var = np.atleast_1d(nugget) if nugget else 0
-        self.noise_estim = True if noise_estim else False
-        self.noisy = True if self.noise_var or self.noise_estim else False
+        self.noise_estim = noise_estim
+        self.noisy = self.noise_var or self.noise_estim
 
         # three cases to compute the log-likelihood function
         # TODO: verify: it seems the noisy case is the most useful one
         if not self.noisy:
-            self.estimation_mode = 'noiseless'
+            self.estimation_mode = "noiseless"
         elif self.noise_estim:
-            self.estimation_mode = 'noise_estim'
+            self.estimation_mode = "noise_estim"
         else:
-            self.estimation_mode = 'noisy'
+            self.estimation_mode = "noisy"
 
         assert likelihood in self._likelihood_functions
         self.likelihood = likelihood  # or restricted
@@ -259,15 +270,16 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         # estimation mode for the trend
         if isinstance(self.mean, BasisExpansionTrend):
-            self.mean_type = 'basis_expansion'
+            self.mean_type = "basis_expansion"
             self.estimate_trend = True if self.mean.beta is None else False
         elif isinstance(self.mean, NonparametricTrend):
-            self.mean_type = 'nonparametric'
+            self.mean_type = "nonparametric"
 
     def _check_data(self, X, y):
         # Force data to 2D numpy.array
-        X, y = check_X_y(X, y, multi_output=False, y_numeric=True)
-        y = y.reshape(-1, 1)
+        X, y = check_X_y(X, y, multi_output=True, y_numeric=True)
+        if len(y.shape) == 1:
+            y = y.reshape(-1, 1)
         n_samples, _ = X.shape
         self.X, self.y = X, y
 
@@ -282,13 +294,18 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         self.D = D
         self.ij = ij
 
-        if self.mean_type == 'basis_expansion' and self.estimate_trend:
+        if self.mean_type == "basis_expansion" and self.estimate_trend:
             F = self.mean.F(X)
             p = F.shape[1]
             if p > n_samples:
-                raise Exception(("Ordinary least squares problem is undetermined "
-                                 "n_samples=%d must be greater than the "
-                                 "meanession model size p=%d.") % (n_samples, p))
+                raise Exception(
+                    (
+                        "Ordinary least squares problem is undetermined "
+                        "n_samples=%d must be greater than the "
+                        "meanession model size p=%d."
+                    )
+                    % (n_samples, p)
+                )
             self.F = F
 
     def sampling_prior(self, X):
@@ -308,15 +325,20 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         n_targets = self.y.shape[1]
 
         if X1.shape[1] != n_features or X2.shape[1] != n_features:
-            raise ValueError(("The number of features in X (X.shape[1] = %d) "
-                              "should match the number of features used "
-                              "for fit() "
-                              "which is %d.") % (X1.shape[1], n_features))
+            raise ValueError(
+                (
+                    "The number of features in X (X.shape[1] = %d) "
+                    "should match the number of features used "
+                    "for fit() "
+                    "which is %d."
+                )
+                % (X1.shape[1], n_features)
+            )
 
         # remember to normalize the inputs
         # if normalize:
-            # X1 = (X1 - self.X_mean) / self.X_std
-            # X2 = (X2 - self.X_mean) / self.X_std
+        # X1 = (X1 - self.X_mean) / self.X_std
+        # X2 = (X2 - self.X_mean) / self.X_std
 
         dx_new = manhattan_distances(X1, Y=X2, sum_over_features=False)
         R_prior = self.corr(self.theta_, dx_new).reshape(n_eval_X1, n_eval_X2)
@@ -325,7 +347,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             return R_prior
         else:
             C_prior = array([self.sigma2[i] * R_prior for i in range(n_targets)])
-            C_prior = sqrt((C_prior ** 2.).sum(axis=0) / n_targets)
+            C_prior = sqrt((C_prior ** 2.0).sum(axis=0) / n_targets)
 
             return C_prior
 
@@ -364,11 +386,11 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     # TODO: open design choice here:
                     #   1) leave this exception handeling part to the program calls gpr
                     #   2) handel it here and save the incident to a log
-                    print('Invalid likelihood value. Increasing nugget...')
+                    print("Invalid likelihood value. Increasing nugget...")
 
                     # TODO: maybe turn the working mode to 'noise_estim' directly
-                    if self.estimation_mode == 'noiseless':
-                        self.estimation_mode = 'noisy'
+                    if self.estimation_mode == "noiseless":
+                        self.estimation_mode = "noisy"
                         self.noise_var = 1e-5
                     else:
                         self.noise_var *= 10
@@ -376,16 +398,17 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     break
 
         # find a better name for noise_var
-        self.theta_ = self.par['theta']
-        self.noise_var = env['noise_var']
-        self.sigma2 = env['sigma2']
-        self.rho = env['rho']
-        self.Yt = env['Yt']
-        self.C = env['C']
-        if self.mean_type == 'basis_expansion' and self.estimate_trend:
-            self.Ft = env['Ft']
-            self.G = env['G']
-            self.Q = env['Q']
+        self.theta_ = self.par["theta"]
+        self.noise_var = env["noise_var"]
+        self.sigma2 = env["sigma2"]
+        assert len(self.sigma2) == self.y.shape[1]
+        self.rho = env["rho"]
+        self.Yt = env["Yt"]
+        self.C = env["C"]
+        if self.mean_type == "basis_expansion" and self.estimate_trend:
+            self.Ft = env["Ft"]
+            self.G = env["G"]
+            self.Q = env["Q"]
 
         # compute for beta and gamma
         self.compute_beta_gamma()
@@ -432,22 +455,23 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             An array with shape (n_eval, ) or (n_eval, n_targets) as with y,
             with the Mean Squared Error at x.
         """
-        assert hasattr(self, 'X')
-
-        # Check input shapes
-        # TODO: remove the support for multiple independent outputs
+        assert hasattr(self, "X")
         X = check_array(X)
         n_eval, _ = X.shape
         n_samples, n_features = self.X.shape
         n_targets = self.y.shape[1]
-
         # Run input checks
         self._check_params()
 
         if X.shape[1] != n_features:
-            raise ValueError(("The number of features in X (X.shape[1] = %d) "
-                              "should match the number of features used "
-                              "for fit() which is %d.") % (X.shape[1], n_features))
+            raise ValueError(
+                (
+                    f"The number of features in X (X.shape[1] = %d) "
+                    "should match the number of features used "
+                    "for fit() which is %d."
+                )
+                % (X.shape[1], n_features)
+            )
 
         if batch_size is None:
             # (evaluates all given points in a single batch run)
@@ -461,10 +485,8 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             dx = manhattan_distances(X, Y=self.X, sum_over_features=False)
             # Get meanession function and correlation
             r = self.corr(self.theta_, dx).reshape(n_eval, n_samples)
-
             # Predictor
-            # TODO: get rid of n_targets in this class
-            y = (self.mean(X) + my_dot(r, self.gamma)).reshape(n_eval, n_targets).ravel()
+            y = (self.mean(X) + r.dot(self.gamma)).reshape(n_eval, n_targets)
 
             # Mean Squared Error
             if eval_MSE:
@@ -473,22 +495,20 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 if self.estimate_trend:  # Universal / Ordinary Kriging
                     f = self.mean.F(X)
                     u = solve_triangular(self.G.T, np.dot(self.Ft.T, rt) - f.T, lower=True)
-                else:                  # simple Kriging
-                    u = np.zeros((n_targets, n_eval))
+                else:  # simple Kriging
+                    u = np.zeros((1, n_eval))
 
-                MSE = np.dot(self.sigma2.reshape(n_targets, 1),
-                             (1. - (rt ** 2.).sum(axis=0) +
-                             (u ** 2.).sum(axis=0))[np.newaxis, :])
-                MSE = np.sqrt((MSE ** 2.).sum(axis=0) / n_targets)
+                MSE = np.dot(
+                    (1.0 - (rt ** 2.0).sum(axis=0) + (u ** 2.0).sum(axis=0)).reshape(n_eval, -1),
+                    self.sigma2.reshape(1, -1),
+                )
+                # MSE = np.sqrt((MSE ** 2.0).sum(axis=0) / n_targets)
 
                 # Mean Squared Error might be slightly negative depending on
                 # machine precision: force to zero!
-                MSE[MSE < 0.] = 0.
-                MSE = MSE.ravel()
-
+                MSE[MSE < 0.0] = 0.0
                 return y, MSE
-            else:
-                return y
+            return y
         else:
             # Memory management
             if type(batch_size) is not int or batch_size <= 0:
@@ -499,22 +519,19 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                 for k in range(max(1, n_eval / batch_size)):
                     batch_from = k * batch_size
                     batch_to = min([(k + 1) * batch_size + 1, n_eval + 1])
-                    y[batch_from:batch_to], MSE[batch_from:batch_to] = \
-                        self.predict(X[batch_from:batch_to],
-                                     eval_MSE=eval_MSE, batch_size=None)
-
+                    y[batch_from:batch_to], MSE[batch_from:batch_to] = self.predict(
+                        X[batch_from:batch_to], eval_MSE=eval_MSE, batch_size=None
+                    )
                 return y, MSE
 
-            else:
-
-                y = np.zeros(n_eval)
-                for k in range(max(1, n_eval / batch_size)):
-                    batch_from = k * batch_size
-                    batch_to = min([(k + 1) * batch_size + 1, n_eval + 1])
-                    y[batch_from:batch_to] = \
-                        self.predict(X[batch_from:batch_to],
-                                     eval_MSE=eval_MSE, batch_size=None)
-                return y
+            y = np.zeros(n_eval)
+            for k in range(max(1, n_eval / batch_size)):
+                batch_from = k * batch_size
+                batch_to = min([(k + 1) * batch_size + 1, n_eval + 1])
+                y[batch_from:batch_to] = self.predict(
+                    X[batch_from:batch_to], eval_MSE=eval_MSE, batch_size=None
+                )
+            return y
 
     def gradient(self, x):
         """Calculate the gradient of the posterior mean and variance
@@ -525,10 +542,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         n_samples, n_features = self.X.shape
 
         if _ != n_features:
-            raise Exception('x does not have the right size!')
+            raise Exception("x does not have the right size!")
 
         if n_eval != 1:
-            raise Exception('x must be a vector!')
+            raise Exception("x must be a vector!")
 
         # trend and its Jacobian
         f = self.mean.F(x).reshape(-1, 1)
@@ -540,14 +557,14 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         r_dx = self.corr_dx(x, X=self.X, r=r).T
 
         # gradient of the posterior mean
-        y_dx = dot(self.mean.beta.T, f_dx) + my_dot(self.gamma.T, r_dx)
+        y_dx = dot(self.mean.beta.T, f_dx) + self.gamma.T.dot(r_dx)
 
         # auxiliary variable: rt = C^-1 * r
         rt = solve_triangular(self.C, r.T, lower=True)
         rt_dx = solve_triangular(self.C, r_dx, lower=True)
 
-        mse_dx = -1.0 * dot(rt.T, rt_dx)      # for Simple Kriging
-        if self.estimate_trend:       # Universal / Ordinary Kriging
+        mse_dx = -1.0 * dot(rt.T, rt_dx)  # for Simple Kriging
+        if self.estimate_trend:  # Universal / Ordinary Kriging
             # auxiliary variable: u = Ft^T * rt - f
             u = dot(self.Ft.T, rt) - f
             u_dx = dot(self.Ft.T, rt_dx) - f_dx
@@ -558,17 +575,16 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         return y_dx.T, mse_dx.T
 
     def Hessian(self, x):
-        """Calculate the Hessian matrix of the posterior mean at the input point `x`
-        """
+        """Calculate the Hessian matrix of the posterior mean at the input point `x`"""
         x = np.atleast_2d(x)
         n_eval, _ = x.shape
         n_samples, n_features = self.X.shape
 
         if _ != n_features:
-            raise Exception('x does not have the right size!')
+            raise Exception("x does not have the right size!")
 
         if n_eval != 1:
-            raise Exception('x must be a vector!')
+            raise Exception("x must be a vector!")
 
         # The Hessian tensor of the trend
         f_dx2 = self.mean.Hessian(x)
@@ -589,13 +605,13 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         n_samples, n_features = self.X.shape
 
         if _ != n_features:
-            raise Exception('x does not have the right size!')
+            raise Exception("x does not have the right size!")
 
         if n_eval != 1:
-            raise Exception('x must be a vector!')
+            raise Exception("x must be a vector!")
 
         if self.theta_ is None:
-            raise Exception('The model is not fitted yet!')
+            raise Exception("The model is not fitted yet!")
 
         X = np.atleast_2d(X)
         if X is None:
@@ -613,30 +629,30 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         theta = theta.reshape(-1, 1)
 
         with warnings.catch_warnings():
-            warnings.filterwarnings('error')
+            warnings.filterwarnings("error")
             try:
-                if self.corr_type == 'squared_exponential':
+                if self.corr_type == "squared_exponential":
                     grad = -2 * r * (theta * diff)
 
-                elif self.corr_type == 'matern':
+                elif self.corr_type == "matern":
                     c = np.sqrt(3)
-                    D = np.sqrt(np.sum(theta * diff ** 2., axis=0))
+                    D = np.sqrt(np.sum(theta * diff ** 2.0, axis=0))
 
                     if nu == 0.5:
-                        grad = - diff * theta / D * r
+                        grad = -diff * theta / D * r
                     elif nu == 1.5:
                         grad = diff * theta / D
-                        grad *= -3. * D * exp(-c * D)
+                        grad *= -3.0 * D * exp(-c * D)
                     elif nu == 2.5:
                         pass
 
-                elif self.corr_type == 'absolute_exponential':
+                elif self.corr_type == "absolute_exponential":
                     grad = -1.0 * r * theta * np.sign(diff)
-                elif self.corr_type == 'generalized_exponential':
+                elif self.corr_type == "generalized_exponential":
                     pass
-                elif self.corr_type == 'cubic':
+                elif self.corr_type == "cubic":
                     pass
-                elif self.corr_type == 'linear':
+                elif self.corr_type == "linear":
                     pass
             except Warning:
                 grad = np.zeros((n_features, n_samples))
@@ -651,13 +667,13 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         assert n_eval == 1
 
         if _ != n_features:
-            raise Exception('x does not have the right size!')
+            raise Exception("x does not have the right size!")
 
         if n_eval != 1:
-            raise Exception('x must be a vector!')
+            raise Exception("x must be a vector!")
 
         if self.theta_ is None:
-            raise Exception('The model is not fitted yet!')
+            raise Exception("The model is not fitted yet!")
 
         X = np.atleast_2d(X)
         if X is None:
@@ -674,9 +690,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             r = self.corr(self.theta_, np.abs(diff).T)
 
         with warnings.catch_warnings():
-            warnings.filterwarnings('error')
+            warnings.filterwarnings("error")
             try:
-                if self.corr_type == 'squared_exponential':
+                if self.corr_type == "squared_exponential":
                     diff_ = theta * diff
                     g = -2 * r * diff_
 
@@ -684,32 +700,32 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     for k in range(n_features):
                         _ = np.zeros((n_features, n_samples))
                         _[k, :] = theta[k]
-                        H.append(
-                            -2 * (g[k, :] * (theta * diff) + r * _)
-                        )
+                        H.append(-2 * (g[k, :] * (theta * diff) + r * _))
                     H = np.atleast_3d(H)
-                elif self.corr_type == 'matern':
+                elif self.corr_type == "matern":
                     c = np.sqrt(3)
-                    D = np.sqrt(np.sum(theta * diff ** 2., axis=0))
+                    D = np.sqrt(np.sum(theta * diff ** 2.0, axis=0))
 
                     if nu == 0.5:
-                        grad = - diff * theta / D * r
+                        grad = -diff * theta / D * r
                     elif nu == 1.5:
                         grad = diff * theta / D
-                        grad *= -3. * D * exp(-c * D)
+                        grad *= -3.0 * D * exp(-c * D)
                     elif nu == 2.5:
                         pass
 
-                elif self.corr_type == 'absolute_exponential':
+                elif self.corr_type == "absolute_exponential":
                     diff_ = theta * np.sign(diff)
                     g = -1.0 * r * diff_
-                    H = np.atleast_3d([
-                        r[i] * np.diag(theta * diff[:, i] / np.sign(diff[:, i])) + \
-                            np.tile(g, (1, n_features)) * diff_[:, i] for i in range(n_samples)
+                    H = np.atleast_3d(
+                        [
+                            r[i] * np.diag(theta * diff[:, i] / np.sign(diff[:, i]))
+                            + np.tile(g, (1, n_features)) * diff_[:, i]
+                            for i in range(n_samples)
                         ]
                     )
                     H *= -1
-                elif self.corr_type == 'generalized_exponential':
+                elif self.corr_type == "generalized_exponential":
                     pass
             except Warning:
                 H = np.zeros((n_features, n_samples))
@@ -723,31 +739,31 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         n_features = self.X.shape[1]
 
         if _ != n_features:
-            raise Exception('x does not have the right size!')
+            raise Exception("x does not have the right size!")
 
-        diff = (X[:, np.newaxis, :] - X[np.newaxis, :, :]) ** 2.
+        diff = (X[:, np.newaxis, :] - X[np.newaxis, :, :]) ** 2.0
 
-        if self.corr_type == 'squared_exponential':
+        if self.corr_type == "squared_exponential":
             grad = -diff * R[..., np.newaxis]
 
-        elif self.corr_type == 'matern':
+        elif self.corr_type == "matern":
             c = np.sqrt(3)
             D = np.sqrt(np.sum(theta * diff, axis=-1))
 
             if nu == 0.5:
-                grad = - diff * theta / D * R
+                grad = -diff * theta / D * R
             elif nu == 1.5:
-                grad = -3 * np.exp(-c * D)[..., np.newaxis] * diff / 2.
+                grad = -3 * np.exp(-c * D)[..., np.newaxis] * diff / 2.0
             elif nu == 2.5:
                 pass
 
-        elif self.corr_type == 'absolute_exponential':
+        elif self.corr_type == "absolute_exponential":
             grad = -np.sqrt(diff) * R[..., np.newaxis]
-        elif self.corr_type == 'generalized_exponential':
+        elif self.corr_type == "generalized_exponential":
             pass
-        elif self.corr_type == 'cubic':
+        elif self.corr_type == "cubic":
             pass
-        elif self.corr_type == 'linear':
+        elif self.corr_type == "linear":
             pass
 
         return grad
@@ -767,8 +783,8 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
     def compute_beta_gamma(self):
         if self.estimate_trend:
             # estimate the trend coefficients
-            self.mean.beta = solve_triangular(self.G, my_dot(self.Q.T, self.Yt))
-        self.gamma = solve_triangular(self.C.T, self.rho).reshape(-1, 1)
+            self.mean.beta = solve_triangular(self.G, self.Q.T.dot(self.Yt))
+        self.gamma = solve_triangular(self.C.T, self.rho).reshape(-1, self.y.shape[1])
 
     def _compute_aux_var(self, R):
         # compute auxiliary variables
@@ -785,7 +801,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             # ρ = Y - Fβ
             # both Y and F are transformed by R^-1/2 such that the noise covariance is identity
             Ft = solve_triangular(L, self.F, lower=True)
-            Q, G = linalg.qr(Ft, mode='economic')
+            Q, G = linalg.qr(Ft, mode="economic")
             rho = Yt - Q.dot(Q.T).dot(Yt)
         else:
             rho = Yt - solve_triangular(L, self.mean(self.X), lower=True)
@@ -806,13 +822,13 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         log_likelihood = -np.inf
 
         # the MLE estimation of sigma2 is not used here as it will make estimation of theta biased
-        if self.estimation_mode == 'noiseless':
+        if self.estimation_mode == "noiseless":
             theta, sigma2, noise_var = par[:-1], par[-1], 0
 
-        elif self.estimation_mode == 'noisy':
+        elif self.estimation_mode == "noisy":
             theta, sigma2, noise_var = par[:-1], par[-1], self.noise_var
 
-        elif self.estimation_mode == 'noise_estim':
+        elif self.estimation_mode == "noise_estim":
             theta, sigma2, noise_var = par[:-2], par[-2], par[-1]
 
         R0 = self.correlation_matrix(theta)
@@ -831,15 +847,25 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         if self.estimate_trend:
             p = Ft.shape[1]
-            log_likelihood = -0.5 * ((n_samples - p) * log(2 * pi * total_var) -
-                                     np.log(np.linalg.det(self.F.T.dot(self.F))) +
-                                     2 * np.log(np.diag(L)).sum() +
-                                     np.log(np.diag(G).prod() ** 2) +
-                                     rho.T.dot(rho) / total_var).sum()
+            log_likelihood = (
+                -0.5
+                * (
+                    (n_samples - p) * log(2 * pi * total_var)
+                    - np.log(np.linalg.det(self.F.T.dot(self.F)))
+                    + 2 * np.log(np.diag(L)).sum()
+                    + np.log(np.diag(G).prod() ** 2)
+                    + rho.T.dot(rho) / total_var
+                ).sum()
+            )
         else:  # simple kriging
-            log_likelihood = -0.5 * (n_samples * log(2 * pi * total_var) -
-                                     2 * np.log(np.diag(L)).sum() +
-                                     rho.T.dot(rho) / total_var).sum()
+            log_likelihood = (
+                -0.5
+                * (
+                    n_samples * log(2 * pi * total_var)
+                    - 2 * np.log(np.diag(L)).sum()
+                    + rho.T.dot(rho) / total_var
+                ).sum()
+            )
 
         if np.exp(log_likelihood) > 1:
             if self.verbose:
@@ -859,33 +885,35 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             # Covariance: partial derivatives w.r.t. sigma2
             C_grad_tensor = np.concatenate([C_grad_tensor, R0[..., np.newaxis]], axis=2)
 
-            if self.estimation_mode == 'noise_estim':
+            if self.estimation_mode == "noise_estim":
                 # Covariance: partial derivatives w.r.t. noise_var
-                C_grad_tensor = np.concatenate([C_grad_tensor, np.eye(n_samples)[..., np.newaxis]],
-                                                axis=2)
+                C_grad_tensor = np.concatenate(
+                    [C_grad_tensor, np.eye(n_samples)[..., np.newaxis]], axis=2
+                )
             # partial dderivatives of llf
             gradient = np.zeros((n_par, 1))
             for i in range(n_par):
                 C_grad = C_grad_tensor[:, :, i]
                 # TODO: beta hat is not considered in the partial derivatives
                 if self.estimate_trend:
-                    gradient[i] = -0.5 * (np.sum(Cinv * C_grad) -
-                                          gamma_.T.dot(C_grad).dot(gamma_) -
-                                          np.sum(term * C_grad))
+                    gradient[i] = -0.5 * (
+                        np.sum(Cinv * C_grad)
+                        - gamma_.T.dot(C_grad).dot(gamma_)
+                        - np.sum(term * C_grad)
+                    )
                 else:  # simple kriging
-                    gradient[i] = -0.5 * (np.sum(Cinv * C_grad) -
-                                          gamma_.T.dot(C_grad).dot(gamma_))
+                    gradient[i] = -0.5 * (np.sum(Cinv * C_grad) - gamma_.T.dot(C_grad).dot(gamma_))
 
         if env is not None:
-            env['sigma2'] = sigma2
-            env['noise_var'] = noise_var
-            env['rho'] = rho
-            env['Yt'] = Yt
-            env['C'] = L
+            env["sigma2"] = sigma2
+            env["noise_var"] = noise_var
+            env["rho"] = rho
+            env["Yt"] = Yt
+            env["C"] = L
             if self.estimate_trend:
-                env['Ft'] = Ft
-                env['G'] = G
-                env['Q'] = Q
+                env["Ft"] = Ft
+                env["G"] = G
+                env["Q"] = Q
 
         if eval_grad:
             return log_likelihood, gradient
@@ -903,152 +931,128 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         """
         n_samples = self.X.shape[0]
         n_par = len(par)
-        log_likelihood = -np.inf
-        if self.estimation_mode == 'noiseless':
+        n_targets = self.y.shape[1]
+        if self.estimation_mode == "noiseless":
             theta = par
             noise_var = 0
-
             R0 = self.correlation_matrix(theta)
-
             try:
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R0)
-            except LinAlgError:
-                if eval_grad:
-                    return (log_likelihood, np.zeros((n_par, 1)))
-                else:
-                    return log_likelihood
+                # TODO: check experimental correction of the sigma2 estimation
+                k = np.linalg.matrix_rank(Q.dot(Q.T)) if Q is not None else 0
+                sigma2 = (rho ** 2.0).sum(axis=0) / (n_samples - k)
+                log_likelihood = -0.5 * (
+                    n_samples * log(2.0 * pi * sigma2) + 2.0 * np.log(np.diag(L)).sum() + n_samples
+                )
+            except (LinAlgError, ValueError):
+                log_likelihood = None
 
-            # TODO: experimental correction of the sigma2 estimation
-            if Q is not None:
-                k = np.linalg.matrix_rank(Q.dot(Q.T))
-            else:
-                k = 0
-            sigma2 = (rho ** 2.).sum(axis=0) / (n_samples - k)
-            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2) +
-                                     2. * np.log(np.diag(L)).sum() + n_samples)
-
-        elif self.estimation_mode == 'noise_estim':
+        elif self.estimation_mode == "noise_estim":
             theta, alpha = par[:-1], par[-1]
             R0 = self.correlation_matrix(theta)
             R = alpha * R0 + (1 - alpha) * np.eye(n_samples)
-
             try:
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R)
-            except LinAlgError:
-                if eval_grad:
-                    return (log_likelihood, np.zeros(n_par, 1))
-                else:
-                    return log_likelihood
+                sigma2_total = (rho ** 2.0).sum(axis=0) / n_samples
+                sigma2, noise_var = alpha * sigma2_total, (1 - alpha) * sigma2_total
+                log_likelihood = -0.5 * (
+                    n_samples * log(2.0 * pi * sigma2_total)
+                    + 2.0 * np.log(np.diag(L)).sum()
+                    + n_samples
+                )
+            except (LinAlgError, ValueError):
+                log_likelihood = None
 
-            sigma2_total = (rho ** 2.).sum(axis=0) / n_samples
-            sigma2, noise_var = alpha * sigma2_total, (1 - alpha) * sigma2_total
-            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2_total) +
-                                     2. * np.log(np.diag(L)).sum() + n_samples)
-
-        elif self.estimation_mode == 'noisy':
+        elif self.estimation_mode == "noisy":
             theta, sigma2 = par[:-1], par[-1]
             noise_var = self.noise_var
             sigma2_total = sigma2 + noise_var
-
             R0 = self.correlation_matrix(theta)
             C = sigma2 * R0 + noise_var * np.eye(n_samples)
             R = C / sigma2_total
-
+            sigma2 = np.repeat(sigma2, n_targets)
             try:
                 L, Ft, Yt, Q, G, rho = self._compute_aux_var(R)
-            except LinAlgError:
-                if eval_grad:
-                    return (log_likelihood, np.zeros(n_par, 1))
-                else:
-                    return log_likelihood
+                log_likelihood = -0.5 * (
+                    n_samples * log(2.0 * pi * sigma2_total)
+                    + 2.0 * np.log(np.diag(L)).sum()
+                    + np.diag(np.dot(rho.T, rho)) / sigma2_total
+                )
+            except (LinAlgError, ValueError):
+                log_likelihood = None
 
-            log_likelihood = -0.5 * (n_samples * log(2. * pi * sigma2_total) +
-                                     2. * np.log(np.diag(L)).sum() +
-                                     np.dot(rho.T, rho) / sigma2_total)
-
-        if env is not None:
-            env['sigma2'] = sigma2
-            env['noise_var'] = noise_var
-            env['rho'] = rho
-            env['Yt'] = Yt
-            # TODO: change variable 'C' --> 'L'
-            env['C'] = L
-            env['Ft'] = Ft
-            env['G'] = G
-            env['Q'] = Q
-
-        # for verificationn
-        # TODO: remove this in the future
-        if log_likelihood > 0:
-            # warnings.warn("invalid log likelihood value: {}".format(log_likelihood))
+        if log_likelihood is None or any(log_likelihood > 0):
             return (-np.inf, np.zeros((n_par, 1))) if eval_grad else -np.inf
 
-        if not eval_grad:
-            return log_likelihood[0]
+        if env is not None:
+            env["sigma2"] = sigma2
+            env["noise_var"] = noise_var
+            env["rho"] = rho
+            env["Yt"] = Yt
+            env["C"] = L
+            env["Ft"] = Ft
+            env["G"] = G
+            env["Q"] = Q
 
-        # gradient calculation of the log-likelihood
-        gamma = solve_triangular(L.T, rho).reshape(-1, 1)
+        if eval_grad:
+            # gradient calculation of the log-likelihood
+            gamma = solve_triangular(L.T, rho).reshape(-1, n_targets)
+            Rinv = cho_solve((L, True), np.eye(n_samples))
+            Rinv_upper = Rinv[np.triu_indices(n_samples, 1)]
+            _upper = gamma.dot(gamma.T)[np.triu_indices(n_samples, 1)]
+            llf_grad = np.zeros((n_par, n_targets))
 
-        Rinv = cho_solve((L, True), np.eye(n_samples))
-        Rinv_upper = Rinv[np.triu_indices(n_samples, 1)]
-        _upper = gamma.dot(gamma.T)[np.triu_indices(n_samples, 1)]
+            if self.estimation_mode == "noiseless":
+                # The grad tensor of R w.r.t. theta
+                R_grad_tensor = self.corr_grad_theta(theta, self.X, R0)
+                for i in range(n_par):
+                    R_grad_upper = R_grad_tensor[:, :, i][np.triu_indices(n_samples, 1)]
 
-        llf_grad = np.zeros((n_par, 1))
+                    llf_grad[i, :] = np.sum(_upper * R_grad_upper) / sigma2 - np.sum(
+                        Rinv_upper * R_grad_upper
+                    )
+            elif self.estimation_mode == "noise_estim":
+                # The grad tensor of R w.r.t. theta
+                R_grad_tensor = alpha * self.corr_grad_theta(theta, self.X, R0)
+                # partial derivatives w.r.t theta's
+                for i in range(n_par - 1):
+                    R_grad_upper = R_grad_tensor[:, :, i][np.triu_indices(n_samples, 1)]
+                    # Note that sigma2_total is used here
+                    llf_grad[i, :] = np.sum(_upper * R_grad_upper) / sigma2_total - np.sum(
+                        Rinv_upper * R_grad_upper
+                    )
+                # partial derivatives w.r.t 'v'
+                R_dv = R0 - np.eye(n_samples)
+                llf_grad[n_par - 1, :] = -0.5 * (
+                    np.sum(Rinv * R_dv) - np.diag(gamma.T.dot(R_dv.dot(gamma))) / sigma2_total
+                )
+            elif self.estimation_mode == "noisy":
+                gamma_ = gamma / sigma2_total
+                Cinv = Rinv / sigma2_total
+                # Covariance: partial derivatives w.r.t. theta
+                C_grad_tensor = sigma2_total * self.corr_grad_theta(theta, self.X, R0)
+                # Covariance: partial derivatives w.r.t. sigma2
+                C_grad_tensor = np.concatenate([C_grad_tensor, R0[..., np.newaxis]], axis=2)
+                for i in range(n_par):
+                    C_grad = C_grad_tensor[:, :, i]
+                    llf_grad[i, :] = -0.5 * (
+                        np.sum(Cinv * C_grad) - np.diag(gamma_.T.dot(C_grad).dot(gamma_))
+                    )
+            llf_grad = llf_grad.sum(axis=1)
 
-        if self.estimation_mode == 'noiseless':
-            # The grad tensor of R w.r.t. theta
-            R_grad_tensor = self.corr_grad_theta(theta, self.X, R0)
-
-            for i in range(n_par):
-                R_grad_upper = R_grad_tensor[:, :, i][np.triu_indices(n_samples, 1)]
-
-                llf_grad[i] = np.sum(_upper * R_grad_upper) / sigma2 \
-                    - np.sum(Rinv_upper * R_grad_upper)
-
-        elif self.estimation_mode == 'noise_estim':
-            # The grad tensor of R w.r.t. theta
-            R_grad_tensor = alpha * self.corr_grad_theta(theta, self.X, R0)
-
-            # partial derivatives w.r.t theta's
-            for i in range(n_par - 1):
-                R_grad_upper = R_grad_tensor[:, :, i][np.triu_indices(n_samples, 1)]
-
-                # Note that sigma2_total is used here
-                llf_grad[i] = np.sum(_upper * R_grad_upper) / sigma2_total \
-                    - np.sum(Rinv_upper * R_grad_upper)
-
-            # partial derivatives w.r.t 'v'
-            R_dv = R0 - np.eye(n_samples)
-            llf_grad[n_par - 1] = -0.5 * (np.sum(Rinv * R_dv) -
-                                          np.dot(gamma.T, R_dv.dot(gamma)) / sigma2_total)
-
-        elif self.estimation_mode == 'noisy':
-            gamma_ = gamma / sigma2_total
-            Cinv = Rinv / sigma2_total
-            # Covariance: partial derivatives w.r.t. theta
-            C_grad_tensor = sigma2_total * self.corr_grad_theta(theta, self.X, R0)
-
-            # Covariance: partial derivatives w.r.t. sigma2
-            C_grad_tensor = np.concatenate([C_grad_tensor, R0[..., np.newaxis]], axis=2)
-
-            for i in range(n_par):
-                C_grad = C_grad_tensor[:, :, i]
-                llf_grad[i] = -0.5 * (np.sum(Cinv * C_grad) -
-                                      np.dot(gamma_.T, C_grad).dot(gamma_))
-
-        return log_likelihood[0], llf_grad
+        return log_likelihood.sum() if not eval_grad else (log_likelihood.sum(), llf_grad)
 
     def _hyperparameter_bound(self, par_list):
         bounds = []
         # TODO: better estimation the upper and lowe bound of sigma2
         for name in par_list:
-            if name == 'theta':
+            if name == "theta":
                 bounds.append(np.c_[self.thetaL, self.thetaU])
-            elif name == 'sigma2':
+            elif name == "sigma2":
                 bounds.append(np.atleast_2d([1e-5, max(1e-3, self.y.std() ** 2)]))
-            elif name == 'alpha':
+            elif name == "alpha":
                 bounds.append(np.atleast_2d([1e-10, 1.0 - 1e-10]))
-            elif name == 'noise_var':
+            elif name == "noise_var":
                 # TODO: implement this
                 bounds.append(np.atleast_2d([1e-10, 1.0 - 1e-10]))
         bounds = np.concatenate(bounds, axis=0)
@@ -1065,23 +1069,23 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
         if self.verbose:
             print("The chosen optimizer is: " + str(self.optimizer))
-            print('Estimation mode: {}'.format(self.estimation_mode))
-            print('Likelihood function: {}'.format(self.likelihood))
+            print("Estimation mode: {}".format(self.estimation_mode))
+            print("Likelihood function: {}".format(self.likelihood))
             print("{} random restarts are specified.".format(self.random_start))
 
-        par_list = ['theta']
+        par_list = ["theta"]
         par_len = [len(self.thetaL)]
-        if self.likelihood == 'restricted' or self.estimation_mode == 'noisy':
+        if self.likelihood == "restricted" or self.estimation_mode == "noisy":
             # TODO: implement optimization for the heterogenous case
-            par_list += ['sigma2']
+            par_list += ["sigma2"]
             par_len.append(1)
 
-        if self.estimation_mode == 'noise_estim':
-            if self.likelihood == 'concentrated':
-                par_list += ['alpha']
+        if self.estimation_mode == "noise_estim":
+            if self.likelihood == "concentrated":
+                par_list += ["alpha"]
                 par_len.append(1)
-            elif self.likelihood == 'restricted':
-                par_list += ['noise_var']
+            elif self.likelihood == "restricted":
+                par_list += ["noise_var"]
                 par_len.append(1)
 
         bounds = self._hyperparameter_bound(par_list)
@@ -1091,17 +1095,21 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         # then use the last optimized hyperparameters
         # supposed to be good for updating the model incrementally
         # TODO: validate this
-        if hasattr(self, 'theta_'):
+        if hasattr(self, "theta_"):
             log10theta0 = log10(self.theta_)
         else:
-            log10theta0 = log10(self.theta0) if self.theta0 is not None else \
-                np.random.uniform(log10(self.thetaL), log10(self.thetaU))
+            log10theta0 = (
+                log10(self.theta0)
+                if self.theta0 is not None
+                else np.random.uniform(log10(self.thetaL), log10(self.thetaU))
+            )
 
-        if self.estimation_mode == 'noiseless' and self.likelihood == 'concentrated':
+        if self.estimation_mode == "noiseless" and self.likelihood == "concentrated":
             log10param = log10theta0
         else:
-            log10param = np.r_[log10theta0, uniform(log10bounds[n_theta:, 0],
-                                                    log10bounds[n_theta:, 1])]
+            log10param = np.r_[
+                log10theta0, uniform(log10bounds[n_theta:, 0], log10bounds[n_theta:, 1])
+            ]
 
         n_par = len(log10param)
         eval_budget = 200 * n_par if self.eval_budget is None else self.eval_budget
@@ -1110,17 +1118,18 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         def _obj_func(eval_grad=False):
             def func(log10param):
                 self.eval_count += 1
-                param = 10. ** np.array(log10param)
-                if self.likelihood == 'concentrated':
-                    __ = self.log_likelihood_concentrated(param, eval_grad=eval_grad)
-                elif self.likelihood == 'restricted':
-                    __ = self.log_likelihood_restricted(param, eval_grad=eval_grad)
-                return tuple(-_ for _ in tuple(__))
+                param = 10.0 ** np.array(log10param)
+                if self.likelihood == "concentrated":
+                    out = self.log_likelihood_concentrated(param, eval_grad=eval_grad)
+                elif self.likelihood == "restricted":
+                    out = self.log_likelihood_restricted(param, eval_grad=eval_grad)
+                return -1.0 * out if isinstance(out, float) else tuple(-1.0 * v for v in out)
+
             return func
 
         self.eval_count = 0
         # TODO: maybe adopt an ILS-like restarting heuristic?
-        if self.optimizer == 'BFGS':
+        if self.optimizer == "BFGS":
             obj_func = _obj_func(eval_grad=True)
             wait_count = 0  # stagnation counter
 
@@ -1129,9 +1138,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     log10param = np.random.uniform(log10bounds[:, 0], log10bounds[:, 1])
 
                 # TODO: may be expose the parameter of fmin_l_bfgs_b to the user
-                param_opt_, llf_opt_, info = fmin_l_bfgs_b(obj_func, log10param,
-                                                           bounds=log10bounds,
-                                                           maxfun=eval_budget)
+                param_opt_, llf_opt_, info = fmin_l_bfgs_b(
+                    obj_func, log10param, bounds=log10bounds, maxfun=eval_budget
+                )
 
                 # TODO: verify this rule to determine the marginal improvement
                 # diff = (llf_opt - llf_opt_) / max(abs(llf_opt_), abs(llf_opt), 1)
@@ -1146,45 +1155,49 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
                     wait_count += 1
 
                 if self.verbose:
-                    print('restart {} takes {} evals'.format(iteration + 1, info['funcalls']))
-                    print('best log likekihood value: {}'.format(-llf_opt))
+                    print("restart {} takes {} evals".format(iteration + 1, info["funcalls"]))
+                    print("best log likekihood value: {}".format(-llf_opt))
                     if info["warnflag"] != 0:
-                        warnings.warn("fmin_l_bfgs_b terminated abnormally with "
-                                      "the state: {}".format(info))
+                        warnings.warn(
+                            "fmin_l_bfgs_b terminated abnormally with "
+                            "the state: {}".format(info)
+                        )
 
-                eval_budget -= info['funcalls']
+                eval_budget -= info["funcalls"]
                 if eval_budget <= 0 or wait_count >= self.wait_iter:
                     break
 
-        elif self.optimizer == 'CMA':   # IPOP-CMA-ES
+        elif self.optimizer == "CMA":  # IPOP-CMA-ES
             obj_func = _obj_func()
-            opt = {'sigma_init': 0.25 * np.max(log10bounds[:, 1] - log10bounds[:, 0]),
-                   'eval_budget': eval_budget,
-                   'f_target': np.inf,
-                   'lb': log10bounds[:, 1],
-                   'ub': log10bounds[:, 0],
-                   'restart_budget': self.random_start}
+            opt = {
+                "sigma_init": 0.25 * np.max(log10bounds[:, 1] - log10bounds[:, 0]),
+                "eval_budget": eval_budget,
+                "f_target": np.inf,
+                "lb": log10bounds[:, 1],
+                "ub": log10bounds[:, 0],
+                "restart_budget": self.random_start,
+            }
 
             # TODO: perphas use the BIPOP-CMA-ES in the future
-            optimizer = cma_es(n_par, log10param, obj_func, opt, is_minimize=False, restart='IPOP')
+            optimizer = cma_es(n_par, log10param, obj_func, opt, is_minimize=False, restart="IPOP")
             param_opt, llf_opt, evalcount, info = optimizer.optimize()
             param_opt = param_opt.flatten()
 
             if self.verbose:
-                print('{} evals, best log likekihood value: {}'.format(evalcount, -llf_opt))
+                print("{} evals, best log likekihood value: {}".format(evalcount, -llf_opt))
 
-        optimal_param = 10. ** param_opt
+        optimal_param = 10.0 ** param_opt
         env = {}
-        if self.likelihood == 'concentrated':
+        if self.likelihood == "concentrated":
             optimal_llf_value = self.log_likelihood_concentrated(optimal_param, env)
-        elif self.likelihood == 'restricted':
+        elif self.likelihood == "restricted":
             optimal_llf_value = self.log_likelihood_restricted(optimal_param, env)
 
         param = {}
         i = 0
         for k, name in enumerate(par_list):
             len_ = par_len[k]
-            param[name] = optimal_param[i:i+len_]
+            param[name] = optimal_param[i : i + len_]
             i += len_
 
         return param, optimal_llf_value, env
@@ -1195,8 +1208,10 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             if self.corr in self._correlation_types:
                 self.corr = self._correlation_types[self.corr]
             else:
-                raise ValueError("corr should be one of %s or callable, "
-                                 "%s was given." % (self._correlation_types.keys(), self.corr))
+                raise ValueError(
+                    "corr should be one of %s or callable, "
+                    "%s was given." % (self._correlation_types.keys(), self.corr)
+                )
 
         # Check correlation parameters
         # self.theta0 = np.atleast_2d(self.theta0)
@@ -1208,18 +1223,18 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             if self.theta0 is not None and self.theta0.size != self.thetaL.size:
                 raise ValueError("theta0, thetaL, and thetaU must have the same length.")
             if np.any(self.thetaL <= 0) or np.any(self.thetaU < self.thetaL):
-                raise ValueError("The bounds must satisfy O < thetaL <= "
-                                 "thetaU.")
+                raise ValueError("The bounds must satisfy O < thetaL <= " "thetaU.")
 
         elif self.thetaL is None and self.thetaU is None:
             if self.theta0 is None:
-                raise ValueError("theta0 must be provided when both thetaL and thetaU are not set.")
+                raise ValueError(
+                    "theta0 must be provided when both thetaL and thetaU are not set."
+                )
             if np.any(self.theta0 <= 0):
                 raise ValueError("theta0 must be strictly positive.")
 
         elif self.thetaL is None or self.thetaU is None:
-            raise ValueError("thetaL and thetaU should either be both or "
-                             "neither specified.")
+            raise ValueError("thetaL and thetaU should either be both or " "neither specified.")
 
         # Force verbose type to bool
         self.verbose = bool(self.verbose)

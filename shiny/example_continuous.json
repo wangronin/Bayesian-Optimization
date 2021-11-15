@@ -1,0 +1,18 @@
+{
+    "search_param" : {
+        "continuous" : {
+            "type" : "r",
+            "range" : [0, 1],
+            "N" : 4,
+            "precision" : 2
+        }
+    },
+
+    "bo_param" : {
+        "n_job" : 3,
+        "n_point" : 3,
+        "DoE_size" : 3,
+        "minimize" : true,
+        "n_obj": 1
+    }
+}

@@ -7,7 +7,7 @@ sys.path.insert(0, "../")
 sys.path.insert(0, "../../pycma")
 
 from copy import copy
-from typing import List, Union
+from typing import Any, Callable, List, Tuple, Union
 
 from bayes_optim import OptimizerPipeline, ParallelBO, RealSpace
 from bayes_optim.surrogate import GaussianProcess, trend
@@ -33,10 +33,7 @@ class _BO(ParallelBO):
 
     def check_stop(self):
         _delta = self._fBest_DoE - self.fopt
-        if (
-            self.iter_count > 1
-            and np.mean(self._hist_EI[0 : min(3, self.iter_count - 1)]) < 0.01 * _delta
-        ):
+        if self.iter_count > 1 and np.mean(self._hist_EI[0 : min(3, self.iter_count - 1)]) < 0.01 * _delta:
             self.stop_dict["low-EI"] = np.mean(self._hist_EI)
 
         if self.eval_count >= (self.max_FEs / 2):
@@ -106,13 +103,13 @@ class _CMA(CMAEvolutionStrategy):
 
     @property
     def logger(self):
-        return self._logger
+        return self.logger
 
     @logger.setter
     def logger(self, logger):
         if isinstance(logger, logging.Logger):
-            self._logger = logger
-            self._logger.propagate = False
+            self.logger = logger
+            self.logger.propagate = False
             return
 
     def ask(self, n_point=None):
@@ -121,7 +118,7 @@ class _CMA(CMAEvolutionStrategy):
     def tell(self, X, y):
         super().tell(X, y)
         x, f, _ = self.best.get()
-        self._logger.info("iteration {}, fopt: {}, xopt: {}".format(self.countiter, f, x))
+        self.logger.info("iteration {}, fopt: {}, xopt: {}".format(self.countiter, f, x))
 
     def check_stop(self):
         _, f, __ = self.best.get()
@@ -141,25 +138,10 @@ obj_fun = lambda x: benchmarks.himmelblau(x)[0]
 lb, ub = -6, 6
 
 search_space = RealSpace([lb, ub]) * dim
-mean = trend.constant_trend(dim, beta=0)  # Ordinary Kriging
-
-# autocorrelation parameters of GPR
-thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-thetaU = 10 * (ub - lb) * np.ones(dim)
-theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
-
 model = GaussianProcess(
-    mean=mean,
-    corr="squared_exponential",
-    theta0=theta0,
-    thetaL=thetaL,
-    thetaU=thetaU,
-    nugget=1e-5,
-    noise_estim=False,
-    optimizer="BFGS",
-    wait_iter=5,
-    random_start=5 * dim,
-    eval_budget=100 * dim,
+    dim=dim,
+    n_obj=2,
+    n_restarts_optimizer=dim,
 )
 
 bo = _BO(
@@ -196,13 +178,7 @@ def post_BO(BO):
     return kwargs
 
 
-pipe = OptimizerPipeline(
-    obj_fun=obj_fun,
-    minimize=True,
-    # n_point=n_point,
-    max_FEs=max_FEs,
-    verbose=True,
-)
+pipe = OptimizerPipeline(obj_fun=obj_fun, minimize=True, n_point=n_point, max_FEs=max_FEs, verbose=True)
 pipe.add(bo, transfer=post_BO)
 pipe.add(cma)
 pipe.run()

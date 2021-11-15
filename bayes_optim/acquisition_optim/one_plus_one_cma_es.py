@@ -1,35 +1,32 @@
 import logging
-import sys
 from copy import copy
 from typing import Callable, Dict, List, Union
 
 import numpy as np
 from scipy.linalg import solve_triangular
 
-from ..misc import LoggerFormatter, handle_box_constraint
-from ..utils import dynamic_penalty, set_bounds
+from ..search_space import RealSpace, SearchSpace
+from ..utils import dynamic_penalty, get_logger, handle_box_constraint, set_bounds
 
 Vector = List[float]
 Matrix = List[Vector]
 
 __authors__ = ["Hao Wang"]
 
-# TODO: get rid of all ``eval`` calls
+
 class OnePlusOne_CMA(object):
     """(1+1)-CMA-ES"""
 
     def __init__(
         self,
-        dim: int,
+        search_space: SearchSpace,
         obj_fun: Callable,
-        args: Dict = {},
+        args: Dict = None,
         h: Callable = None,
         g: Callable = None,
         x0: Union[str, Vector, np.ndarray] = None,
         sigma0: Union[float] = None,
         C0: Union[Matrix, np.ndarray] = None,
-        lb: Union[float, str, Vector, np.ndarray] = -np.inf,
-        ub: Union[float, str, Vector, np.ndarray] = np.inf,
         ftarget: Union[int, float] = None,
         max_FEs: Union[int, str] = np.inf,
         minimize: bool = True,
@@ -37,7 +34,7 @@ class OnePlusOne_CMA(object):
         xtol: float = 1e-4,
         ftol: float = 1e-4,
         verbose: bool = False,
-        logger: str = None,
+        log_file: str = None,
         random_seed: int = 42,
         **kwargs,
     ):
@@ -99,7 +96,10 @@ class OnePlusOne_CMA(object):
         random_seed : int, optional
             The seed for pseudo-random number generators, by default None.
         """
-        self.dim: int = dim
+        assert isinstance(search_space, RealSpace)
+        lb, ub = list(zip(*search_space.bounds))
+        self.search_space = search_space
+        self.dim: int = search_space.dim
         self.obj_fun: Callable = obj_fun
         self.h: Callable = h
         self.g: Callable = g
@@ -107,8 +107,9 @@ class OnePlusOne_CMA(object):
         self.ftarget: float = ftarget
         self.lb: np.ndarray = set_bounds(lb, self.dim)
         self.ub: np.ndarray = set_bounds(ub, self.dim)
-        self.sigma0 = self.sigma = sigma0
-        self.args: Dict = args
+        self.sigma = sigma0
+        self.sigma0 = self.sigma
+        self.args: Dict = args if args else {}
         self.n_restart: int = max(0, int(n_restart))
         self._restart: bool = False
 
@@ -126,7 +127,9 @@ class OnePlusOne_CMA(object):
         self.stop_dict: Dict = {}
         self._exception: bool = False
         self.verbose: bool = verbose
-        self.logger = logger
+        self.logger: logging.Logger = get_logger(
+            logger_id=self.__class__.__name__, file=log_file, console=verbose
+        )
         self.random_seed = random_seed
 
         # parameters for stopping criteria
@@ -139,7 +142,6 @@ class OnePlusOne_CMA(object):
         self._delta_x: float = self.xtol / self._w ** (5 * self.dim)
         self._delta_f: float = self.ftol / self._w ** (5 * self.dim)
         self._stop: bool = False
-
         # set the initial search point
         self.x = x0
 
@@ -180,38 +182,6 @@ class OnePlusOne_CMA(object):
             self._random_seed = int(seed)
             if self._random_seed:
                 np.random.seed(self._random_seed)
-
-    @property
-    def logger(self):
-        return self._logger
-
-    @logger.setter
-    def logger(self, logger):
-        if isinstance(logger, logging.Logger):
-            self._logger = logger
-            self._logger.propagate = False
-            return
-
-        self._logger = logging.getLogger(self.__class__.__name__)
-        self._logger.setLevel(logging.DEBUG)
-        fmt = LoggerFormatter()
-
-        if self.verbose:
-            # create console handler and set level to warning
-            ch = logging.StreamHandler(sys.stdout)
-            ch.setLevel(logging.INFO)
-            ch.setFormatter(fmt)
-            self._logger.addHandler(ch)
-
-        # create file handler and set level to debug
-        if logger is not None:
-            fh = logging.FileHandler(logger)
-            fh.setLevel(logging.DEBUG)
-            fh.setFormatter(fmt)
-            self._logger.addHandler(fh)
-
-        if hasattr(self, "logger"):
-            self._logger.propagate = False
 
     @property
     def C(self):
@@ -283,20 +253,19 @@ class OnePlusOne_CMA(object):
         x : np.ndarray
             the trial point to check against the constraints
         """
-        return dynamic_penalty(
-            x.tolist(), self.iter_count + 1, self.h, self.g, minimize=self.minimize
-        )
+        return dynamic_penalty(x, self.iter_count + 1, self.h, self.g, minimize=self.minimize)
 
-    def evaluate(self, x):
+    def evaluate(self, x: np.ndarray) -> np.ndarray:
         self.eval_count += 1
         if isinstance(self.args, (list, tuple)):
-            return self.obj_fun(x, *self.args)
+            fval = self.obj_fun(x, *self.args)
         elif isinstance(self.args, dict):
-            return self.obj_fun(x, **self.args)
+            fval = self.obj_fun(x, **self.args)
+        return fval
 
     def restart(self):
         if self._restart:
-            self._logger.info("restarting... ")
+            self.logger.info("restarting... ")
             self.x = None
             self.sigma = self.sigma0
             self.pc = np.zeros(self.dim)
@@ -321,14 +290,18 @@ class OnePlusOne_CMA(object):
         np.ndarray
             The mutation vector
         """
-        z = np.random.randn(self.dim)
-        x = self._x + self.sigma * z.dot(self._A.T)
+        z = np.random.randn(self.dim).dot(self._A.T)
+        x = self._x + self.sigma * z
         x = handle_box_constraint(x, self.lb, self.ub)
+        # rounding if a coarser numerical precision is provided
+        x = self.search_space.round(x).ravel()
+        # NOTE: experimental correction to the step-size when the box constraints are violated
+        # self.sigma = np.min(np.abs((x - self._x) / z))
         return x
 
     def tell(self, x: np.ndarray, y: np.ndarray, penalty: float = 0):
         if self._stop:
-            self._logger.info("The optimizer is stopped and `tell` should not be called.")
+            self.logger.info("The optimizer is stopped and `tell` should not be called.")
             return
 
         # TODO: this might not be uncessary
@@ -352,24 +325,26 @@ class OnePlusOne_CMA(object):
 
         if success:
             self._delta_f += (1 - self._w) * abs(self.fopt_penalized - y_penalized)
-            self._delta_x += (1 - self._w) * np.sqrt(sum((self.xopt - x) ** 2))
-            self.fopt = y
+            self._delta_x += (1 - self._w) * np.sqrt(sum((self._x - x) ** 2))
             self.fopt_penalized = y_penalized
-            self._x = self.xopt = copy(x)
+            self._x = copy(x)
             self._update_covariance(z)
+
+        if success and penalty == 0:
+            self.xopt = copy(self._x)
+            self.fopt = y
 
         self._handle_exception()
         self.iter_count += 1
 
-        # TODO: should this be part of the logging function?
         if self.verbose:
-            self._logger.info(f"iteration {self.iter_count}")
-            self._logger.info(f"fopt: {self.fopt}")
+            self.logger.info(f"iteration {self.iter_count}")
+            self.logger.info(f"fopt: {self.fopt}")
             if self.h is not None or self.g is not None:
                 _penalty = (self.fopt - self.fopt_penalized) * (-1) ** self.minimize
-                self._logger.info(f"penalty: {_penalty:.4e}")
-            self._logger.info(f"xopt: {self.xopt.tolist()}")
-            self._logger.info(f"sigma: {self._sigma}\n")
+                self.logger.info(f"penalty: {_penalty[0]:.4e}")
+            self.logger.info(f"xopt: {self.xopt.tolist()}")
+            self.logger.info(f"sigma: {self._sigma}\n")
 
     def logging(self):
         self.hist_fopt += [self.fopt]
@@ -407,9 +382,7 @@ class OnePlusOne_CMA(object):
             self._C = (1 - self.ccov) * self._C + self.ccov * np.outer(self.pc, self.pc)
         else:
             self.pc = (1 - self.cc) * self.pc
-            self._C = (1 - self.ccov * (1 - self._coeff)) * self._C + self.ccov * np.outer(
-                self.pc, self.pc
-            )
+            self._C = (1 - self.ccov * (1 - self._coeff)) * self._C + self.ccov * np.outer(self.pc, self.pc)
 
         self._C = np.triu(self._C) + np.triu(self._C, 1).T
         self._update_A(self._C)

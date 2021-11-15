@@ -1,23 +1,15 @@
-import os, sys
-import numpy as np
-import fgeneric
-import bbobbenchmarks as bn
+import os
+import sys
 from time import time
 
-def run_optimizer(
-    optimizer,
-    dim,
-    fID,
-    instance,
-    logfile,
-    lb,
-    ub,
-    max_FEs,
-    data_path,
-    bbob_opt
-    ):
-    """Parallel BBOB/COCO experiment wrapper
-    """
+import numpy as np
+
+import bbobbenchmarks as bn
+import fgeneric
+
+
+def run_optimizer(optimizer, dim, fID, instance, logfile, lb, ub, max_FEs, data_path, bbob_opt):
+    """Parallel BBOB/COCO experiment wrapper"""
     # Set different seed for different processes
     start = time()
     seed = np.mod(int(start) + os.getpid(), 1000)
@@ -33,16 +25,24 @@ def run_optimizer(
     opt.run()
 
     f.finalizerun()
-    with open(logfile, 'a') as fout:
+    with open(logfile, "a") as fout:
         fout.write(
             "{} on f{} in {}D, instance {}: FEs={}, fbest-ftarget={:.4e}, "
-            "elapsed time [m]: {:.3f}\n".format(optimizer, fID, dim,
-            instance, f.evaluations, f.fbest - f.ftarget, (time() - start) / 60.)
+            "elapsed time [m]: {:.3f}\n".format(
+                optimizer,
+                fID,
+                dim,
+                instance,
+                f.evaluations,
+                f.fbest - f.ftarget,
+                (time() - start) / 60.0,
+            )
         )
 
+
 def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
-    sys.path.insert(0, '../')
-    from bayes_optim import AnnealingBO, BO, RealSpace
+    sys.path.insert(0, "../")
+    from bayes_optim import BO, AnnealingBO, RealSpace
     from bayes_optim.Surrogate import GaussianProcess, trend
 
     space = RealSpace([lb, ub]) * dim
@@ -53,11 +53,18 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
     theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
     model = GaussianProcess(
-        mean=mean, corr='matern',
-        theta0=theta0, thetaL=thetaL, thetaU=thetaU,
-        noise_estim=False, nugget=1e-6,
-        optimizer='BFGS', wait_iter=5, random_start=5 * dim,
-        likelihood='concentrated', eval_budget=100 * dim
+        mean=mean,
+        corr="matern",
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        noise_estim=False,
+        nugget=1e-6,
+        optimizer="BFGS",
+        wait_iter=5,
+        random_start=5 * dim,
+        likelihood="concentrated",
+        eval_budget=100 * dim,
     )
 
     return BO(
@@ -70,10 +77,11 @@ def test_BO(dim, obj_fun, ftarget, max_FEs, lb, ub, logfile):
         n_point=1,
         minimize=True,
         ftarget=ftarget,
-        logger=logfile
+        logger=logfile,
     )
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     from mpi4py import MPI
 
     comm = MPI.COMM_WORLD
@@ -81,28 +89,24 @@ if __name__ == '__main__':
     size = comm.Get_size()
 
     dims = (2, 5)
-    fIDs = bn.nfreeIDs    # for all fcts
+    fIDs = bn.nfreeIDs  # for all fcts
     instance = range(1, size + 1)
 
-    algorithms = [
-        test_BO
-    ]
+    algorithms = [test_BO]
 
     opts = {
-        'max_FEs': '100  * dim',
-        'lb': -5,
-        'ub': 5,
-        'data_path' : '',
+        "max_FEs": "100  * dim",
+        "lb": -5,
+        "ub": 5,
+        "data_path": "",
     }
-    opts['bbob_opt'] = {
-        'comments': 'max_FEs={0}'.format(opts['max_FEs']),
+    opts["bbob_opt"] = {
+        "comments": "max_FEs={0}".format(opts["max_FEs"]),
     }
 
     for algorithm in algorithms:
-        opts['data_path'] = './bbob_data/{}'.format(algorithm.__name__)
-        opts['bbob_opt']['algid'] = algorithm.__name__
+        opts["data_path"] = "./bbob_data/{}".format(algorithm.__name__)
+        opts["bbob_opt"]["algid"] = algorithm.__name__
         for dim in dims:
             for fID in fIDs:
-                run_optimizer(
-                    algorithm, dim, fID, instance[rank], logfile='./log', **opts
-                )
+                run_optimizer(algorithm, dim, fID, instance[rank], logfile="./log", **opts)

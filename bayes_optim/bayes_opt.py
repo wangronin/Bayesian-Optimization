@@ -18,18 +18,22 @@ __authors__ = ["Hao Wang"]
 class BO(BaseBO):
     """The sequential Bayesian Optimization class"""
 
-    def _create_acquisition(self, fun: Callable = None, par: Dict = {}, return_dx: bool = False):
+    def _create_acquisition(self, fun: Callable = None, par: Dict = None, **kwargv):
         fun = fun if fun is not None else self._acquisition_fun
+        par = {} if par is None else par
         if hasattr(getattr(AcquisitionFunction, fun), "plugin"):
             if "plugin" not in par:
-                par.update({"plugin": self.fmin})
+                par.update({"plugin": self.fmin if self.minimize else self.fmax})
 
-        return super()._create_acquisition(fun, par, return_dx)
+        return super()._create_acquisition(fun, par, **kwargv)
 
     def pre_eval_check(self, X: List) -> List:
         """Check for the duplicated solutions as it is not allowed in noiseless cases"""
+        if len(X) == 0:
+            return X
+
         if not isinstance(X, Solution):
-            X = Solution(X, var_name=self.var_names)
+            X = Solution(X, var_name=self._search_space.var_name, n_obj=self.n_obj)
 
         N = X.N
         if hasattr(self, "data"):
@@ -62,8 +66,19 @@ class ParallelBO(BO):
 
     """
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        n_point: int = 3,
+        acquisition_fun: str = "MGFI",
+        acquisition_par: Dict = {"t": 2},
+        **kwargs,
+    ):
+        super().__init__(
+            n_point=n_point,
+            acquisition_fun=acquisition_fun,
+            acquisition_par=acquisition_par,
+            **kwargs,
+        )
         assert self.n_point > 1
 
         if self._acquisition_fun == "MGFI":
@@ -73,9 +88,7 @@ class ParallelBO(BO):
         elif self._acquisition_fun == "UCB":
             self._par_name = "alpha"
             # Logit-normal distribution for `alpha` supported on [0, 1]
-            self._sampler = lambda x: 1 / (
-                1 + np.exp((x["alpha"] * 4 - 2) + 0.6 * np.random.randn())
-            )
+            self._sampler = lambda x: 1 / (1 + np.exp((x["alpha"] * 4 - 2) + 0.6 * np.random.randn()))
         elif self._acquisition_fun == "EpsilonPI":
             self._par_name = "epsilon"
             self._sampler = None  # TODO: implement this!
@@ -86,20 +99,20 @@ class ParallelBO(BO):
         if self._par_name not in self._acquisition_par:
             self._acquisition_par[self._par_name] = getattr(_criterion, self._par_name)
 
-    def _batch_arg_max_acquisition(self, n_point: int, return_dx: bool):
+    def _batch_arg_max_acquisition(self, n_point: int, return_dx: bool, fixed: Dict = None):
         criteria = []
         for _ in range(n_point):
             _par = self._sampler(self._acquisition_par)
             _acquisition_par = copy(self._acquisition_par)
             _acquisition_par.update({self._par_name: _par})
-            criteria.append(self._create_acquisition(par=_acquisition_par, return_dx=return_dx))
+            criteria.append(self._create_acquisition(par=_acquisition_par, return_dx=return_dx, fixed=fixed))
 
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(
-                delayed(self._argmax_restart)(c, logger=self._logger) for c in criteria
+                delayed(self._argmax_restart)(c, logger=self.logger) for c in criteria
             )
         else:
-            __ = [list(self._argmax_restart(_, logger=self._logger)) for _ in criteria]
+            __ = [list(self._argmax_restart(_, logger=self.logger)) for _ in criteria]
 
         return tuple(zip(*__))
 
@@ -138,7 +151,7 @@ class SelfAdaptiveBO(ParallelBO):
         super().__init__(*argv, **kwargs)
         assert self.n_point > 1
 
-    def _batch_arg_max_acquisition(self, n_point: int, return_dx: bool):
+    def _batch_arg_max_acquisition(self, n_point: int, return_dx: bool, fixed: Dict = None):
         criteria = []
         _t_list = []
         N = int(n_point / 2)
@@ -148,14 +161,14 @@ class SelfAdaptiveBO(ParallelBO):
             _t_list.append(_t)
             _acquisition_par = copy(self._acquisition_par)
             _acquisition_par.update({"t": _t})
-            criteria.append(self._create_acquisition(par=_acquisition_par, return_dx=return_dx))
+            criteria.append(self._create_acquisition(par=_acquisition_par, return_dx=return_dx, fixed=fixed))
 
         if self.n_job > 1:
             __ = Parallel(n_jobs=self.n_job)(
-                delayed(self._argmax_restart)(c, logger=self._logger) for c in criteria
+                delayed(self._argmax_restart)(c, logger=self.logger) for c in criteria
             )
         else:
-            __ = [list(self._argmax_restart(_, logger=self._logger)) for _ in criteria]
+            __ = [list(self._argmax_restart(_, logger=self.logger)) for _ in criteria]
 
         # NOTE: this adaptation is different from what I did in the LeGO paper..
         idx = np.argsort(__[1])[::-1][:N]
@@ -171,7 +184,8 @@ class NoisyBO(ParallelBO):
             X = Solution(X, var_name=self.var_names)
         return X
 
-    def _create_acquisition(self, fun: Callable = None, par: Dict = {}, return_dx: bool = False):
+    def _create_acquisition(self, fun: Callable = None, par: Dict = None, **kwargv):
+        par = {} if par is None else par
         if hasattr(getattr(AcquisitionFunction, self._acquisition_fun), "plugin"):
             # use the model prediction to determine the plugin under noisy scenarios
             # TODO: add more options for determining the plugin value
@@ -179,7 +193,7 @@ class NoisyBO(ParallelBO):
             plugin = np.min(y_) if self.minimize else np.max(y_)
             par.update({"plugin": plugin})
 
-        return super()._create_acquisition(par=par, return_dx=return_dx)
+        return super()._create_acquisition(fun, par, **kwargv)
 
 
 def partial_argument(func: callable, masks: np.ndarray, values: np.ndarray):
@@ -247,58 +261,14 @@ class NarrowingBO(BO):
         self.var_selection_FEs: int = var_selection_FEs
         self.inactive: OrderedDict = OrderedDict()
 
-    def _create_acquisition(self, fun=None, par={}, return_dx=False):
-        """Create an acquisition function that works in the reduced search space"""
-        mask = np.array([v in self.inactive.keys() for v in self._search_space.var_name])
-        return partial_argument(
-            super()._create_acquisition(fun, par, return_dx),
-            mask,
-            self.inactive.values(),
-        )
-
-    def __set_argmax(self):
-        """Set ``self._argmax_restart`` for the reduced subspace"""
-        mask = np.array([v in self.inactive.keys() for v in self._search_space.var_name])
-        idx = np.nonzero(~mask)[0]
-
-        wrapped_h, wrapped_g = self._h, self._g
-        if wrapped_h is not None:
-            wrapped_h = partial_argument(self._h, mask, self.inactive.values())
-        if wrapped_g is not None:
-            wrapped_g = partial_argument(self._g, mask, self.inactive.values())
-
-        self._argmax_restart = functools.partial(
-            argmax_restart,
-            search_space=self._search_space[idx],
-            h=wrapped_h,
-            g=wrapped_g,
-            eval_budget=self.AQ_max_FEs,
-            n_restart=self.AQ_n_restart,
-            wait_iter=self.AQ_wait_iter,
-            optimizer=self._optimizer,
-        )
-
-    def arg_max_acquisition(self, n_point=None, return_value=False):
-        """Global Optimization of the acqusition function / Infill criterion adapted
-        to the reduced search space
-        """
-        _super = super().arg_max_acquisition(n_point, return_value)
-        candidates = _super[0] if return_value else _super
-        values = _super[1] if return_value else None
-
-        masks = np.array([v in self.inactive.keys() for v in self._search_space.var_name])
-        N = len(candidates)
-        Y = np.empty((N, len(masks)))
-        if len(self.inactive.values()) > 0:
-            Y[:, masks] = list(self.inactive.values())
-        Y[:, ~masks] = candidates
-
-        return (Y, values) if return_value else Y
-
     def run(self):
         _metrics = {}
         while not self.check_stop():
-            self.step()
+            self.logger.info(f"iteration {self.iter_count} starts...")
+            X = self.ask(fixed=self.inactive)
+            func_vals = self.evaluate(X)
+            self.tell(X, func_vals)
+
             if (self.eval_count % self.var_selection_FEs) == 0 and (
                 self.DoE_size is None or self.eval_count > self.DoE_size
             ):
@@ -310,11 +280,10 @@ class NarrowingBO(BO):
                         set(self.search_space.var_name) - set(self.inactive.keys()),
                     )
                     self.inactive[inactive_var] = value
-                    #self.__set_argmax()
                     self.logger.info(f"fixing variable {inactive_var} to value {value}")
                 else:
                     if len(self.inactive) != 0:
                         v = self.inactive.popitem()[0]
                         self.logger.info(f"adding variable {v} back to the search space")
-                self.__set_argmax()
+
         return self.xopt, self.fopt, self.stop_dict
