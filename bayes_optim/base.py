@@ -14,11 +14,7 @@ from bayes_optim.utils.logger import dump_logger, load_logger
 from . import acquisition_fun as AcquisitionFunction
 from ._base import BaseOptimizer
 from .acquisition_optim import argmax_restart
-from .acquisition_optim.option import (
-    default_AQ_max_FEs,
-    default_AQ_n_restart,
-    default_AQ_wait_iter,
-)
+from .acquisition_optim.option import default_AQ_max_FEs, default_AQ_n_restart, default_AQ_wait_iter
 from .search_space import RealSpace
 from .solution import Solution
 from .utils import (
@@ -192,9 +188,7 @@ class BaseBO(BaseOptimizer):
             )
         elif self._eval_type == "dict":
             self._to_pheno = lambda x: x.to_dict().copy()
-            self._to_geno = lambda x, index=None: Solution.from_dict(
-                x, index=index, n_obj=self.n_obj
-            )
+            self._to_geno = lambda x, index=None: Solution.from_dict(x, index=index, n_obj=self.n_obj)
 
     def _set_internal_optimization(self, kwargs):
         if kwargs is None:
@@ -222,9 +216,7 @@ class BaseBO(BaseOptimizer):
             self.AQ_max_FEs = default_AQ_max_FEs[self._optimizer](self.dim)
 
         self.AQ_n_restart = (
-            default_AQ_n_restart(self.dim)
-            if "n_restart" not in kwargs
-            else arg_to_int(kwargs["n_restart"])
+            default_AQ_n_restart(self.dim) if "n_restart" not in kwargs else arg_to_int(kwargs["n_restart"])
         )
         self.AQ_wait_iter = (
             default_AQ_wait_iter if "wait_iter" not in kwargs else arg_to_int(kwargs["wait_iter"])
@@ -343,9 +335,7 @@ class BaseBO(BaseOptimizer):
             if not warm_start:
                 self.eval_count += 1
 
-            self.logger.info(
-                f"#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])}"
-            )
+            self.logger.info(f"#{i + 1} - fitness: {func_vals[i]}, solution: {self._to_pheno(X[i])}")
 
         X = self.post_eval_check(X)
         self.data = self.data + X if hasattr(self, "data") else X
@@ -394,12 +384,8 @@ class BaseBO(BaseOptimizer):
             X = search_space.sample(
                 n_point,
                 method="LHS" if n_point > 1 else "uniform",
-                h=partial_argument(self._h, self.search_space.var_name, fixed)
-                if self._h
-                else None,
-                g=partial_argument(self._g, self.search_space.var_name, fixed)
-                if self._g
-                else None,
+                h=partial_argument(self._h, self.search_space.var_name, fixed) if self._h else None,
+                g=partial_argument(self._g, self.search_space.var_name, fixed) if self._g else None,
             ).tolist()
             X = fillin_fixed_value(X, fixed, self.search_space)
 
@@ -412,7 +398,6 @@ class BaseBO(BaseOptimizer):
             count += 1
             if count > 3:  # maximally 3 iterations
                 break
-
         return DoE
 
     @abstractmethod
@@ -450,9 +435,7 @@ class BaseBO(BaseOptimizer):
         if len(fitness) > 5 and np.isclose(_std, 0):
             raise FlatFitnessError()
 
-        fitness_ = (
-            fitness if np.isclose(_std, 0) else (fitness - np.mean(fitness)) / np.std(fitness)
-        )
+        fitness_ = fitness if np.isclose(_std, 0) else (fitness - np.mean(fitness)) / np.std(fitness)
         self.fmin, self.fmax = np.min(fitness_), np.max(fitness_)
         self.frange = self.fmax - self.fmin
 

@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, Union
 
 import numpy as np
 from joblib import Parallel, delayed
-from sklearn.metrics import mean_absolute_percentage_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import MinMaxScaler
 from torch import Tensor
 
@@ -43,8 +43,7 @@ class BaseMOBO(BO):
         assert all([hasattr(f, "__call__") for f in self.obj_fun])
         if len(self.obj_fun) != n_obj:
             self.logger.warning(
-                f"len(obj_fun) ({self.obj_fun}) != n_obj ({n_obj})."
-                "Setting n_obj according to the former."
+                f"len(obj_fun) ({self.obj_fun}) != n_obj ({n_obj})." "Setting n_obj according to the former."
             )
             self.n_obj = len(self.obj_fun)
         assert self.n_obj > 1
@@ -139,7 +138,9 @@ class BaseMOBO(BO):
         pf = self._scaler.transform(self.xopt.fitness) * (-1) ** self.minimize
         hv = Hypervolume(ref_point=Tensor(self.ref_point))
         self.logger.info(f"efficient set/Pareto front (xopt/fopt):\n{xopt}")
-        self.logger.info(f"hypervolume of normalized fitness: {hv.compute(Tensor(pf))}")
+        self.logger.info(
+            f"hypervolume of normalized fitness: {hv.compute(Tensor(pf)) / np.prod(self._scaler.scale_)}"
+        )
 
         if self.h is not None or self.g is not None:
             penalty = np.array(
@@ -157,12 +158,11 @@ class BaseMOBO(BO):
         self.model.fit(X, y)
         y_ = self.model.predict(X)
         r2 = r2_score(y, y_, multioutput="raw_values")
-        MAPE = mean_absolute_percentage_error(y, y_, multioutput="raw_values")
-
+        MSE = mean_squared_error(y, y_, multioutput="raw_values")
         for i in range(self.n_obj):
             _r2 = r2[i] if not isinstance(r2, float) else r2
-            _mape = MAPE[i] if not isinstance(MAPE, float) else MAPE
-            self.logger.info(f"model of f{i + 1} r2: {_r2}, MAPE: {_mape}")
+            _mse = MSE[i] if not isinstance(MSE, float) else MSE
+            self.logger.info(f"model of f{i + 1} r2: {_r2}, MSE: {_mse}")
 
 
 class MOBO(BaseMOBO):
@@ -172,16 +172,12 @@ class MOBO(BaseMOBO):
         super().__init__(*args, **kwargv)
         if self._acquisition_fun != "EHVI":
             self._acquisition_fun = "EHVI"
-            self.logger.warning(
-                "MOBO only allows using `EHIV` acquisition function. Ignore user's argument."
-            )
+            self.logger.warning("MOBO only allows using `EHIV` acquisition function. Ignore user's argument.")
 
     def _create_acquisition(self, fixed: Dict = None, **kwargv):
         # TODO: implement the Kriging believer strategy
         partitioning = NondominatedPartitioning(ref_point=Tensor(self.ref_point), Y=Tensor(self.y))
-        criterion = EHVI(
-            model=self.model, ref_point=self.ref_point.tolist(), partitioning=partitioning
-        )
+        criterion = EHVI(model=self.model, ref_point=self.ref_point.tolist(), partitioning=partitioning)
         return partial_argument(
             functools.partial(criterion),
             self.search_space.var_name,
@@ -225,11 +221,7 @@ class MOBO_qEHVI(BaseMOBO):
             argmax_restart,
             search_space=self._search_space[idx] * n_point,
             h=((self._h, np.repeat(mask, n_point), values * n_point) if self._h else None),
-            g=(
-                partial_argument(self._g, np.repeat(mask, n_point), values * n_point)
-                if self._g
-                else None
-            ),
+            g=(partial_argument(self._g, np.repeat(mask, n_point), values * n_point) if self._g else None),
             eval_budget=self.AQ_max_FEs,
             n_restart=self.AQ_n_restart,
             wait_iter=self.AQ_wait_iter,

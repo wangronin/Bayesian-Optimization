@@ -1,21 +1,12 @@
 from __future__ import annotations
 
-# from abc import ABC
+import warnings
 from typing import Callable
 
 import numpy as np
-
-# import torch
-# from gpytorch.distributions import MultivariateNormal
-
-# from scipy.optimize import root_scalar
 from scipy.stats import norm
 
 from ..utils.exception import ConstraintEvaluationError
-
-# from torch import Tensor
-# from torch.nn import Module
-
 
 __author__ = "Hao Wang"
 
@@ -39,6 +30,7 @@ class SCMC:
         target_dist: Callable = lambda _: 1,
         metropolis_hastings_step: int = 17,
         tol: float = 1e-2,
+        sample_out_of_bound: bool = False,
     ):
         """Sequential Constrained Monte Carlo sampling
 
@@ -54,6 +46,9 @@ class SCMC:
             the number of MCMC iterations, by default 15
         tol : float, optional
             the tolerance on the constraint
+        sample_out_of_bound: bool, optional
+            if the real- and integer-valued components can go beyond the sample space (`sample_space`). This
+            is intended sometimes, if the sample space does not guarantee to cover the constrained domain.
         """
         if hasattr(constraints, "__call__"):
             constraints = [constraints]
@@ -66,9 +61,7 @@ class SCMC:
         self.mh_steps = metropolis_hastings_step
         self.nu_target = tol / 8  # 8-sigma CI leads to ~1.24e-15 significance
         self.nu0 = 10
-        self.nu_schedule = np.logspace(
-            np.log10(self.nu0), np.log10(self.nu_target), base=10, num=20
-        )
+        self.nu_schedule = np.logspace(np.log10(self.nu0), np.log10(self.nu_target), base=10, num=20)
 
         # index of each type of variables in the dataframe
         self.id_r = self.sample_space.real_id  # index of continuous variable
@@ -80,8 +73,12 @@ class SCMC:
         self.N_i = len(self.id_i)
         self.N_d = len(self.id_d)
 
-        self.bounds_r = np.asarray([self.sample_space.bounds[_] for _ in self.id_r])
-        self.bounds_i = np.asarray([self.sample_space.bounds[_] for _ in self.id_i])
+        if sample_out_of_bound:
+            self.bounds_r = np.asarray([(-np.inf, np.inf) for _ in self.id_r])
+            self.bounds_i = np.asarray([(-np.inf, np.inf) for _ in self.id_i])
+        else:
+            self.bounds_r = np.asarray([self.sample_space.bounds[_] for _ in self.id_r])
+            self.bounds_i = np.asarray([self.sample_space.bounds[_] for _ in self.id_i])
         self.bounds_d = [self.sample_space.bounds[_] for _ in self.id_d]
 
     def _log_posterior(self, x: np.ndarray, nu: float) -> float:
@@ -106,37 +103,39 @@ class SCMC:
 
     def _rproposal(self, X: np.ndarray, t: int) -> np.ndarray:
         X_ = X.copy()
-        self._rproposal_real(X_, t)
-        self._rproposal_integer(X_, t)
-        self._rproposal_discrete(X_, t)
+        if self.N_r > 0:
+            self._rproposal_real(X_, t)
+        if self.N_i > 0:
+            self._rproposal_integer(X_, t)
+        if self.N_d > 0:
+            self._rproposal_discrete(X_, t)
         return X_
 
     def _rproposal_real(self, X: np.ndarray, t: int):
-        if self.N_r > 0:
-            X_ = X[:, self.id_r].astype(float)
-            q = np.std(X_, axis=0) / (t + 1)
-            X[:, self.id_r] = np.clip(
-                X_ + q * np.random.randn(*X_.shape), self.bounds_r[:, 0], self.bounds_r[:, 1]
-            )
+        X_ = X[:, self.id_r].astype(float)
+        q = np.std(X_, axis=0) / (t + 1)
+        X[:, self.id_r] = np.clip(
+            X_ + q * np.random.randn(*X_.shape),
+            self.bounds_r[:, 0],
+            self.bounds_r[:, 1],
+        )
 
     def _rproposal_integer(self, X: np.ndarray, t: int):
-        if self.N_i > 0:
-            X_ = X[:, self.id_i].astype(int)
-            p = norm.cdf(np.std(X_, axis=0) / (t + 1))
-            X[:, self.id_i] = np.clip(
-                X_ + np.random.geometric(p, X_.shape) - np.random.geometric(p, X_.shape),
-                self.bounds_i[:, 0],
-                self.bounds_i[:, 1],
-            )
+        X_ = X[:, self.id_i].astype(int)
+        p = norm.cdf(np.std(X_, axis=0) / (t + 1))
+        X[:, self.id_i] = np.clip(
+            X_ + np.random.geometric(p, X_.shape) - np.random.geometric(p, X_.shape),
+            self.bounds_i[:, 0],
+            self.bounds_i[:, 1],
+        )
 
     def _rproposal_discrete(self, X: np.ndarray, t: int):
-        if self.N_d > 0:
-            N = len(X)
-            prob = max(0.5 * np.exp(-1 * t), 1 / self.N_d)
-            for i in self.id_d:
-                levels = np.array(self.sample_space.bounds[i])
-                idx = np.random.rand(N) < prob
-                X[idx, i] = levels[np.random.randint(0, len(levels), sum(idx))]
+        N = len(X)
+        prob = max(0.5 * np.exp(-1 * t), 1 / self.N_d)
+        for i in self.id_d:
+            levels = np.array(self.sample_space.bounds[i])
+            idx = np.random.rand(N) < prob
+            X[idx, i] = levels[np.random.randint(0, len(levels), sum(idx))]
 
     def _ess(self, nu: float, nu_ref: float, X: np.ndarray) -> float:
         """effective sample size"""
@@ -170,14 +169,13 @@ class SCMC:
         lp = np.array([self._log_posterior(x, nu) for x in X])  # log-probability
         for _ in range(self.mh_steps):
             X_ = self._rproposal(X, t)
-            for i in range(self.dim):
-                X_dim = X.copy()
-                X_dim[:, i] = X_[:, i]
-                lp_ = np.array([self._log_posterior(x_, nu) for x_ in X_dim])
+            lp_ = np.array([self._log_posterior(x_, nu) for x_ in X_])
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
                 prob = np.clip(np.exp(lp_ - lp), 0, 1)
-                mask = np.random.rand(N) <= prob
-                X[mask, i] = X_[mask, i]
-                lp[mask] = lp_[mask]
+            mask = np.random.rand(N) <= prob
+            X[mask, :] = X_[mask, :]
+            lp[mask] = lp_[mask]
         return X
 
     def sample(self, N: int) -> np.ndarray:
@@ -193,10 +191,10 @@ class SCMC:
         np.ndarray
             the sample
         """
-        # draw the initial samples u.a.r. from `self.search_space`
+        # draw the initial samples using Latin hypercube sampling from `self.sample_space`
         X = getattr(self.sample_space, "_sample")(N, method="LHS")
         for t, nu in enumerate(self.nu_schedule):
-            nu_ = nu  # `nu_` -> the old `nu`
+            # TODO: will fix those...
             # nu = self.nu_schedule[t]
             # if self._ess(self.nu_target, nu, X) > 0:
             #     nu *= 0.3
@@ -215,16 +213,17 @@ class SCMC:
             #         )
             #     except ValueError:
             #         return X
-            w = self.get_weights(nu, nu_, X)
-            if any(np.isnan(w)):
-                w = np.ones(N) / N
+
+            # NOTE: this will cause many points being duplicated, hence it is disabled
+            # w = self.get_weights(nu, nu_, X)
+            # if any(np.isnan(w)):
+            # w = np.ones(N) / N
 
             # resampling with replacement to increase the fraction of samples that are
             # more likely distributed from the new probability law, which is controlled by `nu`
-            if N >= 10:
-                idx = np.random.choice(N, N, p=w)
-                X = X[idx, :]
-
+            # if N >= 10:
+            #     idx = np.random.choice(N, N, p=w)
+            #     X = X[idx, :]
             X = self._metropolis_hastings(X, nu, t)
         return X
 

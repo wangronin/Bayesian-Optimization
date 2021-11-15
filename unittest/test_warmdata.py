@@ -4,6 +4,7 @@ import numpy as np
 
 sys.path.insert(0, "../")
 
+import pytest
 from bayes_optim import BO, DiscreteSpace, IntegerSpace, RealSpace
 from bayes_optim.surrogate import GaussianProcess, RandomForest
 
@@ -19,6 +20,7 @@ def obj_fun(x):
     return np.sum((x_r + np.array([2, 2])) ** 2) + abs(x_i - 10) * 10 + tmp
 
 
+@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_warm_data_with_GPR():
     dim = 2
     lb, ub = -5, 5

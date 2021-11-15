@@ -34,7 +34,8 @@ def test_Variable():
 
 
 def test_real_warning():
-    x = Real([-np.inf, 5], "x", 2, scale="log10")
+    with pytest.warns(UserWarning):
+        x = Real([-np.inf, 5], "x", 2, scale="log10")
     assert x.bounds[0] == 1e-300
 
 
@@ -156,7 +157,11 @@ def test_SearchSpace_iadd():
 
 
 def test_SearchSpace_slice():
-    cs = RealSpace([1, 5], "x", 2, scale="log") + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C"], "z")
+    cs = (
+        RealSpace([1, 5], "x", 2, scale="log")
+        + IntegerSpace([-10, 10], "y")
+        + DiscreteSpace(["A", "B", "C"], "z")
+    )
     assert isinstance(cs[[0]], RealSpace)
     assert isinstance(cs[[1]], IntegerSpace)
     assert isinstance(cs[[2]], DiscreteSpace)
@@ -166,7 +171,11 @@ def test_SearchSpace_slice():
     assert isinstance(cs[2], Discrete)
     assert isinstance(cs["z"], Discrete)
 
-    cs = RealSpace([1, 5], "x", 2, scale="log") * 2 + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C"], "z")
+    cs = (
+        RealSpace([1, 5], "x", 2, scale="log") * 2
+        + IntegerSpace([-10, 10], "y")
+        + DiscreteSpace(["A", "B", "C"], "z")
+    )
     assert isinstance(cs[:2], RealSpace)
     assert isinstance(cs[["x0", "x1"]], RealSpace)
     assert isinstance(cs[[False, False, True, False]], IntegerSpace)
@@ -236,7 +245,11 @@ def test_precision():
     X = Solution(cs.sample(10, method="LHS"))
     cs.round(X)
 
-    cs = RealSpace([0, 1], "x", precision=2) + IntegerSpace([-10, 10], "y") + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
+    cs = (
+        RealSpace([0, 1], "x", precision=2)
+        + IntegerSpace([-10, 10], "y")
+        + DiscreteSpace(["A", "B", "C", "D", "E"], "z")
+    )
 
     X = cs.sample(1, method="LHS")[0][0]
     X = re.sub(r"^-?\d+\.(\d+)$", r"\1", str(X))

@@ -231,10 +231,6 @@ class Real(Variable):
                 f"lower bound {bounds[0]} not in the working "
                 f"range of the given scale {self._scale} is set to the default value {_range[0]}"
             )
-            # raise ValueError(
-            #     f"lower bound {self.bounds[0]} not in the working "
-            #     f"range of the given scale {self._scale}"
-            # )
 
         if (bounds[1] < _range[0]) or (bounds[1] > _range[1]):
             bounds[1] = _range[1]

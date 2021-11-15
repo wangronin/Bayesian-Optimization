@@ -26,13 +26,11 @@ def g(x):
     return [-x["pc"], x["mu"] - 1.9]
 
 
+@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_BO_equality():
-    dim = 2
+    dim = 5
     search_space = RealSpace([0, 1]) * dim
-    model = GaussianProcess(
-        domain=search_space,
-        n_restarts_optimizer=dim,
-    )
+    model = GaussianProcess(domain=search_space)
     xopt, _, __ = BO(
         search_space=search_space,
         obj_fun=obj_fun,
@@ -49,6 +47,7 @@ def test_BO_equality():
     assert np.isclose(h(xopt), 0, atol=1e-1)
 
 
+@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_BO_constraints():
     search_space = (
         IntegerSpace([1, 10], var_name="mu")

@@ -30,6 +30,7 @@ def f2(x):
     )
 
 
+@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_3D():
     search_space = (
         RealSpace([0, 100], var_name="Kp", precision=2)
@@ -39,12 +40,7 @@ def test_3D():
     f1 = lambda x: x["Kp"] ** 2 + x["Ki"] + x["Kd"] ** 2
     f2 = lambda x: x["Kp"] + x["Ki"] ** 2 + x["Kd"] ** 2
     f3 = lambda x: x["Kp"] ** 2 + x["Ki"] + x["Kd"]
-    dim = search_space.dim
-    model = GaussianProcess(
-        domain=search_space,
-        n_obj=3,
-        n_restarts_optimizer=dim,
-    )
+    model = GaussianProcess(domain=search_space, n_obj=3)
 
     opt = MOBO(
         search_space=search_space,
@@ -67,6 +63,7 @@ def test_3D():
         X = opt.ask(3)
 
 
+@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_with_constraints():
     search_space = (
         RealSpace([0, 100], var_name="left", precision=2)
@@ -76,19 +73,14 @@ def test_with_constraints():
     f1 = lambda x: x["left"] ** 2 + x["up"] + x["right"] ** 2
     f2 = lambda x: 10 * x["left"] - x["up"] ** 2 + x["right"]
     g = lambda x: x["left"] + x["up"] + x["right"] - 100
-    dim = search_space.dim
-    model = GaussianProcess(
-        domain=search_space,
-        n_obj=2,
-        n_restarts_optimizer=dim,
-    )
+    model = GaussianProcess(domain=search_space, n_obj=2)
     opt = MOBO(
         search_space=search_space,
         obj_fun=(f1, f2),
         ineq_fun=g,
         model=model,
         max_FEs=100,
-        DoE_size=1,  # the initial DoE size
+        DoE_size=5,  # the initial DoE size
         eval_type="dict",
         n_job=1,  # number of processes
         verbose=True,  # turn this off, if you prefer no output

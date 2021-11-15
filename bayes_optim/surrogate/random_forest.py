@@ -24,7 +24,6 @@ class SurrogateAggregation(object):
         self.N = len(self.surrogates)
         self.aggregation = aggregation
         self.weights = np.asarray(kwargs["weights"], dtype="float").ravel()
-
         assert self.aggregation in ["WS", "Tchebycheff"]
 
     def fit(self, X, y):
@@ -110,6 +109,8 @@ class RandomForest(RandomForestRegressor):
         return X
 
     def fit(self, X: Union[Solution, List, np.ndarray], y: np.ndarray):
+        if y.ndim == 2 and y.shape[1] == 1:
+            y = y.ravel()
         self.X = self._check_X(X)
         self.y = y
         self.is_fitted = True

@@ -67,7 +67,6 @@ def test_pickling():
 
 
 def test_to_csv():
-    # # test saving to csv
     s = Solution(np.random.randn(10, 5))
     s.to_csv("test.csv", header=True, attribute=True, index=True)
     os.remove("test.csv")

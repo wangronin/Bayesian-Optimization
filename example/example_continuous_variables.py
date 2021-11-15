@@ -19,7 +19,7 @@ def fitness(x):
 
 
 space = RealSpace([lb, ub]) * dim
-model = GaussianProcess(domain=space, alpha=1e-3, n_restarts_optimizer=dim)
+model = GaussianProcess(domain=space, n_restarts_optimizer=dim)
 
 opt = BO(
     search_space=space,

@@ -2,6 +2,8 @@ import os
 import string
 import sys
 
+import pytest
+
 sys.path.insert(0, "../")
 import numpy as np
 import pytest
@@ -14,12 +16,13 @@ from bayes_optim.search_space import (
     RealSpace,
     SubsetSpace,
 )
-from bayes_optim.surrogate import GaussianProcess, RandomForest, trend
+from bayes_optim.surrogate import GaussianProcess, RandomForest
 from bayes_optim.utils.exception import AskEmptyError, FlatFitnessError
 
 np.random.seed(123)
 
 
+@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_pickling():
     dim = 5
     lb, ub = -1, 5
@@ -38,7 +41,7 @@ def test_pickling():
         obj_fun=fitness,
         model=model,
         DoE_size=5,
-        max_FEs=20,
+        max_FEs=10,
         verbose=True,
         n_point=1,
         log_file="log",
@@ -56,7 +59,7 @@ def test_pickling():
         obj_fun=fitness,
         model=model,
         DoE_size=5,
-        max_FEs=20,
+        max_FEs=10,
         verbose=True,
         n_point=1,
         log_file="log",
@@ -69,6 +72,7 @@ def test_pickling():
     os.remove("log")
 
 
+@pytest.mark.filterwarnings("ignore:The optimal value")
 @pytest.mark.parametrize("var_type", ["r", "b", "c", "i", "o", "s"])
 def test_homogenous(var_type):
     dim = 5
@@ -77,6 +81,10 @@ def test_homogenous(var_type):
         return np.random.rand()
 
     if var_type == "r":
+
+        def fitness(x):
+            return np.sum(np.asarray(x) ** 2)
+
         lb, ub = -1, 5
         space = RealSpace([lb, ub]) * dim
         model = GaussianProcess(
@@ -91,7 +99,7 @@ def test_homogenous(var_type):
         elif var_type == "c":
             space = DiscreteSpace(list(range(10))) * dim
         elif var_type == "o":
-            space = OrdinalSpace(list(string.string.ascii_letters))
+            space = OrdinalSpace(list(string.ascii_letters))
         elif var_type == "s":
             space = SubsetSpace(list(string.ascii_lowercase)[:5])
         model = RandomForest(levels=space.levels)
@@ -101,14 +109,11 @@ def test_homogenous(var_type):
         obj_fun=fitness,
         model=model,
         DoE_size=5,
-        max_FEs=10,
-        verbose=True,
+        max_FEs=5,
+        verbose=False,
         n_point=1,
     )
     print(opt.run())
-
-
-# test_homogenous()
 
 
 def test_fixed_var():
@@ -148,6 +153,7 @@ def test_fixed_var():
     assert all([x["nominal"] == "OK" and not x["bool"] for x in X])
 
 
+@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_flat_continuous():
     dim = 5
     lb, ub = -1, 5
