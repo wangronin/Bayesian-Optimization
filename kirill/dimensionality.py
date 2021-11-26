@@ -1,6 +1,7 @@
 import math
+from copy import deepcopy
 
-from sklearn.decomposition import KernelPCA
+from sklearn.decomposition import KernelPCA, PCA
 
 import benchmark.bbobbenchmarks as bn
 import matplotlib as mpl
@@ -9,8 +10,8 @@ import numpy as np
 import random
 import sys
 
-MAXX = 100
-MINX = -100
+MAXX = 5
+MINX = -5
 DIMENSION = 2
 DOESIZE = 1000
 
@@ -23,27 +24,44 @@ def run_experiment(objective_function):
         y = objective_function(x)
         X.append(x)
         Y.append(y)
-    plt.figure()
+    fdoe = plt.figure()
     colours = compute_colours(Y)
     XT = get_transpose(X)
     plt.title("Original space")
     plt.scatter(XT[0], XT[1], c=colours)
 
-    center_around_best(X, Y)
-    rescale_points(X, Y)
-    plt.figure()
-    plt.subplot(1, 2, 1, aspect="equal")
+    X_centered = get_centered_around_best(X, Y)
+    X_weighted = get_rescaled_points(X_centered, Y)
+    fweighted = plt.figure()
+    # plt.subplot(1, 2, 1, aspect="equal")
     plt.title("Weighted DoE")
-    XT_reweighted = get_transpose(X)
-    plt.scatter(XT_reweighted[0], XT_reweighted[1], c=colours)
+    XT_weighted = get_transpose(X_weighted)
+    plt.scatter(XT_weighted[0], XT_weighted[1], c=colours)
 
-    kpca = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=450)
-    X_kpca = kpca.fit_transform(X)
-    plt.subplot(1, 2, 2, aspect="equal")
-    plt.title("Feature space")
+    lpca = PCA(n_components=2)
+    lpca.fit(X_weighted)
+    X_lpca = lpca.transform(X)
+
+    flpca = plt.figure()
+    plt.title("Linear PCA - Feature space")
+    plt.scatter(X_lpca[:, 0], X_lpca[:, 1], c=colours)
+
+    kpca = KernelPCA(kernel="poly", fit_inverse_transform=True, gamma=500)
+    kpca.fit(X_weighted)
+    X_kpca = kpca.transform(X)
+
+    fkpca = plt.figure()
+    plt.title("Kernel PCA - Feature space")
     plt.scatter(X_kpca[:, 0], X_kpca[:, 1], c=colours)
 
+    save_figures('./', [(fdoe, 'doe'), (fweighted, 'weighted'),
+                                                                (flpca, 'lpca'), (fkpca, 'kpca')], 17, 'pdf')
     plt.show()
+
+
+def save_figures(path, figsAndNames, fid, extension):
+    for (fig, name) in figsAndNames:
+        fig.savefig(path + name + str(fid) + '.' + extension)
 
 
 def compute_colours(Y):
@@ -76,21 +94,25 @@ def get_transpose(X):
     return XT
 
 
-def center_around_best(X, y):
+def get_centered_around_best(X, y):
+    X_copy = deepcopy(X)
     min_id = y.index(min(y))
     x_best = X[min_id]
-    for x in X:
+    for x in X_copy:
         for ind, x_comp in enumerate(x):
             x[ind] -= x_best[ind]
+    return X_copy
 
 
-def rescale_points(X, Y):
+def get_rescaled_points(X, Y):
     w = ranking_based_weighting(Y)
-    mu = compute_mean(X)
-    matrix_minus_vector(X, mu)
-    for i in range(len(X)):
-        for j in range(len(X[i])):
-            X[i][j] *= w[i]
+    X_copy = deepcopy(X)
+    # mu = compute_mean(X)
+    # matrix_minus_vector(X, mu)
+    for i in range(len(X_copy)):
+        for j in range(len(X_copy[i])):
+            X_copy[i][j] *= w[i]
+    return X_copy
 
 
 def ranking_based_weighting(Y):
@@ -129,4 +151,4 @@ if __name__ == '__main__':
         random.seed(0)
     else:
         random.seed(sys.argv[1])
-    run_experiment(bn.F21())
+    run_experiment(bn.F17())
