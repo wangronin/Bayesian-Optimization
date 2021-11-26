@@ -14,14 +14,17 @@ MAXX = 5
 MINX = -5
 DIMENSION = 2
 DOESIZE = 1000
+OBJECTIVE_FUNCTION = bn.F21()
+FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId)
+KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=1.1)
 
 
-def run_experiment(objective_function):
+def run_experiment():
     X = []
     Y = []
     for i in range(DOESIZE):
         x = [random.uniform(MINX, MAXX) for _ in range(DIMENSION)]
-        y = objective_function(x)
+        y = OBJECTIVE_FUNCTION(x)
         X.append(x)
         Y.append(y)
     fdoe = plt.figure()
@@ -46,22 +49,21 @@ def run_experiment(objective_function):
     plt.title("Linear PCA - Feature space")
     plt.scatter(X_lpca[:, 0], X_lpca[:, 1], c=colours)
 
-    kpca = KernelPCA(kernel="poly", fit_inverse_transform=True, gamma=500)
-    kpca.fit(X_weighted)
-    X_kpca = kpca.transform(X)
+    KPCA.fit(X_weighted)
+    X_kpca = KPCA.transform(X)
 
     fkpca = plt.figure()
     plt.title("Kernel PCA - Feature space")
     plt.scatter(X_kpca[:, 0], X_kpca[:, 1], c=colours)
 
-    save_figures('./', [(fdoe, 'doe'), (fweighted, 'weighted'),
-                                                                (flpca, 'lpca'), (fkpca, 'kpca')], 17, 'pdf')
+    save_figures('/home/kirill/Projects/PhD/PlansKirill/pic/',
+                 [(fdoe, 'doe'), (fweighted, 'weighted'), (flpca, 'lpca'), (fkpca, 'kpca')], FUNCTION_ID, 'pdf')
     plt.show()
 
 
 def save_figures(path, figsAndNames, fid, extension):
     for (fig, name) in figsAndNames:
-        fig.savefig(path + name + str(fid) + '.' + extension)
+        fig.savefig(path + name + fid + '.' + extension)
 
 
 def compute_colours(Y):
@@ -151,4 +153,4 @@ if __name__ == '__main__':
         random.seed(0)
     else:
         random.seed(sys.argv[1])
-    run_experiment(bn.F17())
+    run_experiment()
