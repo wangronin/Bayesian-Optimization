@@ -15,7 +15,7 @@ MINX = -5
 DIMENSION = 2
 DOESIZE = 1000
 OBJECTIVE_FUNCTION = bn.F21()
-FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId)
+FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "_1"
 KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=1.1)
 
 
@@ -45,6 +45,12 @@ def run_experiment():
     lpca.fit(X_weighted)
     X_lpca = lpca.transform(X)
 
+    X_lpca_inverse = get_main_component_inverse_transform(X_lpca, lpca)
+    inverselpca = plt.figure()
+    plt.title("Linear PCA - Inverse of points")
+    plt.plot(X_lpca_inverse[:, 0], X_lpca_inverse[:, 1], c='green')
+    plt.scatter(XT[0], XT[1], c=colours)
+
     flpca = plt.figure()
     plt.title("Linear PCA - Feature space")
     plt.scatter(X_lpca[:, 0], X_lpca[:, 1], c=colours)
@@ -56,9 +62,25 @@ def run_experiment():
     plt.title("Kernel PCA - Feature space")
     plt.scatter(X_kpca[:, 0], X_kpca[:, 1], c=colours)
 
+    X_kpca_inverse = get_main_component_inverse_transform(X_kpca, KPCA)
+    inversekpca = plt.figure()
+    plt.title("Kernel PCA - Inverse of points")
+    plt.plot(X_kpca_inverse[:, 0], X_kpca_inverse[:, 1], c='green')
+    plt.scatter(XT[0], XT[1], c=colours)
+
     save_figures('/home/kirill/Projects/PhD/PlansKirill/pic/',
-                 [(fdoe, 'doe'), (fweighted, 'weighted'), (flpca, 'lpca'), (fkpca, 'kpca')], FUNCTION_ID, 'pdf')
+                 [(fdoe, 'doe'), (fweighted, 'weighted'), (flpca, 'lpca'), (fkpca, 'kpca'),
+                  (inverselpca, 'inverseLpca'), (inversekpca, 'inverseKpca')],
+                 FUNCTION_ID, 'pdf')
     plt.show()
+
+
+def get_main_component_inverse_transform(X, pca):
+    X_copy = deepcopy(X)
+    for i in range(len(X_copy)):
+        for j in range(1, len(X_copy[i])):
+            X_copy[i][j] = 0
+    return pca.inverse_transform(X_copy)
 
 
 def save_figures(path, figsAndNames, fid, extension):
