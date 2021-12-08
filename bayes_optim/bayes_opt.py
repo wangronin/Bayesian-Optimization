@@ -286,4 +286,4 @@ class NarrowingBO(BO):
                         v = self.inactive.popitem()[0]
                         self.logger.info(f"adding variable {v} back to the search space")
 
-        return self.xopt, self.fopt, self.stop_dict
+        return self._to_pheno(self.xopt), self.xopt.fitness, self.stop_dict

@@ -90,30 +90,15 @@ def max_mean_improvement(data, model, metrics):
 
 
 space = RealSpace([lb, ub]) * dim
-mean = trend.constant_trend(dim, beta=None)
-thetaL = 1e-10 * (ub - lb) * np.ones(dim)
-thetaU = 10 * (ub - lb) * np.ones(dim)
-theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
-model = GaussianProcess(
-    theta0=theta0,
-    thetaL=thetaL,
-    thetaU=thetaU,
-    nugget=0,
-    noise_estim=False,
-    optimizer="BFGS",
-    wait_iter=3,
-    random_start=dim,
-    likelihood="concentrated",
-    eval_budget=100 * dim,
-)
+model = GaussianProcess(domain=space, n_restarts_optimizer=dim)
 
 opt = NarrowingBO(
     search_space=space,
     obj_fun=branin,
     model=model,
-    DoE_size=50,
-    max_FEs=500,
+    DoE_size=5,
+    max_FEs=50,
     verbose=True,
     n_point=1,
     minimize=True,
