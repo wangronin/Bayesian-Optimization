@@ -2,6 +2,9 @@ import math
 from copy import deepcopy
 
 from sklearn.decomposition import KernelPCA, PCA
+from sklearn.kernel_ridge import KernelRidge
+from sklearn.linear_model import Ridge
+from sklearn.neighbors import KNeighborsClassifier
 
 import benchmark.bbobbenchmarks as bn
 import matplotlib as mpl
@@ -14,7 +17,7 @@ MAXX = 5
 MINX = -5
 DIMENSION = 2
 DOESIZE = 1000
-OBJECTIVE_FUNCTION = bn.F21()
+OBJECTIVE_FUNCTION = bn.F17()
 FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "_1"
 KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=1.1)
 
@@ -33,8 +36,8 @@ def run_experiment():
     plt.title("Original space")
     plt.scatter(XT[0], XT[1], c=colours)
 
-    X_centered = get_centered_around_best(X, Y)
-    X_weighted = get_rescaled_points(X_centered, Y)
+    # X_centered = get_centered_around_best(X, Y)
+    X_weighted = get_rescaled_points(X, Y)
     fweighted = plt.figure()
     # plt.subplot(1, 2, 1, aspect="equal")
     plt.title("Weighted DoE")
@@ -62,7 +65,15 @@ def run_experiment():
     plt.title("Kernel PCA - Feature space")
     plt.scatter(X_kpca[:, 0], X_kpca[:, 1], c=colours)
 
-    X_kpca_inverse = get_main_component_inverse_transform(X_kpca, KPCA)
+    krr = KernelRidge()
+    krr.fit(X_kpca[:, 0:2], X)
+
+    X_inverse = krr.predict(X_kpca[:, 0:2])
+    inverseAllkpca = plt.figure()
+    plt.title("Kernel PCA - Inverse")
+    plt.scatter(X_inverse[:, 0], X_inverse[:, 1], c=colours)
+
+    X_kpca_inverse = get_main_component_approx_inverse(X_kpca, krr)
     inversekpca = plt.figure()
     plt.title("Kernel PCA - Inverse of points")
     plt.plot(X_kpca_inverse[:, 0], X_kpca_inverse[:, 1], c='green')
@@ -70,7 +81,7 @@ def run_experiment():
 
     save_figures('/home/kirill/Projects/PhD/PlansKirill/pic/',
                  [(fdoe, 'doe'), (fweighted, 'weighted'), (flpca, 'lpca'), (fkpca, 'kpca'),
-                  (inverselpca, 'inverseLpca'), (inversekpca, 'inverseKpca')],
+                  (inverselpca, 'inverseLpca'), (inversekpca, 'inverseKpca'), (inverseAllkpca, 'inverseAllKpca')],
                  FUNCTION_ID, 'pdf')
     plt.show()
 
@@ -81,6 +92,14 @@ def get_main_component_inverse_transform(X, pca):
         for j in range(1, len(X_copy[i])):
             X_copy[i][j] = 0
     return pca.inverse_transform(X_copy)
+
+
+def get_main_component_approx_inverse(X, model):
+    X_copy = deepcopy(X)
+    for i in range(len(X_copy)):
+        for j in range(1, len(X_copy[i])):
+            X_copy[i][j] = 0
+    return model.predict(X_copy[:, 0:2])
 
 
 def save_figures(path, figsAndNames, fid, extension):
@@ -131,8 +150,8 @@ def get_centered_around_best(X, y):
 def get_rescaled_points(X, Y):
     w = ranking_based_weighting(Y)
     X_copy = deepcopy(X)
-    # mu = compute_mean(X)
-    # matrix_minus_vector(X, mu)
+    mu = compute_mean(X)
+    matrix_minus_vector(X, mu)
     for i in range(len(X_copy)):
         for j in range(len(X_copy[i])):
             X_copy[i][j] *= w[i]
