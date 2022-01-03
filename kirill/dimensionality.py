@@ -1,43 +1,41 @@
 import math
+import random
+import sys
 from copy import deepcopy
 
-from sklearn.decomposition import KernelPCA, PCA
-from sklearn.kernel_ridge import KernelRidge
-from sklearn.linear_model import Ridge
-from sklearn.neighbors import KNeighborsClassifier
-
-import benchmark.bbobbenchmarks as bn
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-import random
-import sys
+from sklearn.cross_decomposition import CCA
+from sklearn.decomposition import KernelPCA, PCA
+from sklearn.kernel_ridge import KernelRidge
+
+import benchmark.bbobbenchmarks as bn
 
 MAXX = 5
 MINX = -5
 DIMENSION = 2
 DOESIZE = 1000
-OBJECTIVE_FUNCTION = bn.F17()
-FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "_1"
+OBJECTIVE_FUNCTION = bn.F21()
+FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "_3"
 KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=1.1)
 
 
 def run_experiment():
-    X = []
-    Y = []
-    for i in range(DOESIZE):
-        x = [random.uniform(MINX, MAXX) for _ in range(DIMENSION)]
-        y = OBJECTIVE_FUNCTION(x)
-        X.append(x)
-        Y.append(y)
+    X, Y, colours = sample_doe()
     fdoe = plt.figure()
-    colours = compute_colours(Y)
     XT = get_transpose(X)
     plt.title("Original space")
     plt.scatter(XT[0], XT[1], c=colours)
 
     # X_centered = get_centered_around_best(X, Y)
+    X_c, X_c_inverse = get_rescaled_points_cca(X, Y)
+    fcca = plt.figure()
+    plt.title("CCA")
+    plt.scatter(X_c[:, 0], X_c[:, 1], c=colours)
+
     X_weighted = get_rescaled_points(X, Y)
+    # X_weighted = X_c
     fweighted = plt.figure()
     # plt.subplot(1, 2, 1, aspect="equal")
     plt.title("Weighted DoE")
@@ -52,6 +50,12 @@ def run_experiment():
     inverselpca = plt.figure()
     plt.title("Linear PCA - Inverse of points")
     plt.plot(X_lpca_inverse[:, 0], X_lpca_inverse[:, 1], c='green')
+    plt.scatter(XT[0], XT[1], c=colours)
+
+    # X_lpca_inverse = get_main_component_inverse_transform(X_lpca, lpca)
+    inverseCCA = plt.figure()
+    plt.title("CCA - Inverse of points")
+    plt.plot(X_c_inverse[:, 0], X_c_inverse[:, 1], c='green')
     plt.scatter(XT[0], XT[1], c=colours)
 
     flpca = plt.figure()
@@ -81,9 +85,90 @@ def run_experiment():
 
     save_figures('/home/kirill/Projects/PhD/PlansKirill/pic/',
                  [(fdoe, 'doe'), (fweighted, 'weighted'), (flpca, 'lpca'), (fkpca, 'kpca'),
-                  (inverselpca, 'inverseLpca'), (inversekpca, 'inverseKpca'), (inverseAllkpca, 'inverseAllKpca')],
+                  (inverselpca, 'inverseLpca'), (inversekpca, 'inverseKpca'), (inverseAllkpca, 'inverseAllKpca'),
+                  (fcca, 'CCA'), (inverseCCA, 'inverseCCA')],
                  FUNCTION_ID, 'pdf')
     plt.show()
+
+
+def run_experiment_1():
+    # 1. Original colored sample set
+    X, Y, colours = sample_doe()
+    XT = get_transpose(X)
+    fdoe = plt.figure()
+    plt.title("Original colored sample set")
+    plt.scatter(XT[0], XT[1], c=colours)
+
+    # 2. Weighted sample matrix around the mean
+    X_weighted = get_rescaled_points(X, Y)
+    fweighted = plt.figure()
+    plt.title("Weighted sample matrix around the mean")
+    XT_weighted = get_transpose(X_weighted)
+    plt.scatter(XT_weighted[0], XT_weighted[1], c=colours)
+
+    # 3. Linear PCA feature space
+    lpca = PCA(n_components=2)
+    lpca.fit(X_weighted)
+    X_lpca = lpca.transform(X)
+    lpca_feature_space = plt.figure()
+    plt.title("Linear PCA feature space")
+    plt.scatter(X_lpca[:, 0], X_lpca[:, 1], c=colours)
+
+    # 4. Kernel PCA feature space
+    KPCA.fit(X_weighted)
+    X_kpca = KPCA.transform(X)
+    fkpca = plt.figure()
+    plt.title("Kernel PCA feature space")
+    plt.scatter(X_kpca[:, 0], X_kpca[:, 1], c=colours)
+
+    # 5. Inverse transformation of new sample matrix with linear PCA
+    X_lpca_inverse = lpca.inverse_transform(X_lpca)
+    lpca_inverse = plt.figure()
+    plt.title("Inverse transformation of new sample matrix with linear PCA")
+    plt.scatter(X_lpca_inverse[:, 0], X_lpca_inverse[:, 1], c=colours)
+
+    # 6. Inverse transformation of new sample matrix with linear CCA
+    X_c, X_c_inverse, X_c_main_inverse = get_rescaled_points_cca(X, Y)
+    cca_inverse = plt.figure()
+    plt.title("Inverse transformation of new sample matrix with linear CCA")
+    plt.scatter(X_c_inverse[:, 0], X_c_inverse[:, 1], c=colours)
+
+    # 7. Inverse transformation of first component (lower-dimensional manifold) plotted on the original sample set with linear PCA
+    X_lpca_main_inverse = get_main_component_inverse_transform(X_lpca, lpca)
+    lower_manifold_lpca = plt.figure()
+    plt.title("Lower-dimensional manifold with linear PCA")
+    plt.plot(X_lpca_main_inverse[:, 0], X_lpca_main_inverse[:, 1], c='green')
+    plt.scatter(XT[0], XT[1], c=colours)
+
+    # 8. Inverse transformation of first component (lower-dimensional manifold) plotted on the original sample set with linear CCA
+    lower_manifold_cca = plt.figure()
+    plt.title("Lower-dimensional manifold with linear CCA")
+    plt.plot(X_c_main_inverse[:, 0], X_c_main_inverse[:, 1], c='green')
+    plt.scatter(XT[0], XT[1], c=colours)
+
+    save_figures('/home/kirill/Projects/PhD/PlansKirill/pic/',
+                 [(fdoe, 'doe'),
+                  (fweighted, 'weighted'),
+                  (lpca_feature_space, 'pca_feature_space'),
+                  (fkpca, 'kpca_feature_space'),
+                  (lpca_inverse, 'lpca_inverse'),
+                  (cca_inverse, 'cca_inverse'),
+                  (lower_manifold_lpca, 'lower_mainfold_lpca'),
+                  (lower_manifold_cca, 'lower_manifold_cca')],
+                 FUNCTION_ID, 'pdf')
+    plt.show()
+
+
+def sample_doe():
+    X = []
+    Y = []
+    for i in range(DOESIZE):
+        x = [random.uniform(MINX, MAXX) for _ in range(DIMENSION)]
+        y = OBJECTIVE_FUNCTION(x)
+        X.append(x)
+        Y.append(y)
+    colours = compute_colours(Y)
+    return X, Y, colours
 
 
 def get_main_component_inverse_transform(X, pca):
@@ -158,6 +243,16 @@ def get_rescaled_points(X, Y):
     return X_copy
 
 
+def get_rescaled_points_cca(X, Y):
+    Y_duplicated = [[Y[i], Y[i]] for i in range(len(X))]
+    cca = CCA(n_components=2)
+    cca.fit(X, Y_duplicated)
+    X_c = cca.transform(X)
+    X_c_inverse = cca.inverse_transform(X_c)
+    X_c_main_inverse = get_main_component_inverse_transform(X_c, cca)
+    return X_c, X_c_inverse, X_c_main_inverse
+
+
 def ranking_based_weighting(Y):
     weighted_y = Y.copy()
     Y1 = [(element, ind) for ind, element in enumerate(Y)]
@@ -194,4 +289,4 @@ if __name__ == '__main__':
         random.seed(0)
     else:
         random.seed(sys.argv[1])
-    run_experiment()
+    run_experiment_1()
