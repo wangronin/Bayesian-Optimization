@@ -78,6 +78,7 @@ class SearchSpace:
         data: List[Variable],
         random_seed: int = None,
         structure: Union[dict, List[Node]] = None,
+        custom_sampler: Callable = None,
     ):
         """Search Space
 
@@ -87,6 +88,8 @@ class SearchSpace:
             a list of variables consistuting the search space
         random_seed : int, optional
             random seed controlling the `sample` function, by default None
+        custom_sampler: Callable, optional
+            function that receives (sample_space, constraints, tol, n) and returns `n` samples
         """
         # declarations to fix the pylint warnings..
         self._var_name: List[str] = []
@@ -95,6 +98,7 @@ class SearchSpace:
         self._levels: dict = {}
 
         self.random_seed: int = random_seed
+        self.custom_sampler: Callable = custom_sampler
         self._set_data(data)
         self._set_structure(structure)
         SearchSpace.__set_type(self)
@@ -132,6 +136,14 @@ class SearchSpace:
             seed = int(seed)
         self._random_seed = seed
         np.random.seed(self._random_seed)
+
+    @property
+    def custom_sampler(self):
+        return self._custom_sampler
+
+    @custom_sampler.setter
+    def custom_sampler(self, custom_sampler):
+        self._custom_sampler = custom_sampler
 
     @staticmethod
     def _ready_args(bounds, var_name, **kwargs):
@@ -260,7 +272,7 @@ class SearchSpace:
         if isinstance(data, Variable):
             out = data
         elif isinstance(data, list):
-            out = SearchSpace(data, self.random_seed)
+            out = SearchSpace(data, random_seed=self.random_seed, custom_sampler=self.custom_sampler)
             # backwards compatibility
             if hasattr(self, "structure"):
                 getattr(out, "_set_structure")(self.structure)
@@ -326,7 +338,8 @@ class SearchSpace:
             ]
         else:
             structure = {}
-        return SearchSpace(data, random_seed, structure)
+        return SearchSpace(data, random_seed=random_seed,
+                           structure=structure, custom_sampler=self.custom_sampler)
 
     def __radd__(self, space) -> SearchSpace:
         return self.__add__(space)
@@ -344,7 +357,7 @@ class SearchSpace:
         _res = set(self.var_name) - set(space.var_name)
         _index = [self.var_name.index(_) for _ in _res]
         data = [copy(self.data[i]) for i in range(self.dim) if i in _index]
-        cs = SearchSpace(data, random_seed)
+        cs = SearchSpace(data, random_seed=random_seed, custom_sampler=self.custom_sampler)
         # backwards compatibility
         if hasattr(self, "structure"):
             getattr(cs, "_set_structure")(self.structure)
@@ -377,7 +390,7 @@ class SearchSpace:
         data = [deepcopy(var) for _ in range(max(1, int(N))) for var in self.data]
         # TODO: this is not working yet..
         # structure = [t.deepcopy() for _ in range(max(1, int(N))) for t in self.structure]
-        obj = SearchSpace(data, self.random_seed)
+        obj = SearchSpace(data, random_seed=self.random_seed, custom_sampler=self.custom_sampler)
         obj.__class__ = type(self)
         return obj
 
@@ -444,7 +457,7 @@ class SearchSpace:
         assert isinstance(args[0], SearchSpace)
         data = list(chain.from_iterable([deepcopy(cs.data) for cs in args]))
         structure = [t.deepcopy() for cs in args for t in cs.structure]
-        return SearchSpace(data, structure=structure)
+        return SearchSpace(data, structure=structure, custom_sampler=self.custom_sampler)
 
     def pop(self, index: int = -1) -> Variable:
         value = self.data.pop(index)
@@ -531,8 +544,12 @@ class SearchSpace:
         """
         # 10 is the minimal number of sample points to take under constraints
         n = max(N, 10) if h or g else N
+        S = None
         constraints = lambda x: np.r_[np.abs(h(x)) if h else [], np.array(g(x)) if g else []]
-        S = SCMC(self, constraints, tol=tol).sample(n) if h or g else self._sample(N, method)
+        if self.custom_sampler is not None:
+            S = self.custom_sampler(sample_space=self, constraints=constraints, tol=tol, N=N)
+        else:
+            S = SCMC(self, constraints, tol=tol).sample(n) if h or g else self._sample(N, method)
         try:
             # NOTE: equality constraints are converted to an epsilon-tude around the
             # corresponding manifold
