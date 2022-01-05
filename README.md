@@ -41,7 +41,7 @@ model and acquisition functions. Please see the example below:
 
 ```python
 from bayes_optim import BO, RealSpace
-from bayes_optim.Surrogate import GaussianProcess
+from bayes_optim.surrogate import GaussianProcess
 
 dim = 5
 space = RealSpace([-5, 5]) * dim  # create the search space
