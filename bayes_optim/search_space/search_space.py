@@ -457,7 +457,7 @@ class SearchSpace:
         assert isinstance(args[0], SearchSpace)
         data = list(chain.from_iterable([deepcopy(cs.data) for cs in args]))
         structure = [t.deepcopy() for cs in args for t in cs.structure]
-        return SearchSpace(data, structure=structure, custom_sampler=self.custom_sampler)
+        return SearchSpace(data, structure=structure)
 
     def pop(self, index: int = -1) -> Variable:
         value = self.data.pop(index)
