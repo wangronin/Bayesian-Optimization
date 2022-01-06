@@ -180,7 +180,7 @@ class PCABO(BO):
         # NOTE: the GPR model will be created since the effective search space (the reduced space
         # is dynamic)
         dim = self._search_space.dim
-        self.model = GaussianProcess(domain=self._search_space, n_restarts_optimizer=dim, alpha=1e-8)
+        self.model = GaussianProcess(domain=self._search_space, n_restarts_optimizer=dim)
 
         _std = np.std(y)
         y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std

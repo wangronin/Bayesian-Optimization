@@ -136,7 +136,7 @@ class GaussianProcess:
             #         score = score_
             #         kernel = k
 
-            gpr = self._gpr_cls(kernel=self._kernel[0]).fit(X, y[:, i])
+            gpr = self._gpr_cls(kernel=self._kernel[0]).fit(X, y if y.ndim == 1 else y[:, i])
             setattr(gpr, "_K_inv", None)
             self._gprs.append(gpr)
 
