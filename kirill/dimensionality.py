@@ -1,5 +1,6 @@
 import math
 import random
+import statistics
 import sys
 from copy import deepcopy
 
@@ -16,9 +17,9 @@ MAXX = 5
 MINX = -5
 DIMENSION = 2
 DOESIZE = 1000
-OBJECTIVE_FUNCTION = bn.F21()
-FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "_3"
-KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=1.1)
+OBJECTIVE_FUNCTION = bn.F17()
+FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "_7"
+KPCA = KernelPCA(kernel="poly", fit_inverse_transform=True, gamma=100)
 
 
 def run_experiment():
@@ -91,6 +92,37 @@ def run_experiment():
     plt.show()
 
 
+def sorted_variance_experiment():
+    X, Y, colours = sample_doe()
+    X_weighted = get_rescaled_points(X, Y)
+    KPCA.fit(X_weighted)
+    X_kpca = KPCA.transform(X)
+    vars = get_colum_variances(X_kpca)
+    all_var = sum(vi ** 2 for vi in vars)
+    var = []
+    for vi in vars:
+        var.append(vi ** 2 / all_var)
+    var.sort()
+    var.reverse()
+    bar = plt.figure()
+    plt.bar(np.arange(len(var)), var)
+    plt.ylabel("$ {\sigma^2_i}/{\sum \sigma^2_i}$")
+    plt.xlabel("$\sigma^2_i$")
+    plt.title("Sorted variances bar chart")
+    plt.show()
+    save_figures('/home/kirill/Projects/PhD/PlansKirill/pic/',
+                 [(bar, 'variances_bar')],
+                 FUNCTION_ID, 'pdf')
+
+
+def get_colum_variances(X):
+    variances = []
+    for i in range(len(X[0])):
+        xi = statistics.variance(X[:, i])
+        variances.append(xi)
+    return variances
+
+
 def run_experiment_1():
     # 1. Original colored sample set
     X, Y, colours = sample_doe()
@@ -159,15 +191,58 @@ def run_experiment_1():
     plt.show()
 
 
-def sample_doe():
+def inverse_transform_of_main(num):
+    X, Y, colours = sample_doe()
+    XT = get_transpose(X)
+    fdoe = plt.figure()
+    plt.title("Original colored sample set")
+    plt.scatter(XT[0], XT[1], c=colours)
+    lpca = PCA(n_components=2)
+    X_weighted = get_rescaled_points(X, Y)
+    lpca.fit(X_weighted)
+    X_lpca = lpca.transform(X)
+    X_lpca_main_inverse = get_main_component_inverse_transform(X_lpca, lpca)
+    lower_manifold_lpca = plt.figure()
+    plt.title("Lower-dimensional manifold with linear PCA")
+    plt.plot(X_lpca_main_inverse[:, 0], X_lpca_main_inverse[:, 1], c='green')
+    plt.scatter(XT[0], XT[1], c=colours)
+    plt.ylabel(str(num), loc='top')
+    save_figures('/home/kirill/Projects/PhD/PlansKirill/pic/',
+                 [(fdoe, 'doe'),
+                  (lower_manifold_lpca, 'lower_mainfold_lpca_arg' + str(num) + '_')],
+                 FUNCTION_ID, 'pdf')
+
+
+def inverse_transform_of_main_2():
+    for doe_size in [1000, 500, 100, 50]:
+        lower_manifold_lpca = plt.figure()
+        for num in range(1, 101):
+            random.seed(a=None)
+            X, Y, colours = sample_doe(doe_size)
+            lpca = PCA(n_components=2)
+            X_weighted = get_rescaled_points(X, Y)
+            lpca.fit(X_weighted)
+            X_lpca = lpca.transform(X)
+            X_lpca_main_inverse = get_main_component_inverse_transform(X_lpca, lpca)
+            plt.title("Lower-dimensional manifold with linear PCA, doe size is " + str(doe_size))
+            plt.plot(X_lpca_main_inverse[:, 0], X_lpca_main_inverse[:, 1], c=(num / 100, 0.5, 0.5), label=str(num))
+            # plt.legend()
+        save_figures('/home/kirill/Projects/PhD/PlansKirill/pic/',
+                     [(lower_manifold_lpca, 'lower_mainfold_lpca_doe_' + str(doe_size) + '_')],
+                     FUNCTION_ID, 'pdf')
+
+
+def sample_doe(doe_size=None):
+    if doe_size is None:
+        doe_size = DOESIZE
     X = []
     Y = []
-    for i in range(DOESIZE):
+    for i in range(doe_size):
         x = [random.uniform(MINX, MAXX) for _ in range(DIMENSION)]
         y = OBJECTIVE_FUNCTION(x)
         X.append(x)
         Y.append(y)
-    colours = compute_colours(Y)
+    colours = compute_colours_2(Y)
     return X, Y, colours
 
 
@@ -201,6 +276,19 @@ def compute_colours(Y):
     m = math.log(0.5) / (y_copy[k] - min_value)
     for y in Y:
         colours.append(get_colour(1. - math.exp(m * (y - min_value))))
+    return colours
+
+
+def compute_colours_2(Y):
+    colours = []
+    y_copy = Y.copy()
+    y_copy.sort()
+    min_value = y_copy[0]
+    k = int(0.4 * len(Y))
+    m = math.log(0.5) / (y_copy[k] - min_value)
+    jet_cmap = mpl.cm.get_cmap(name='jet')
+    for y in Y:
+        colours.append(jet_cmap(1. - math.exp(m * (y - min_value))))
     return colours
 
 
@@ -287,6 +375,8 @@ def matrix_minus_vector(X, vector):
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         random.seed(0)
+        sorted_variance_experiment()
     else:
-        random.seed(sys.argv[1])
-    run_experiment_1()
+        # random.seed(sys.argv[1])
+        inverse_transform_of_main_2()
+    # run_experiment_1()
