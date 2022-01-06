@@ -122,7 +122,7 @@ class GaussianProcess:
         """
         X = np.array(X.tolist())
         self._check_dims(X, y)
-        self._gprs: List[sk_gpr] = list()
+        self._gprs = list()
         # cv = min(len(X), 3)
 
         for i in range(self.n_obj):
@@ -136,7 +136,7 @@ class GaussianProcess:
             #         score = score_
             #         kernel = k
 
-            gpr = self._gpr_cls(kernel=self._kernel[0]).fit(X, y.reshape(-1, 1) if y.ndim == 1 else y[:, i])
+            gpr = self._gpr_cls(kernel=self._kernel[0]).fit(X, y if y.ndim == 1 else y[:, i])
             setattr(gpr, "_K_inv", None)
             self._gprs.append(gpr)
 
@@ -154,7 +154,7 @@ class GaussianProcess:
             if eval_MSE:
                 y_hat[:, i], std_hat[:, i] = out[0], out[1] ** 2
             else:
-                y_hat[:, i] = out.ravel()
+                y_hat[:, i] = out
 
         return (y_hat, std_hat) if eval_MSE else y_hat
 
@@ -184,8 +184,7 @@ class GaussianProcess:
                 L_inv = solve_triangular(gp.L_.T, np.eye(gp.L_.shape[0]))
                 setattr(gp, "_K_inv", L_inv.dot(L_inv.T))
 
-            # TODO: check the dimensionality here
-            mean_dx[i, ...] = scale * k_dx @ (gp.alpha_.ravel())
+            mean_dx[i, ...] = scale * k_dx @ gp.alpha_
             var_dx[i, ...] = -2.0 * scale ** 2 * np.squeeze(k_dx @ getattr(gp, "_K_inv") @ k)
         return mean_dx, var_dx
 
