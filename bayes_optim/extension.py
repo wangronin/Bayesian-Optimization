@@ -7,7 +7,7 @@ from typing import Callable, Dict, List, Union
 import numpy as np
 from joblib import Parallel, delayed
 from scipy.stats import rankdata
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, KernelPCA
 from sklearn.gaussian_process.kernels import ConstantKernel, Matern
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
@@ -60,6 +60,59 @@ class LinearTransform(PCA):
         return super().inverse_transform(X) + self.center
 
 
+class KernelTransform(KernelPCA):
+    def __init__(self, minimize: bool = True, **kwargs):
+        super().__init__(fit_inverse_transform=True, **kwargs)
+        self.minimize = minimize
+
+    def _check_input(self, X):
+        return np.atleast_2d(np.asarray(X, dtype=float))
+
+    def fit_transform(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        X = self._check_input(X)
+        self.fit(X, y)
+        # no need to use the kernel to transform X, use shortcut expression
+        X_transformed = self.alphas_ * np.sqrt(self.lambdas_)
+        if self.fit_inverse_transform:
+            self._fit_inverse_transform(X_transformed, X)
+        return X_transformed
+
+    def fit(self, X: np.ndarray, y: np.ndarray) -> KernelTransform:
+        """center the data matrix and scale the data points with respect to the objective values
+
+        Parameters
+        ----------
+        data : Solution
+            the data matrix to scale
+
+        Returns
+        -------
+        Tuple[np.ndarray, np.ndarray]
+            the scaled data matrix, the center data matrix, and the objective value
+        """
+        X = self._check_input(X)
+        self.center = X.mean(axis=0)
+        X_centered = X - self.center
+        y_ = -1 * y if not self.minimize else y
+        r = rankdata(y_)
+        N = len(y_)
+        w = np.log(N) - np.log(r)
+        w /= np.sum(w)
+        X_scaled = X_centered * w.reshape(-1, 1)
+        return super().fit(X_scaled)  # fit the PCA transformation on the scaled data matrix
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        X = self._check_input(X)
+        return super().transform(X - self.center)  # transform the centered data matrix
+
+    def inverse_transform(self, X: np.ndarray) -> np.ndarray:
+        X = self._check_input(X)
+        if not hasattr(self, "X_transformed_fit_"):
+            return X
+        # TODO: improve this inverse transformation
+        return super().inverse_transform(X) + self.center
+
+
 def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
     bounds_ = np.atleast_2d(bounds)
     # map back the candidate point to check if it falls inside the original domain
@@ -75,6 +128,7 @@ def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
         out = acquisition_func(x)
     else:
         if return_dx:
+            # TODO: fix this for kernel PCA!
             # gradient of the penalty in the original space
             g_ = np.zeros((len(x_), 1))
             g_[idx_lower, :] = 1
@@ -113,11 +167,123 @@ class PCABO(BO):
 
     @staticmethod
     def _compute_bounds(pca: PCA, search_space: SearchSpace) -> List[float]:
-        C = np.array([(l + u) / 2 for l, u in search_space.bounds])
+        C = np.array([(l + u) / 2 for l, u in search_space.bounds])[:2]
         radius = np.sqrt(np.sum((np.array([l for l, _ in search_space.bounds]) - C) ** 2))
         C = C - pca.mean_ - pca.center
         C_ = C.dot(pca.components_.T)
-        return [(_ - radius, _ + radius) for _ in C_]
+        return [(_ - radius, _ + radius) for _ in C]
+
+    def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
+        acquisition_func = super()._create_acquisition(
+            fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
+        )
+        # TODO: make this more general for other acquisition functions
+        # wrap the penalized acquisition function for handling the box constraints
+        return functools.partial(
+            penalized_acquisition,
+            acquisition_func=acquisition_func,
+            bounds=self.__search_space.bounds,  # hyperbox in the original space
+            pca=self._pca,
+            return_dx=return_dx,
+        )
+
+    def pre_eval_check(self, X: List) -> List:
+        """Note that we do not check against duplicated point in PCA-BO since those points are
+        sampled in the reduced search space. Please check if this is intended
+        """
+        if isinstance(X, np.ndarray):
+            X = X.tolist()
+        return X
+
+    @property
+    def xopt(self):
+        if not hasattr(self, "data"):
+            return None
+        fopt = self._get_best(self.data.fitness)
+        self._xopt = self.data[np.where(self.data.fitness == fopt)[0][0]]
+        return self._xopt
+
+    def ask(self, n_point: int = None) -> List[List[float]]:
+        return self._pca.inverse_transform(super().ask(n_point))
+
+    def tell(self, new_X, new_y):
+        self.logger.info(f"observing {len(new_X)} points:")
+        for i, x in enumerate(new_X):
+            self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x}")
+
+        index = np.arange(len(new_X))
+        if hasattr(self, "data"):
+            index += len(self.data)
+        # convert `new_X` to a `Solution` object
+        new_X = self._to_geno(new_X, index=index, n_eval=1, fitness=new_y)
+        self.iter_count += 1
+        self.eval_count += len(new_X)
+
+        new_X = self.post_eval_check(new_X)  # remove NaN's
+        self.data = self.data + new_X if hasattr(self, "data") else new_X
+        # re-fit the PCA transformation
+        X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
+        bounds = self._compute_bounds(self._pca, self.__search_space)
+        # re-set the search space object for the reduced (feature) space
+        self._search_space = RealSpace(bounds)
+        # update the surrogate model
+        self.update_model(X, self.data.fitness)
+        self.logger.info(f"xopt/fopt:\n{self.xopt}\n")
+
+    def update_model(self, X: np.ndarray, y: np.ndarray):
+        # NOTE: the GPR model will be created since the effective search space (the reduced space
+        # is dynamic)
+        dim = self._search_space.dim
+        self.model = GaussianProcess(domain=self._search_space, n_restarts_optimizer=dim)
+
+        _std = np.std(y)
+        y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
+
+        self.fmin, self.fmax = np.min(y_), np.max(y_)
+        self.frange = self.fmax - self.fmin
+
+        self.model.fit(X, y_)
+        y_hat = self.model.predict(X)
+
+        r2 = r2_score(y_, y_hat)
+        MAPE = mean_absolute_percentage_error(y_, y_hat)
+        self.logger.info(f"model r2: {r2}, MAPE: {MAPE}")
+
+
+class KernelPCABO(BO):
+    """Dimensionality reduction using Principle Component Decomposition (PCA)
+
+    References
+
+    [RaponiWB+20]
+        Raponi, Elena, Hao Wang, Mariusz Bujny, Simonetta Boria, and Carola Doerr.
+        "High dimensional bayesian optimization assisted by principal component analysis."
+        In International Conference on Parallel Problem Solving from Nature, pp. 169-183.
+        Springer, Cham, 2020.
+
+    """
+
+    def __init__(self, n_components: Union[float, int] = None, **kwargs):
+        super().__init__(**kwargs)
+        if self.model is not None:
+            self.logger.warning(
+                "The surrogate model will be created automatically by PCA-BO. "
+                "The input argument `model` will be ignored"
+            )
+        assert isinstance(self._search_space, RealSpace)
+        self.__search_space = deepcopy(self._search_space)  # the original search space
+        # TODO: implement a rule to select the number of components
+        self._pca = KernelTransform(n_components=2, minimize=self.minimize)
+
+    @staticmethod
+    def _compute_bounds(pca: PCA, search_space: SearchSpace) -> List[float]:
+        # TODO: fix this!
+        C = np.array([(l + u) / 2 for l, u in search_space.bounds])[:2]
+        # radius = np.sqrt(np.sum((np.array([l for l, _ in search_space.bounds]) - C) ** 2))
+        # C = C - pca.mean_ - pca.center
+        # C_ = C.dot(pca.components_.T)
+        radius = 2
+        return [(_ - radius, _ + radius) for _ in C]
 
     def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
         acquisition_func = super()._create_acquisition(

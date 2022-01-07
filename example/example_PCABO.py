@@ -25,6 +25,6 @@ opt = PCABO(
     verbose=True,
     n_point=1,
     n_components=0.95,
-    acquisition_optimization={"optimizer": "BFGS"},
+    acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
 )
 print(opt.run())
