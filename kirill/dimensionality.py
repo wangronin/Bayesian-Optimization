@@ -18,8 +18,8 @@ MINX = -5
 DIMENSION = 2
 DOESIZE = 1000
 OBJECTIVE_FUNCTION = bn.F17()
-FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "_7"
-KPCA = KernelPCA(kernel="poly", fit_inverse_transform=True, gamma=100)
+FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "_16"
+KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=1)
 
 
 def run_experiment():
@@ -108,7 +108,7 @@ def sorted_variance_experiment():
     plt.bar(np.arange(len(var)), var)
     plt.ylabel("$ {\sigma^2_i}/{\sum \sigma^2_i}$")
     plt.xlabel("$\sigma^2_i$")
-    plt.title("Sorted variances bar chart")
+    plt.title("Sorted variances bar chart, kernel = " + KPCA.kernel + ", $\gamma$ = " + str(KPCA.gamma))
     plt.show()
     save_figures('/home/kirill/Projects/PhD/PlansKirill/pic/',
                  [(bar, 'variances_bar')],
