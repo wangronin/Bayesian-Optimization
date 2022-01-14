@@ -10,6 +10,7 @@ import numpy as np
 from sklearn.cross_decomposition import CCA
 from sklearn.decomposition import KernelPCA, PCA
 from sklearn.kernel_ridge import KernelRidge
+from sklearn.metrics.pairwise import polynomial_kernel
 
 import benchmark.bbobbenchmarks as bn
 
@@ -17,9 +18,9 @@ MAXX = 5
 MINX = -5
 DIMENSION = 2
 DOESIZE = 1000
-OBJECTIVE_FUNCTION = bn.F17()
+OBJECTIVE_FUNCTION = bn.F20()
 FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "_16"
-KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=1)
+KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=0.001)
 
 
 def run_experiment():
@@ -30,7 +31,7 @@ def run_experiment():
     plt.scatter(XT[0], XT[1], c=colours)
 
     # X_centered = get_centered_around_best(X, Y)
-    X_c, X_c_inverse = get_rescaled_points_cca(X, Y)
+    X_c, X_c_inverse, _ = get_rescaled_points_cca(X, Y)
     fcca = plt.figure()
     plt.title("CCA")
     plt.scatter(X_c[:, 0], X_c[:, 1], c=colours)
@@ -70,7 +71,7 @@ def run_experiment():
     plt.title("Kernel PCA - Feature space")
     plt.scatter(X_kpca[:, 0], X_kpca[:, 1], c=colours)
 
-    krr = KernelRidge()
+    krr = KernelRidge(kernel=KPCA.kernel)
     krr.fit(X_kpca[:, 0:2], X)
 
     X_inverse = krr.predict(X_kpca[:, 0:2])
@@ -246,6 +247,18 @@ def sample_doe(doe_size=None):
     return X, Y, colours
 
 
+def kernel(x1, x2):
+    return KPCA._get_kernel(x1, x2)
+
+
+def experiment_2():
+    X, Y, c = sample_doe(100)
+    KPCA.fit(X)
+    # x1 = (0,0) x2 = (1,0)
+    x = kernel([[0, 0]], [[1, 0]])
+    print(x)
+
+
 def get_main_component_inverse_transform(X, pca):
     X_copy = deepcopy(X)
     for i in range(len(X_copy)):
@@ -375,7 +388,8 @@ def matrix_minus_vector(X, vector):
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         random.seed(0)
-        sorted_variance_experiment()
+        # sorted_variance_experiment()
+        run_experiment()
     else:
         # random.seed(sys.argv[1])
         inverse_transform_of_main_2()
