@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import random
 from copy import copy, deepcopy
 from typing import Callable, Dict, List, Union
 
@@ -9,6 +10,7 @@ from joblib import Parallel, delayed
 from scipy.stats import rankdata
 from sklearn.decomposition import PCA, KernelPCA
 from sklearn.gaussian_process.kernels import ConstantKernel, Matern
+from sklearn.kernel_ridge import KernelRidge
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
 from . import acquisition_fun as AcquisitionFunction
@@ -63,7 +65,9 @@ class LinearTransform(PCA):
 class KernelTransform(KernelPCA):
     def __init__(self, minimize: bool = True, **kwargs):
         super().__init__(fit_inverse_transform=True, **kwargs)
+        self.N = self.n_components
         self.minimize = minimize
+        self.krr = KernelRidge()
 
     def _check_input(self, X):
         return np.atleast_2d(np.asarray(X, dtype=float))
@@ -72,7 +76,8 @@ class KernelTransform(KernelPCA):
         X = self._check_input(X)
         self.fit(X, y)
         # no need to use the kernel to transform X, use shortcut expression
-        X_transformed = self.alphas_ * np.sqrt(self.lambdas_)
+        X_transformed = self.transform(X)
+        self.krr.fit(X_transformed[:, 0:self.N], X)
         if self.fit_inverse_transform:
             self._fit_inverse_transform(X_transformed, X)
         return X_transformed
@@ -109,8 +114,7 @@ class KernelTransform(KernelPCA):
         X = self._check_input(X)
         if not hasattr(self, "X_transformed_fit_"):
             return X
-        # TODO: improve this inverse transformation
-        return super().inverse_transform(X) + self.center
+        return self.krr.predict(X[:, 0:self.N])
 
 
 def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
@@ -120,8 +124,8 @@ def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
     idx_lower = np.nonzero(x_ < bounds_[:, 0])[0]
     idx_upper = np.nonzero(x_ > bounds_[:, 1])[0]
     penalty = -1 * (
-        np.sum([bounds_[i, 0] - x_[i] for i in idx_lower])
-        + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
+            np.sum([bounds_[i, 0] - x_[i] for i in idx_lower])
+            + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
     )
 
     if penalty == 0:
@@ -276,14 +280,34 @@ class KernelPCABO(BO):
         self._pca = KernelTransform(n_components=2, minimize=self.minimize)
 
     @staticmethod
-    def _compute_bounds(pca: PCA, search_space: SearchSpace) -> List[float]:
-        # TODO: fix this!
+    def _sample_points(points_numer: int, search_space: SearchSpace):
+        points = [[0. for _ in range(search_space.dim)] for _ in range(points_numer)]
+        for p in points:
+            for i in range(search_space.dim):
+                p[i] = random.uniform(search_space.bounds[i][0], search_space.bounds[i][1])
+        return points
+
+    @staticmethod
+    def _k(kpca, x1, x2):
+        return kpca._get_kernel([x1], [x2])[0][0]
+
+    @staticmethod
+    def _f(kpca, x, fs, points):
+        return KernelPCABO._k(kpca, x, x) + fs - 2. * sum(KernelPCABO._k(kpca, x, xi) for xi in points) / len(points)
+
+    @staticmethod
+    def _compute_bounds(kpca: KernelPCA, search_space: SearchSpace) -> List[float]:
+        points = KernelPCABO._sample_points(100, search_space)
+        fs = 0
+        for i in range(len(points)):
+            for j in range(len(points)):
+                fs += KernelPCABO._k(kpca, points[i], points[j])
+        fs /= len(points) ** 2
+        r = 0
+        for x in points:
+            r = max(r, KernelPCABO._f(kpca, x, fs, points))
         C = np.array([(l + u) / 2 for l, u in search_space.bounds])[:2]
-        # radius = np.sqrt(np.sum((np.array([l for l, _ in search_space.bounds]) - C) ** 2))
-        # C = C - pca.mean_ - pca.center
-        # C_ = C.dot(pca.components_.T)
-        radius = 2
-        return [(_ - radius, _ + radius) for _ in C]
+        return [(_ - r, _ + r) for _ in C]
 
     def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
         acquisition_func = super()._create_acquisition(
@@ -346,7 +370,7 @@ class KernelPCABO(BO):
         # NOTE: the GPR model will be created since the effective search space (the reduced space
         # is dynamic)
         dim = self._search_space.dim
-        self.model = GaussianProcess(domain=self._search_space, n_restarts_optimizer=dim, alpha=1e-8)
+        self.model = GaussianProcess(domain=self._search_space, n_restarts_optimizer=dim)
 
         _std = np.std(y)
         y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
