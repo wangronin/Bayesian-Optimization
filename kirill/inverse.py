@@ -68,14 +68,14 @@ def compute_colours_2(Y):
     return colours
 
 
-def get_transpose(X):
-    n = len(X)
-    m = len(X[0])
-    XT = [[0] * n for _ in range(m)]
-    for i in range(n):
-        for j in range(m):
-            XT[j][i] = X[i][j]
-    return XT
+# def get_transpose(X):
+#     n = len(X)
+#     m = len(X[0])
+#     XT = [[0] * n for _ in range(m)]
+#     for i in range(n):
+#         for j in range(m):
+#             XT[j][i] = X[i][j]
+#     return XT
 
 
 def get_rescaled_points(X, Y):
@@ -125,7 +125,8 @@ def run_experiment1():
 
     # Original space
     fdoe = plt.figure()
-    XT = get_transpose(X)
+    # Get transpose
+    XT = list(map(list, zip(*X)))
     plt.title("Original space")
     plt.scatter(XT[0], XT[1], c=colours)
     save_figure(fdoe, 'original')
@@ -142,16 +143,18 @@ def run_experiment1():
 
     sorted_variance_experiment(X_kpca)
 
-    inverse(X, XT, X_kpca, colours)
+    inverse(X, X_kpca, colours)
 
     plt.show()
 
 
-def inverse(X, XT, X_kpca, colours):
+def inverse(X_, X_kpca, colours):
+    # Get transpose
+    XT = list(map(list, zip(*X_)))
     # Learning ridge regression X -> Y
     krr = KernelRidge(kernel=KPCA.kernel,
                       kernel_params={'kernel': "rbf", 'fit_inverse_transform': True, 'gamma': 0.01})
-    inverser = InverseTransformKPCA(X, krr)
+    inverser = InverseTransformKPCA(X_, krr)
     inverser.fit(X_kpca[:, 0:4])
     # Inverse of all the space
     X_1 = inverser.inverse_all(X_kpca[:, 0:4])
