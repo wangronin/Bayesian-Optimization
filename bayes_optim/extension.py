@@ -293,16 +293,19 @@ class KernelPCABO(BO):
 
     @staticmethod
     def _f(kpca, x, fs, points):
+        # Euclidean distance between a point and the center of mass
         return KernelPCABO._k(kpca, x, x) + fs - 2. * sum(KernelPCABO._k(kpca, x, xi) for xi in points) / len(points)
 
     @staticmethod
     def _compute_bounds(kpca: KernelPCA, search_space: SearchSpace) -> List[float]:
         points = KernelPCABO._sample_points(100, search_space)
         fs = 0
+        # Center of mass
         for i in range(len(points)):
             for j in range(len(points)):
                 fs += KernelPCABO._k(kpca, points[i], points[j])
         fs /= len(points) ** 2
+        # Maximal distance from center of mass
         r = 0
         for x in points:
             r = max(r, KernelPCABO._f(kpca, x, fs, points))
