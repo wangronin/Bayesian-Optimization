@@ -32,8 +32,8 @@ MINX = -5
 DIMENSION = 2
 DOESIZE = 100
 OBJECTIVE_FUNCTION = bn.F21()
-FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId)
-KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=1.1)
+FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "-w"
+KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=0.001)
 SAVER = PictureSaver('./', 'png')
 
 
@@ -78,7 +78,48 @@ def get_transpose(X):
     return XT
 
 
-# NO weighting scheme
+def get_rescaled_points(X, Y):
+    w = ranking_based_weighting(Y)
+    X_copy = deepcopy(X)
+    mu = compute_mean(X)
+    matrix_minus_vector(X, mu)
+    for i in range(len(X_copy)):
+        for j in range(len(X_copy[i])):
+            X_copy[i][j] *= w[i]
+    return X_copy
+
+
+def compute_mean(X):
+    n = len(X)
+    sums = [0.] * DIMENSION
+    for i in range(n):
+        for j in range(DIMENSION):
+            sums[j] += X[i][j]
+    for ind, value in enumerate(sums):
+        sums[ind] = value / n
+    return sums
+
+
+def matrix_minus_vector(X, vector):
+    for i in range(len(X)):
+        for j in range(len(X[i])):
+            X[i][j] -= vector[j]
+
+
+def ranking_based_weighting(Y):
+    weighted_y = Y.copy()
+    Y1 = [(element, ind) for ind, element in enumerate(Y)]
+    Y1.sort()
+    lnn = math.log(len(Y))
+    for r, element in enumerate(Y1):
+        _, posInX = element
+        weighted_y[posInX] = lnn - math.log(r + 1)
+    sum_w = sum(weighted_y)
+    for ind, w in enumerate(weighted_y):
+        weighted_y[ind] = w / sum_w
+    return weighted_y
+
+
 def run_experiment1():
     X, Y, colours = sample_doe()
 
@@ -90,26 +131,34 @@ def run_experiment1():
     save_figure(fdoe, 'original')
 
     # Learning kernel pca
-    KPCA.fit(X)
+    X_weighted = get_rescaled_points(X, Y)  # weighting scheme
+    # X_weighted = X  # no weighting scheme
+    KPCA.fit(X_weighted)
     X_kpca = KPCA.transform(X)
     fkpca = plt.figure()
     plt.title("Kernel PCA feature space")
     plt.scatter(X_kpca[:, 0], X_kpca[:, 1], c=colours)
     save_figure(fkpca, 'kpca_feature_space')
 
+    sorted_variance_experiment(X_kpca)
+
+    inverse(X, XT, X_kpca, colours)
+
+    plt.show()
+
+
+def inverse(X, XT, X_kpca, colours):
     # Learning ridge regression X -> Y
     krr = KernelRidge(kernel=KPCA.kernel,
                       kernel_params={'kernel': "rbf", 'fit_inverse_transform': True, 'gamma': 0.01})
     inverser = InverseTransformKPCA(X, krr)
     inverser.fit(X_kpca[:, 0:4])
-
     # Inverse of all the space
-    # X_1 = inverser.inverse_all(X_kpca[:, 0:4])
-    # fxinverse = plt.figure()
-    # plt.title('Space after inverse transform')
-    # plt.scatter(X_1[:, 0], X_1[:, 1], c=colours)
-    # save_figure(fxinverse, 'original_inversed')
-
+    X_1 = inverser.inverse_all(X_kpca[:, 0:4])
+    fxinverse = plt.figure()
+    plt.title('Space after inverse transform')
+    plt.scatter(X_1[:, 0], X_1[:, 1], c=colours)
+    save_figure(fxinverse, 'original_inversed')
     # Inverse of lower dimensional manifold
     X_kpca_copy = deepcopy(X_kpca)
     for i in range(len(X_kpca_copy)):
@@ -122,7 +171,31 @@ def run_experiment1():
     plt.scatter(XT[0], XT[1], c=colours)
     save_figure(fmankpca, 'kpca_manifold')
 
+
+def sorted_variance_experiment(X_kpca):
+    vars = get_colum_variances(X_kpca)
+    all_var = sum(vi ** 2 for vi in vars)
+    var = []
+    for vi in vars:
+        var.append(vi ** 2 / all_var)
+    var.sort()
+    var.reverse()
+    bar = plt.figure()
+    plt.bar(np.arange(len(var)), var)
+    plt.ylabel("$ {\sigma^2_i}/{\sum \sigma^2_i}$")
+    plt.xlabel("$\sigma^2_i$")
+    plt.title("Sorted variances bar chart, kernel = " + KPCA.kernel + ", $\gamma$ = " + str(KPCA.gamma))
+    save_figure(bar, 'sorted_vars')
+
     plt.show()
+
+
+def get_colum_variances(X):
+    variances = []
+    for i in range(len(X[0])):
+        xi = statistics.variance(X[:, i])
+        variances.append(xi)
+    return variances
 
 
 class SystemContext:
