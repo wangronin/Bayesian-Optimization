@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import random
+import traceback
 from copy import copy, deepcopy
 from typing import Callable, Dict, List, Union
 
@@ -19,6 +20,8 @@ from .search_space import RealSpace, SearchSpace
 from .solution import Solution
 from .surrogate import GaussianProcess, RandomForest
 from .utils import timeit
+from .mylogging import eprintf
+from scipy import optimize
 
 
 class LinearTransform(PCA):
@@ -62,12 +65,71 @@ class LinearTransform(PCA):
         return super().inverse_transform(X) + self.center
 
 
+class SystemContext:
+
+    def __init__(self, pairwise_kernel, matrix, X, y):
+        self.pairwise_kernel = pairwise_kernel
+        self.matrix = matrix
+        self.X = X
+        self.y = y
+
+    def k(self, x1, x2):
+        return self.pairwise_kernel([x1], [x2])[0][0]
+
+    def get_gram_line(self, x):
+        grem_line = [0.] * len(self.X)
+        for i in range(len(self.X)):
+            grem_line[i] = self.k(x, self.X[i])
+        return grem_line
+
+    def go(self, x):
+        return np.sum(np.subtract(np.matmul(self.get_gram_line(x), self.matrix), self.y) ** 2)
+
+
+class InverseTransformKPCA:
+    def __init__(self, X, model, or_search_space):
+        # self.X = deepcopy(X)
+        self.X = X
+        self.dim = len(X[0])
+        self.model = model
+        self.or_search_space = or_search_space
+
+    def fit(self, Y):
+        self.model.fit(self.X, Y)
+        self.W = deepcopy(self.model.dual_coef_)
+
+    def inverse(self, y):
+        global CONTEXT
+        CONTEXT = SystemContext(self.model._get_kernel, self.W, self.X, y)
+        # TODO take into account the new dimensionality
+        initial_guess = np.zeros(self.dim)
+        eprintf('Initial guess fun:', f(initial_guess))
+        minimized = optimize.minimize(f, x0=initial_guess, method='Nelder-Mead', bounds=self.or_search_space.bounds)
+        eprintf('After optimization:', minimized.fun)
+        eprintf('Minimization success', minimized)
+        return minimized.x
+
+    def inverse_all(self, Y):
+        X1 = np.array(deepcopy(self.X))
+        for (i, y) in enumerate(Y):
+            X1[i] = self.inverse(y)
+        return X1
+
+
+CONTEXT = None
+
+
+def f(x):
+    return CONTEXT.go(x)
+
+
 class KernelTransform(KernelPCA):
-    def __init__(self, minimize: bool = True, **kwargs):
-        super().__init__(fit_inverse_transform=True, **kwargs)
+    def __init__(self, minimize: bool = True, or_search_space: RealSpace = None, **kwargs):
+        super().__init__(**kwargs)
         self.N = self.n_components
+        self.or_search_space = or_search_space
+        eprintf("Manifold dimensionality", self.N)
         self.minimize = minimize
-        self.krr = KernelRidge()
 
     def _check_input(self, X):
         return np.atleast_2d(np.asarray(X, dtype=float))
@@ -77,9 +139,11 @@ class KernelTransform(KernelPCA):
         self.fit(X, y)
         # no need to use the kernel to transform X, use shortcut expression
         X_transformed = self.transform(X)
-        self.krr.fit(X_transformed[:, 0:self.N], X)
-        if self.fit_inverse_transform:
-            self._fit_inverse_transform(X_transformed, X)
+        krr = KernelRidge(kernel=self.kernel,
+                          kernel_params=self.get_params())
+        self.inverser = InverseTransformKPCA(X, krr, self.or_search_space)
+        eprintf("Transformed Manifold", X_transformed[:, 0:self.N])
+        self.inverser.fit(X_transformed[:, 0:self.N])
         return X_transformed
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> KernelTransform:
@@ -108,26 +172,29 @@ class KernelTransform(KernelPCA):
 
     def transform(self, X: np.ndarray) -> np.ndarray:
         X = self._check_input(X)
-        return super().transform(X - self.center)  # transform the centered data matrix
+        return super().transform(X)  # transform the centered data matrix
 
     def inverse_transform(self, X: np.ndarray) -> np.ndarray:
+        eprintf("points to do the inverse transform", X)
         X = self._check_input(X)
-        if not hasattr(self, "X_transformed_fit_"):
+        if not hasattr(self, "inverser"):
             return X
-        return self.krr.predict(X[:, 0:self.N])
+        # if not hasattr(self, "X_transformed_fit_"):
+        #    return X
+        return np.array([self.inverser.inverse(X)])
 
 
 def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
     bounds_ = np.atleast_2d(bounds)
     # map back the candidate point to check if it falls inside the original domain
-    x_ = pca.inverse_transform(x)
-    idx_lower = np.nonzero(x_ < bounds_[:, 0])[0]
-    idx_upper = np.nonzero(x_ > bounds_[:, 1])[0]
-    penalty = -1 * (
-            np.sum([bounds_[i, 0] - x_[i] for i in idx_lower])
-            + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
-    )
-
+    #     x_ = pca.inverse_transform(x)
+    #     idx_lower = np.nonzero(x_ < bounds_[:, 0])[0]
+    #     idx_upper = np.nonzero(x_ > bounds_[:, 1])[0]
+    #     penalty = -1 * (
+    #             np.sum([bounds_[i, 0] - x_[i] for i in idx_lower])
+    #             + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
+    #     )
+    penalty = 0
     if penalty == 0:
         out = acquisition_func(x)
     else:
@@ -147,15 +214,12 @@ def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
 
 class PCABO(BO):
     """Dimensionality reduction using Principle Component Decomposition (PCA)
-
     References
-
     [RaponiWB+20]
         Raponi, Elena, Hao Wang, Mariusz Bujny, Simonetta Boria, and Carola Doerr.
         "High dimensional bayesian optimization assisted by principal component analysis."
         In International Conference on Parallel Problem Solving from Nature, pp. 169-183.
         Springer, Cham, 2020.
-
     """
 
     def __init__(self, n_components: Union[float, int] = None, **kwargs):
@@ -171,11 +235,11 @@ class PCABO(BO):
 
     @staticmethod
     def _compute_bounds(pca: PCA, search_space: SearchSpace) -> List[float]:
-        C = np.array([(l + u) / 2 for l, u in search_space.bounds])[:2]
+        C = np.array([(l + u) / 2 for l, u in search_space.bounds])
         radius = np.sqrt(np.sum((np.array([l for l, _ in search_space.bounds]) - C) ** 2))
         C = C - pca.mean_ - pca.center
         C_ = C.dot(pca.components_.T)
-        return [(_ - radius, _ + radius) for _ in C]
+        return [(_ - radius, _ + radius) for _ in C_]
 
     def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
         acquisition_func = super()._create_acquisition(
@@ -269,6 +333,7 @@ class KernelPCABO(BO):
 
     def __init__(self, n_components: Union[float, int] = None, **kwargs):
         super().__init__(**kwargs)
+        eprintf("Initializing Kernel PCABO")
         if self.model is not None:
             self.logger.warning(
                 "The surrogate model will be created automatically by PCA-BO. "
@@ -277,7 +342,8 @@ class KernelPCABO(BO):
         assert isinstance(self._search_space, RealSpace)
         self.__search_space = deepcopy(self._search_space)  # the original search space
         # TODO: implement a rule to select the number of components
-        self._pca = KernelTransform(n_components=2, minimize=self.minimize)
+        self._pca = KernelTransform(n_components=1, minimize=self.minimize, or_search_space=self.__search_space,
+                                    kernel='rbf', gamma=0.001)
 
     @staticmethod
     def _sample_points(points_numer: int, search_space: SearchSpace):
@@ -297,7 +363,19 @@ class KernelPCABO(BO):
         return KernelPCABO._k(kpca, x, x) + fs - 2. * sum(KernelPCABO._k(kpca, x, xi) for xi in points) / len(points)
 
     @staticmethod
-    def _compute_bounds(kpca: KernelPCA, search_space: SearchSpace) -> List[float]:
+    def _compute_bounds(kpca: KernelPCA, search_space: SearchSpace, X) -> List[tuple[float, float]]:
+        # For rbf kernel return sphere with radios 1
+        if kpca.kernel == 'rbf':
+            dim = len(X[0])
+            means = [0.] * dim
+            for j in range(dim):
+                for i in range(len(X)):
+                    means[j] += X[i][j]
+                means[j] /= len(X)
+            bounds = [(0., 0.)] * dim
+            for i in range(dim):
+                bounds[i] = (means[i] - 1., means[i] + 1.)
+            return bounds
         points = KernelPCABO._sample_points(100, search_space)
         fs = 0
         # Center of mass
@@ -346,6 +424,7 @@ class KernelPCABO(BO):
         return self._pca.inverse_transform(super().ask(n_point))
 
     def tell(self, new_X, new_y):
+        eprintf("new argument", new_X, "new value", new_y)
         self.logger.info(f"observing {len(new_X)} points:")
         for i, x in enumerate(new_X):
             self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x}")
@@ -361,8 +440,9 @@ class KernelPCABO(BO):
         new_X = self.post_eval_check(new_X)  # remove NaN's
         self.data = self.data + new_X if hasattr(self, "data") else new_X
         # re-fit the PCA transformation
+        # why do we not reweight the new point?
         X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
-        bounds = self._compute_bounds(self._pca, self.__search_space)
+        bounds = self._compute_bounds(self._pca, self.__search_space, X)
         # re-set the search space object for the reduced (feature) space
         self._search_space = RealSpace(bounds)
         # update the surrogate model
@@ -451,11 +531,11 @@ class ConditionalBO(ParallelBO):
 
     @timeit
     def tell(
-        self,
-        X: List[Union[list, dict]],
-        func_vals: List[Union[float, list]],
-        warm_start: bool = False,
-        **kwargs,
+            self,
+            X: List[Union[list, dict]],
+            func_vals: List[Union[float, list]],
+            warm_start: bool = False,
+            **kwargs,
     ):
         """Tell the BO about the function values of proposed candidate solutions
 

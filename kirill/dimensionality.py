@@ -18,9 +18,9 @@ MAXX = 5
 MINX = -5
 DIMENSION = 2
 DOESIZE = 1000
-OBJECTIVE_FUNCTION = bn.F20()
-FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "_16"
-KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=0.001)
+OBJECTIVE_FUNCTION = bn.F17()
+FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "_17"
+KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=0.1)
 
 
 def run_experiment():
@@ -85,7 +85,7 @@ def run_experiment():
     plt.plot(X_kpca_inverse[:, 0], X_kpca_inverse[:, 1], c='green')
     plt.scatter(XT[0], XT[1], c=colours)
 
-    save_figures('/home/kirill/Projects/PhD/PlansKirill/pic/',
+    save_figures('./',
                  [(fdoe, 'doe'), (fweighted, 'weighted'), (flpca, 'lpca'), (fkpca, 'kpca'),
                   (inverselpca, 'inverseLpca'), (inversekpca, 'inverseKpca'), (inverseAllkpca, 'inverseAllKpca'),
                   (fcca, 'CCA'), (inverseCCA, 'inverseCCA')],

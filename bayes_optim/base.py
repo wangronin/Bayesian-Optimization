@@ -26,6 +26,7 @@ from .utils import (
     timeit,
 )
 from .utils.exception import AskEmptyError, FlatFitnessError
+from .mylogging import eprintf, fprintf
 
 __authors__ = ["Hao Wang"]
 
@@ -253,8 +254,11 @@ class BaseBO(BaseOptimizer):
     def step(self):
         self.logger.info(f"iteration {self.iter_count} starts...")
         X = self.ask()
+        eprintf("candidate solutions", X)
         func_vals = self.evaluate(X)
+        eprintf("function values", func_vals)
         self.tell(X, func_vals)
+        fprintf(f"{self.iter_count},{self.xopt.fitness[0]}") 
 
     @timeit
     def ask(

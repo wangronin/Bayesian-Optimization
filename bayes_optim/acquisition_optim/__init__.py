@@ -3,7 +3,7 @@ import time
 from typing import Callable, List, Tuple
 
 import numpy as np
-from scipy.optimize import fmin_l_bfgs_b
+from scipy.optimize import fmin_l_bfgs_b, differential_evolution
 
 from ..search_space import RealSpace
 from ..utils import dynamic_penalty
@@ -84,6 +84,22 @@ def argmax_restart(
 
             if logger is not None and stop_dict["warnflag"] != 0:
                 logger.debug("L-BFGS-B terminated abnormally with the state: %s" % stop_dict)
+        elif optimizer == "DE":
+            bounds = np.array(search_space.bounds)
+            result = differential_evolution(func=obj_func, bounds=bounds, strategy='best1bin', maxiter=1000,
+                                            popsize=15, tol=0.01, mutation=(0.5, 1), recombination=0.7, disp=False)
+            # maxiter = None, popsize = 100
+            (xopt_, fopt_) = (result.x, result.fun)
+
+            if not isinstance(fopt_, float):
+                fopt_ = float(fopt_)
+            fopt_ = -fopt_
+
+            # if logger is not None and stop_dict["warnflag"] != 0:
+            #     logger.debug("L-BFGS-B terminated abnormally with the state: %s" % stop_dict)
+            stop_dict = {}
+            # TODO see how it is implemented in 1+1 OnePlusOne_Cholesky_CMA
+            stop_dict["funcalls"] = stop_dict["FEs"] if "FEs" in stop_dict else 0
 
         elif optimizer == "OnePlusOne_Cholesky_CMA":
             opt = OnePlusOne_Cholesky_CMA(

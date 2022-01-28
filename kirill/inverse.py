@@ -31,10 +31,10 @@ MAXX = 5
 MINX = -5
 DIMENSION = 2
 DOESIZE = 100
-OBJECTIVE_FUNCTION = bn.F21()
-FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId) + "-w"
-KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=0.001)
-SAVER = PictureSaver('./', 'png')
+OBJECTIVE_FUNCTION = bn.F17()
+FUNCTION_ID = str(OBJECTIVE_FUNCTION.funId)
+KPCA = KernelPCA(kernel="rbf", fit_inverse_transform=True, gamma=0.0001)
+SAVER = PictureSaver('./', 'pdf')
 
 
 def save_figure(fig, name):
@@ -129,7 +129,7 @@ def run_experiment1():
     XT = list(map(list, zip(*X)))
     plt.title("Original space")
     plt.scatter(XT[0], XT[1], c=colours)
-    save_figure(fdoe, 'original')
+    save_figure(fdoe, 'or')
 
     # Learning kernel pca
     X_weighted = get_rescaled_points(X, Y)  # weighting scheme
@@ -153,15 +153,16 @@ def inverse(X_, X_kpca, colours):
     XT = list(map(list, zip(*X_)))
     # Learning ridge regression X -> Y
     krr = KernelRidge(kernel=KPCA.kernel,
-                      kernel_params={'kernel': "rbf", 'fit_inverse_transform': True, 'gamma': 0.01})
+                      kernel_params=KPCA.get_params())
     inverser = InverseTransformKPCA(X_, krr)
     inverser.fit(X_kpca[:, 0:4])
     # Inverse of all the space
+    # TODO use a better number obtained form the method
     X_1 = inverser.inverse_all(X_kpca[:, 0:4])
     fxinverse = plt.figure()
     plt.title('Space after inverse transform')
     plt.scatter(X_1[:, 0], X_1[:, 1], c=colours)
-    save_figure(fxinverse, 'original_inversed')
+    save_figure(fxinverse, 'orinv')
     # Inverse of lower dimensional manifold
     X_kpca_copy = deepcopy(X_kpca)
     for i in range(len(X_kpca_copy)):
@@ -173,6 +174,23 @@ def inverse(X_, X_kpca, colours):
     plt.scatter(X_manifold[:, 0], X_manifold[:, 1], c='green')
     plt.scatter(XT[0], XT[1], c=colours)
     save_figure(fmankpca, 'kpca_manifold')
+
+
+def test_inverse_out_of_the_box():
+    X, Y, colours = sample_doe()
+    fdoe = plt.figure()
+    X_weighted = get_rescaled_points(X, Y)
+    KPCA.fit(X_weighted)
+    X_kpca = KPCA.transform(X)
+    krr = KernelRidge(kernel=KPCA.kernel,
+                      kernel_params=KPCA.get_params())
+    inverser = InverseTransformKPCA(X, krr)
+    inverser.fit(X_kpca[:, 0:2])
+    x1 = [10,10]
+    y_out_of_the_box = KPCA.transform([x1])
+    x2 = inverser.inverse(y_out_of_the_box[:,0:2])
+    print('x1', x1)
+    print('x2', x2)
 
 
 def sorted_variance_experiment(X_kpca):
@@ -188,7 +206,7 @@ def sorted_variance_experiment(X_kpca):
     plt.ylabel("$ {\sigma^2_i}/{\sum \sigma^2_i}$")
     plt.xlabel("$\sigma^2_i$")
     plt.title("Sorted variances bar chart, kernel = " + KPCA.kernel + ", $\gamma$ = " + str(KPCA.gamma))
-    save_figure(bar, 'sorted_vars')
+    save_figure(bar, 'sorted')
 
     plt.show()
 
@@ -234,10 +252,12 @@ class InverseTransformKPCA:
     def inverse(self, y):
         global CONTEXT
         CONTEXT = SystemContext(self.model._get_kernel, self.W, self.X, y)
+        # TODO take into account the new dimensionality
         initial_guess = np.array([0, 0])
         print('Initial guess fun:', f(initial_guess))
-        minimized = optimize.minimize(f, x0=initial_guess, method='Nelder-Mead', bounds=[(MINX, MAXX), (MINX, MAXX)])
+        minimized = optimize.minimize(f, x0=initial_guess, method='CG', bounds=[(MINX, MAXX), (MINX, MAXX)])
         print('After optimization:', minimized.fun)
+        print('Minimization success', minimized.success)
         return minimized.x
 
     def inverse_all(self, Y):
@@ -255,37 +275,39 @@ def f(x):
 
 
 def ridge_experiment():
-    r = KernelRidge(kernel=KPCA.kernel)
+    r = Ridge()
     X = [[0, 0], [1, 1], [0, 1], [1, 0]]
     y = [[0, 1, 0], [2, 0, 1], [1, 2, 3], [1, 1, 1]]
     r.fit(X, y)
     # r.fit([[0, 0], [1, 1], [0, 1], [1, 0]], [[0], [2], [1], [1]])
-    print(r.dual_coef_)
+    print(r.coef_)
     y1 = r.predict([[0, 2]])
     print(y1)
 
-    winv = np.linalg.pinv(r.dual_coef_.transpose())
+    winv = r.coef_
     print(winv)
     # print(np.matmul([2, 0, 1], winv))
+    # global CONTEXT
+    # CONTEXT = SystemContext(r._get_kernel, winv, X, [2, 0, 1])
+    # print(optimize.minimize(f, x0=np.array([0, 0]), method='CG', options={'gtol': 1e-7, 'maxiter': 10000}).x)
+    print(np.matmul([2, 0, 1], np.linalg.pinv(winv).transpose()))
+
+
+def ridge_kernel_experiment():
+    r = KernelRidge()
+    X = [[0,0],[1,1],[0,1],[1,0]]
+    y = [[0,1,0],[2,0,1],[1,2,3],[1,1,1]]
+    r.fit(X,y)
+    w = r.dual_coef_
     global CONTEXT
-    CONTEXT = SystemContext(r._get_kernel, winv, X, [2, 0, 1])
-    print(optimize.minimize(f, x0=np.array([0, 0]), method='CG', options={'gtol': 1e-7, 'maxiter': 10000}).x)
-
-
-def get_inverse(krr, X, Y):
-    winv = np.linalg.pinv(krr.dual_coef_.transpose())
-    X_1 = np.array(deepcopy(X))
-    for i, y in enumerate(Y):
-        global CONTEXT
-        CONTEXT = SystemContext(krr._get_kernel, winv, X, y)
-        minimized = optimize.minimize(f, x0=np.array([0, 0]), method='Nelder-Mead', bounds=[(MINX, MAXX), (MINX, MAXX)])
-        print(minimized.fun)
-        x_1 = minimized.x
-        X_1[i] = x_1
-    return X_1
+    CONTEXT = SystemContext(r._get_kernel, w, X, [2,0,1])
+    print(optimize.minimize(f, x0=[0,0], method='CG', options={'gtol': 1e-7, 'maxiter': 10000}).x)
 
 
 if __name__ == '__main__':
     random.seed(0)
     # ridge_experiment()
-    run_experiment1()
+    # run_experiment1()
+    # ridge_kernel_experiment()
+    test_inverse_out_of_the_box()
+
