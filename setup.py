@@ -35,5 +35,6 @@ setup(
         "sobol-seq>=0.2.0",
         "py-expression-eval>=0.3.13",
         "torch>=1.9.0",
+        "matplotlib",
     ],
 )
