@@ -20,7 +20,7 @@ from .search_space import RealSpace, SearchSpace
 from .solution import Solution
 from .surrogate import GaussianProcess, RandomForest
 from .utils import timeit
-from .mylogging import eprintf
+from .mylogging import *
 from scipy import optimize
 
 
@@ -57,6 +57,7 @@ class LinearTransform(PCA):
 
     def fit_transform(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         self.fit(X, y)
+        eprintf('PCA feature space dimensionality:', self.n_components_)
         return self.transform(X)
 
     def inverse_transform(self, X: np.ndarray) -> np.ndarray:
@@ -179,21 +180,22 @@ class KernelTransform(KernelPCA):
         X = self._check_input(X)
         if not hasattr(self, "inverser"):
             return X
-        # if not hasattr(self, "X_transformed_fit_"):
-        #    return X
-        return np.array([self.inverser.inverse(X)])
+        inversed = []
+        for x in X:
+            inversed.append(self.inverser.inverse(x))
+        return np.array(inversed)
 
 
 def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
     bounds_ = np.atleast_2d(bounds)
     # map back the candidate point to check if it falls inside the original domain
-    #     x_ = pca.inverse_transform(x)
-    #     idx_lower = np.nonzero(x_ < bounds_[:, 0])[0]
-    #     idx_upper = np.nonzero(x_ > bounds_[:, 1])[0]
-    #     penalty = -1 * (
-    #             np.sum([bounds_[i, 0] - x_[i] for i in idx_lower])
-    #             + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
-    #     )
+    x_ = pca.inverse_transform(x)
+    idx_lower = np.nonzero(x_ < bounds_[:, 0])[0]
+    idx_upper = np.nonzero(x_ > bounds_[:, 1])[0]
+    penalty = -1 * (
+            np.sum([bounds_[i, 0] - x_[i] for i in idx_lower])
+            + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
+    )
     penalty = 0
     if penalty == 0:
         out = acquisition_func(x)
@@ -224,6 +226,8 @@ class PCABO(BO):
 
     def __init__(self, n_components: Union[float, int] = None, **kwargs):
         super().__init__(**kwargs)
+        set_logger_file('progressLinear.csv')
+        self.myChartSaver = MyChartSaver('PCABO', 'PCABO', self._search_space.bounds, self.obj_fun) 
         if self.model is not None:
             self.logger.warning(
                 "The surrogate model will be created automatically by PCA-BO. "
@@ -272,7 +276,12 @@ class PCABO(BO):
         return self._xopt
 
     def ask(self, n_point: int = None) -> List[List[float]]:
-        return self._pca.inverse_transform(super().ask(n_point))
+        infill_point = super().ask(n_point)
+        eprintf("Maximal expected improvement point is", infill_point)
+        p = self._pca.inverse_transform(infill_point)
+        eprintf("PCA suggests point", p)
+        return p
+
 
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
@@ -291,6 +300,7 @@ class PCABO(BO):
         self.data = self.data + new_X if hasattr(self, "data") else new_X
         # re-fit the PCA transformation
         X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
+        self.myChartSaver.save_with_manifold(self.iter_count, self.data, X, self._pca)
         bounds = self._compute_bounds(self._pca, self.__search_space)
         # re-set the search space object for the reduced (feature) space
         self._search_space = RealSpace(bounds)
@@ -334,6 +344,8 @@ class KernelPCABO(BO):
     def __init__(self, n_components: Union[float, int] = None, **kwargs):
         super().__init__(**kwargs)
         eprintf("Initializing Kernel PCABO")
+        set_logger_file('progressKernel.csv')
+        self.myChartSaver = MyChartSaver('Kernel-PCABO', 'kernel-PCABO', self._search_space.bounds, self.obj_fun) 
         if self.model is not None:
             self.logger.warning(
                 "The surrogate model will be created automatically by PCA-BO. "
@@ -359,7 +371,6 @@ class KernelPCABO(BO):
 
     @staticmethod
     def _f(kpca, x, fs, points):
-        # Euclidean distance between a point and the center of mass
         return KernelPCABO._k(kpca, x, x) + fs - 2. * sum(KernelPCABO._k(kpca, x, xi) for xi in points) / len(points)
 
     @staticmethod
@@ -378,12 +389,10 @@ class KernelPCABO(BO):
             return bounds
         points = KernelPCABO._sample_points(100, search_space)
         fs = 0
-        # Center of mass
         for i in range(len(points)):
             for j in range(len(points)):
                 fs += KernelPCABO._k(kpca, points[i], points[j])
         fs /= len(points) ** 2
-        # Maximal distance from center of mass
         r = 0
         for x in points:
             r = max(r, KernelPCABO._f(kpca, x, fs, points))
@@ -391,17 +400,8 @@ class KernelPCABO(BO):
         return [(_ - r, _ + r) for _ in C]
 
     def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
-        acquisition_func = super()._create_acquisition(
+        return super()._create_acquisition(
             fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
-        )
-        # TODO: make this more general for other acquisition functions
-        # wrap the penalized acquisition function for handling the box constraints
-        return functools.partial(
-            penalized_acquisition,
-            acquisition_func=acquisition_func,
-            bounds=self.__search_space.bounds,  # hyperbox in the original space
-            pca=self._pca,
-            return_dx=return_dx,
         )
 
     def pre_eval_check(self, X: List) -> List:
@@ -421,14 +421,17 @@ class KernelPCABO(BO):
         return self._xopt
 
     def ask(self, n_point: int = None) -> List[List[float]]:
-        return self._pca.inverse_transform(super().ask(n_point))
+        infill_point = super().ask(n_point)
+        eprintf("Maximal expected improvement point is", infill_point)
+        p = self._pca.inverse_transform(infill_point)
+        eprintf("KPCA suggests point", p)
+        return p
 
     def tell(self, new_X, new_y):
-        eprintf("new argument", new_X, "new value", new_y)
+        # eprintf("new argument", new_X, "new value", new_y)
         self.logger.info(f"observing {len(new_X)} points:")
         for i, x in enumerate(new_X):
             self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x}")
-
         index = np.arange(len(new_X))
         if hasattr(self, "data"):
             index += len(self.data)
@@ -436,12 +439,11 @@ class KernelPCABO(BO):
         new_X = self._to_geno(new_X, index=index, n_eval=1, fitness=new_y)
         self.iter_count += 1
         self.eval_count += len(new_X)
-
         new_X = self.post_eval_check(new_X)  # remove NaN's
         self.data = self.data + new_X if hasattr(self, "data") else new_X
         # re-fit the PCA transformation
-        # why do we not reweight the new point?
         X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
+        self.myChartSaver.save_with_manifold(self.iter_count, self.data, X, self._pca)
         bounds = self._compute_bounds(self._pca, self.__search_space, X)
         # re-set the search space object for the reduced (feature) space
         self._search_space = RealSpace(bounds)

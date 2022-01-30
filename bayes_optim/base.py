@@ -254,11 +254,10 @@ class BaseBO(BaseOptimizer):
     def step(self):
         self.logger.info(f"iteration {self.iter_count} starts...")
         X = self.ask()
-        eprintf("candidate solutions", X)
         func_vals = self.evaluate(X)
-        eprintf("function values", func_vals)
+        eprintf("candidate solution", X, "function values", func_vals)
         self.tell(X, func_vals)
-        fprintf(f"{self.iter_count},{self.xopt.fitness[0]}") 
+        fprintf(f"{self.iter_count},{self.xopt.fitness[0]}\n")
 
     @timeit
     def ask(

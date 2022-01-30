@@ -17,9 +17,9 @@ lb, ub = -5, 5
 OBJECTIVE_FUNCTION = bn.F17()
 
 def fitness(x):
-#     x = np.asarray(x)
-#     return np.sum((np.arange(1, dim + 1) * x) ** 2)
-    eprintf("Evaluated solution:", x, "type", type(x))
+    # x = np.asarray(x)
+    # return np.sum((np.arange(1, dim + 1) * x) ** 2)
+    # eprintf("Evaluated solution:", x, "type", type(x))
     if type(x) is np.ndarray:
         x = x.tolist()
     return OBJECTIVE_FUNCTION(np.array(x)) 
@@ -34,6 +34,7 @@ opt = PCABO(
     max_FEs=40,
     verbose=True,
     n_point=1,
+    n_components=1,
     acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
 )
 
