@@ -22,6 +22,7 @@ from .surrogate import GaussianProcess, RandomForest
 from .utils import timeit
 from .mylogging import *
 from scipy import optimize
+import time
 
 
 class LinearTransform(PCA):
@@ -110,12 +111,6 @@ class InverseTransformKPCA:
         eprintf('Minimization success', minimized)
         return minimized.x
 
-    def inverse_all(self, Y):
-        X1 = np.array(deepcopy(self.X))
-        for (i, y) in enumerate(Y):
-            X1[i] = self.inverse(y)
-        return X1
-
 
 CONTEXT = None
 
@@ -135,17 +130,27 @@ class KernelTransform(KernelPCA):
     def _check_input(self, X):
         return np.atleast_2d(np.asarray(X, dtype=float))
 
+    def _sample_points(self):
+        return self.or_search_space._sample(100)
+
     def fit_transform(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         X = self._check_input(X)
         self.fit(X, y)
-        # no need to use the kernel to transform X, use shortcut expression
-        X_transformed = self.transform(X)
+        X_sampled = np.concatenate((self._sample_points(), X), axis=0)
+        eprintf("Sampled points in the initial search space", X_sampled)
+        t1 = time.time()
+        X_transformed = self.transform(X_sampled)
+        t2 = time.time()
+        eprintf("Transformation of X_sampled takes", t2 - t1, "secs")
+        X_initial_transformed = self.transform(X)
         krr = KernelRidge(kernel=self.kernel,
                           kernel_params=self.get_params())
-        self.inverser = InverseTransformKPCA(X, krr, self.or_search_space)
-        eprintf("Transformed Manifold", X_transformed[:, 0:self.N])
+        self.inverser = InverseTransformKPCA(X_sampled, krr, self.or_search_space)
+        t1 = time.time()
         self.inverser.fit(X_transformed[:, 0:self.N])
-        return X_transformed
+        t2 = time.time()
+        eprintf("Learning inverse the inverse transform for the X_sampled takes", t2 - t1, "secs")
+        return X_initial_transformed
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> KernelTransform:
         """center the data matrix and scale the data points with respect to the objective values
@@ -177,12 +182,15 @@ class KernelTransform(KernelPCA):
 
     def inverse_transform(self, X: np.ndarray) -> np.ndarray:
         eprintf("points to do the inverse transform", X)
+        t1 = time.time()
         X = self._check_input(X)
         if not hasattr(self, "inverser"):
             return X
         inversed = []
         for x in X:
             inversed.append(self.inverser.inverse(x))
+        t2 = time.time()
+        eprintf("Inverse transform takes", t2 - t1, "secs")
         return np.array(inversed)
 
 
