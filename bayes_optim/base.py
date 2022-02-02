@@ -125,8 +125,8 @@ class BaseBO(BaseOptimizer):
         self._set_aux_vars()
         self.warm_data = warm_data
 
-        global GLOBAL_CHARTS_SAVER1
-        GLOBAL_CHARTS_SAVER1 = MyChartSaver('BO', 'BO', self._search_space.bounds, self.obj_fun) 
+        # global GLOBAL_CHARTS_SAVER1
+        # GLOBAL_CHARTS_SAVER1 = MyChartSaver('BO', 'BO', self._search_space.bounds, self.obj_fun) 
 
     @property
     def acquisition_fun(self):
