@@ -369,7 +369,7 @@ class BaseBO(BaseOptimizer):
             self.iter_count += 1
             self.hist_f.append(xopt.fitness)
 
-        GLOBAL_CHARTS_SAVER1.save(self.iter_count, self.data)
+        # GLOBAL_CHARTS_SAVER1.save(self.iter_count, self.data)
 
     def create_DoE(self, n_point: int, fixed: Dict = None) -> List:
         """get the initial sample points using Design of Experiemnt (DoE) methods
