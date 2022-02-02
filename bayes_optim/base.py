@@ -26,9 +26,12 @@ from .utils import (
     timeit,
 )
 from .utils.exception import AskEmptyError, FlatFitnessError
-from .mylogging import eprintf, fprintf
+from .mylogging import *
 
 __authors__ = ["Hao Wang"]
+
+
+GLOBAL_CHARTS_SAVER1 = None
 
 
 class BaseBO(BaseOptimizer):
@@ -121,6 +124,9 @@ class BaseBO(BaseOptimizer):
         self._init_flatfitness_trial = 2
         self._set_aux_vars()
         self.warm_data = warm_data
+
+        global GLOBAL_CHARTS_SAVER1
+        GLOBAL_CHARTS_SAVER1 = MyChartSaver('BO', 'BO', self._search_space.bounds, self.obj_fun) 
 
     @property
     def acquisition_fun(self):
@@ -362,6 +368,8 @@ class BaseBO(BaseOptimizer):
         if not warm_start:
             self.iter_count += 1
             self.hist_f.append(xopt.fitness)
+
+        GLOBAL_CHARTS_SAVER1.save(self.iter_count, self.data)
 
     def create_DoE(self, n_point: int, fixed: Dict = None) -> List:
         """get the initial sample points using Design of Experiemnt (DoE) methods

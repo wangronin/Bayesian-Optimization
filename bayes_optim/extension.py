@@ -100,15 +100,34 @@ class InverseTransformKPCA:
         self.model.fit(self.X, Y)
         self.W = deepcopy(self.model.dual_coef_)
 
+    def get_bad(self):
+        initial_guess = np.zeros(self.dim)
+        for i in range(len(initial_guess)):
+            initial_guess[i] = self.or_search_space.bounds[i][0] - 1.
+        return initial_guess
+
+
     def inverse(self, y):
         global CONTEXT
         CONTEXT = SystemContext(self.model._get_kernel, self.W, self.X, y)
         # TODO take into account the new dimensionality
         initial_guess = np.zeros(self.dim)
+        for i in range(len(initial_guess)):
+            initial_guess[i] = random.uniform(self.or_search_space.bounds[i][0], self.or_search_space.bounds[i][1])
+        eprintf('Point to transform back:', y)
+        initial = f(initial_guess)
+#        if initial > 0.01:
+#            eprintf('Hopeless point')
+#            return self.get_bad()
         eprintf('Initial guess fun:', f(initial_guess))
-        minimized = optimize.minimize(f, x0=initial_guess, method='Nelder-Mead', bounds=self.or_search_space.bounds)
+        minimized = optimize.minimize(f, x0=initial_guess, method='CG', bounds=self.or_search_space.bounds)
         eprintf('After optimization:', minimized.fun)
         eprintf('Minimization success', minimized)
+        if not minimized.success or initial < minimized.fun or (initial - minimized.fun) / initial < 0.5:
+#            for i in range(len(initial_guess)):
+#                initial_guess[i] = self.or_search_space.bounds[i][0] - 1.
+            return initial_guess
+        eprintf('Pre-image found! It is:', minimized.x)
         return minimized.x
 
 
@@ -119,38 +138,85 @@ def f(x):
     return CONTEXT.go(x)
 
 
+GLOBAL_CHARTS_SAVER = None
+
+
+def test_gamma(gamma, n_components, X, X_weighted):
+    KPCA = KernelPCA(kernel="rbf", gamma=gamma[0])
+    KPCA.fit(X_weighted)
+    Y = KPCA.transform(X)
+    Y = np.array(Y)
+    variances = [0.] * len(Y[0])
+    for i in range(len(Y[0])):
+        variances[i] = statistics.variance(Y[:, i])
+    variances.sort()
+    variances.reverse()
+    value = sum(v for v in variances[:n_components]) / sum(v for v in variances)
+    eprintf('gamma', gamma, 'value', value)
+    return -value
+
+
+def exponential_grid_minimizer(f, start, end, steps):
+    t1 = math.log(start)
+    t2 = math.log(end)
+    eps = (t2 - t1)/100
+    mi, argmi = 1., 0.
+    for i in range(steps):
+        gamma = math.pow(math.e, t1 + i*eps)
+        value = f([gamma])
+        if value < mi:
+            mi = value
+            argmi = gamma
+    return argmi
+
+
+def get_kernel_parameters(n_components, X, X_weighted):
+    f = functools.partial(
+        test_gamma,
+        n_components=n_components,
+        X=X,
+        X_weighted=X_weighted
+    )
+#    opt = OnePlusOne_Cholesky_CMA(dim=1, obj_fun=f, search_space=RealSpace([1e-3, 100], random_seed=SEED), x0=[0.5], ftarget=-1., n_restarts=5, minimize=True, verbose=True)
+#    x,_,_=opt.run()
+#    minimized = optimize.minimize(f, x0=[0.5], method='CG')
+    x = exponential_grid_minimizer(f, 0.00001, 10., 100)
+    return x
+
+
 class KernelTransform(KernelPCA):
-    def __init__(self, minimize: bool = True, or_search_space: RealSpace = None, **kwargs):
+    def __init__(self, N, minimize: bool = True, or_search_space: RealSpace = None, **kwargs):
         super().__init__(**kwargs)
-        self.N = self.n_components
+        self.N = N
+        #self.N = self.n_components
         self.or_search_space = or_search_space
         eprintf("Manifold dimensionality", self.N)
         self.minimize = minimize
+        self.sample_points = 100
+        self.__sampled_points = or_search_space._sample(self.sample_points)
 
     def _check_input(self, X):
         return np.atleast_2d(np.asarray(X, dtype=float))
 
-    def _sample_points(self):
-        return self.or_search_space._sample(100)
-
     def fit_transform(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         X = self._check_input(X)
         self.fit(X, y)
-        X_sampled = np.concatenate((self._sample_points(), X), axis=0)
-        eprintf("Sampled points in the initial search space", X_sampled)
+        X_sampled = np.concatenate((self.__sampled_points, X), axis=0)
         t1 = time.time()
         X_transformed = self.transform(X_sampled)
         t2 = time.time()
         eprintf("Transformation of X_sampled takes", t2 - t1, "secs")
         X_initial_transformed = self.transform(X)
+        GLOBAL_CHARTS_SAVER.save_feature_space(X_initial_transformed, y)
+        GLOBAL_CHARTS_SAVER.save_variances(X_transformed)
         krr = KernelRidge(kernel=self.kernel,
                           kernel_params=self.get_params())
         self.inverser = InverseTransformKPCA(X_sampled, krr, self.or_search_space)
         t1 = time.time()
         self.inverser.fit(X_transformed[:, 0:self.N])
         t2 = time.time()
-        eprintf("Learning inverse the inverse transform for the X_sampled takes", t2 - t1, "secs")
-        return X_initial_transformed
+        eprintf("Learning the inverse transform for the X_sampled takes", t2 - t1, "secs")
+        return X_initial_transformed[:, 0:self.N]
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> KernelTransform:
         """center the data matrix and scale the data points with respect to the objective values
@@ -174,6 +240,7 @@ class KernelTransform(KernelPCA):
         w = np.log(N) - np.log(r)
         w /= np.sum(w)
         X_scaled = X_centered * w.reshape(-1, 1)
+        self.gamma = get_kernel_parameters(self.N, X, X_scaled)
         return super().fit(X_scaled)  # fit the PCA transformation on the scaled data matrix
 
     def transform(self, X: np.ndarray) -> np.ndarray:
@@ -235,7 +302,8 @@ class PCABO(BO):
     def __init__(self, n_components: Union[float, int] = None, **kwargs):
         super().__init__(**kwargs)
         set_logger_file('progressLinear.csv')
-        self.myChartSaver = MyChartSaver('PCABO', 'PCABO', self._search_space.bounds, self.obj_fun) 
+        global GLOBAL_CHARTS_SAVER
+        GLOBAL_CHARTS_SAVER = MyChartSaver('PCABO', 'PCABO', self._search_space.bounds, self.obj_fun) 
         if self.model is not None:
             self.logger.warning(
                 "The surrogate model will be created automatically by PCA-BO. "
@@ -295,7 +363,6 @@ class PCABO(BO):
         self.logger.info(f"observing {len(new_X)} points:")
         for i, x in enumerate(new_X):
             self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x}")
-
         index = np.arange(len(new_X))
         if hasattr(self, "data"):
             index += len(self.data)
@@ -303,12 +370,12 @@ class PCABO(BO):
         new_X = self._to_geno(new_X, index=index, n_eval=1, fitness=new_y)
         self.iter_count += 1
         self.eval_count += len(new_X)
-
+        GLOBAL_CHARTS_SAVER.set_iter_number(self.iter_count)
         new_X = self.post_eval_check(new_X)  # remove NaN's
         self.data = self.data + new_X if hasattr(self, "data") else new_X
         # re-fit the PCA transformation
         X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
-        self.myChartSaver.save_with_manifold(self.iter_count, self.data, X, self._pca)
+        GLOBAL_CHARTS_SAVER.save_with_manifold(self.iter_count, self.data, X, self._pca)
         bounds = self._compute_bounds(self._pca, self.__search_space)
         # re-set the search space object for the reduced (feature) space
         self._search_space = RealSpace(bounds)
@@ -333,6 +400,8 @@ class PCABO(BO):
 
         r2 = r2_score(y_, y_hat)
         MAPE = mean_absolute_percentage_error(y_, y_hat)
+        eprintf('Saving the model')
+        GLOBAL_CHARTS_SAVER.save_model(self.model, X)
         self.logger.info(f"model r2: {r2}, MAPE: {MAPE}")
 
 
@@ -349,11 +418,12 @@ class KernelPCABO(BO):
 
     """
 
-    def __init__(self, n_components: Union[float, int] = None, **kwargs):
+    def __init__(self, gamma, n_components: Union[float, int] = None, **kwargs):
         super().__init__(**kwargs)
         eprintf("Initializing Kernel PCABO")
         set_logger_file('progressKernel.csv')
-        self.myChartSaver = MyChartSaver('Kernel-PCABO', 'kernel-PCABO', self._search_space.bounds, self.obj_fun) 
+        global GLOBAL_CHARTS_SAVER
+        GLOBAL_CHARTS_SAVER = MyChartSaver('Kernel-PCABO', 'kernel-PCABO', self._search_space.bounds, self.obj_fun) 
         if self.model is not None:
             self.logger.warning(
                 "The surrogate model will be created automatically by PCA-BO. "
@@ -362,8 +432,8 @@ class KernelPCABO(BO):
         assert isinstance(self._search_space, RealSpace)
         self.__search_space = deepcopy(self._search_space)  # the original search space
         # TODO: implement a rule to select the number of components
-        self._pca = KernelTransform(n_components=1, minimize=self.minimize, or_search_space=self.__search_space,
-                                    kernel='rbf', gamma=0.001)
+        self._pca = KernelTransform(1, minimize=self.minimize, or_search_space=self.__search_space,
+                                    kernel='rbf', gamma=gamma)
 
     @staticmethod
     def _sample_points(points_numer: int, search_space: SearchSpace):
@@ -411,6 +481,19 @@ class KernelPCABO(BO):
         return super()._create_acquisition(
             fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
         )
+#        acquisition_func = super()._create_acquisition(
+#            fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
+#        )
+#        # TODO: make this more general for other acquisition functions
+#        # wrap the penalized acquisition function for handling the box constraints
+#        return functools.partial(
+#            penalized_acquisition,
+#            acquisition_func=acquisition_func,
+#            bounds=self.__search_space.bounds,  # hyperbox in the original space
+#            pca=self._pca,
+#            return_dx=return_dx,
+#        )
+
 
     def pre_eval_check(self, X: List) -> List:
         """Note that we do not check against duplicated point in PCA-BO since those points are
@@ -446,12 +529,17 @@ class KernelPCABO(BO):
         # convert `new_X` to a `Solution` object
         new_X = self._to_geno(new_X, index=index, n_eval=1, fitness=new_y)
         self.iter_count += 1
+        GLOBAL_CHARTS_SAVER.set_iter_number(self.iter_count)
         self.eval_count += len(new_X)
         new_X = self.post_eval_check(new_X)  # remove NaN's
         self.data = self.data + new_X if hasattr(self, "data") else new_X
         # re-fit the PCA transformation
+        if self.iter_count == 1:
+            eprintf("DoE points\n", self.data)
+
         X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
-        self.myChartSaver.save_with_manifold(self.iter_count, self.data, X, self._pca)
+        eprintf("New points in the feature space are", X)
+        GLOBAL_CHARTS_SAVER.save_with_manifold(self.iter_count, self.data, X, self._pca)
         bounds = self._compute_bounds(self._pca, self.__search_space, X)
         # re-set the search space object for the reduced (feature) space
         self._search_space = RealSpace(bounds)
@@ -476,6 +564,8 @@ class KernelPCABO(BO):
 
         r2 = r2_score(y_, y_hat)
         MAPE = mean_absolute_percentage_error(y_, y_hat)
+        eprintf('Saving the model')
+        GLOBAL_CHARTS_SAVER.save_model(self.model, X)
         self.logger.info(f"model r2: {r2}, MAPE: {MAPE}")
 
 

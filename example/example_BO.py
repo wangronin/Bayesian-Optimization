@@ -1,3 +1,4 @@
+
 import sys
 
 import numpy as np
@@ -18,7 +19,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 dim = 2
 lb, ub = -5, 5
-OBJECTIVE_FUNCTION = bn.F21()
+OBJECTIVE_FUNCTION = bn.F19()
 
 def fitness(x):
     # x = np.asarray(x)
@@ -31,14 +32,19 @@ def fitness(x):
 
 space = RealSpace([lb, ub], random_seed=SEED) * dim
 eprintf("new call to PCABO")
-opt = PCABO(
+model = GaussianProcess(
+    domain=space,
+    n_obj=1,
+    n_restarts_optimizer=dim,
+)
+opt = BO(
     search_space=space,
     obj_fun=fitness,
     DoE_size=5,
     max_FEs=40,
     verbose=True,
     n_point=1,
-    n_components=1,
+    model=model,
     acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
 )
 

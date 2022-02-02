@@ -3,6 +3,8 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import os
 import math
+import statistics
+import numpy as np
 
 
 class PictureSaver:
@@ -12,7 +14,7 @@ class PictureSaver:
         self.extension = extension
 
     def save(self, fig, name):
-        fig.savefig(self.path + name + self.fid + '.' + self.extension)
+        fig.savefig(self.path + 'Pl-' +  name + '.' + self.extension)
 
 
 MY_PROGRESS_LOG_FILE = 'progress.csv'
@@ -36,9 +38,11 @@ class MyChartSaver:
         directory = './'+folder_name+'/'
         self.saver = PictureSaver(directory, "-"+name, "png")
         self.bounds = bounds
+        self.obj_function = obj_function
+        self.iter_number = 0
         if not os.path.exists(directory):
             os.makedirs(directory)
-        self.domain_grid, self.colours = MyChartSaver.__sample_points(0.2, 0.2, bounds, obj_function)
+        self.domain_grid, self.colours = MyChartSaver.__sample_points(0.1, 0.1, bounds, obj_function)
 
     @staticmethod
     def __sample_points(x_step, y_step, bounds, obj_f):
@@ -83,6 +87,25 @@ class MyChartSaver:
             colours.append(jet_cmap(1. - math.exp(m * (y - min_value))))
         return colours
         
+    @staticmethod
+    def __get_column_variances(X):
+        variances = []
+        for i in range(len(X[0])):
+            xi = statistics.variance(X[:, i])
+            variances.append(xi)
+        return variances
+
+    @staticmethod
+    def __get_sorted_var_columns_pairs(X):
+        var = MyChartSaver.__get_column_variances(X)
+        all_var = sum(vi ** 2 for vi in var)
+        var_col = [(var[i], i) for i in range(len(var))]
+        var_col.sort()
+        var_col.reverse()
+        return var_col
+
+    def set_iter_number(self, iter_number):
+        self.iter_number = iter_number
 
     def create_figure_with_domain(self):
         fig = plt.figure()
@@ -111,4 +134,32 @@ class MyChartSaver:
         self.add_evaluated_points(iter_number, X)
         self.saver.save(fig, f"DoE-{iter_number}")
         
-         
+    def save_feature_space(self, X, y):
+        fig = plt.figure()
+        colors = MyChartSaver.__compute_colours_2(y)
+        plt.title(f'Iteration number {self.iter_number}, last point is ({X[-1][0]:.4f}, {X[-1][1]:.4f})')
+        plt.scatter(X[:,0], X[:,1], c=colors)
+        self.saver.save(fig, f"Feature-Space-{self.iter_number}")
+
+    def save_variances(self, X):
+        fig = plt.figure()
+        var = self.__get_sorted_var_columns_pairs(X)
+        plt.bar([i for i in range(len(var))], [a for (a,b) in var])
+        plt.gca().set_xticks([i for i in range(len(var))])
+        plt.gca().set_xticklabels([str(b) for (a,b) in var])
+        plt.ylabel("$ {\sigma^2_i}/{\sum \sigma^2_i}$")
+        plt.xlabel("$\sigma^2_i$")
+        plt.title(f'Iteration number {self.iter_number}')
+        self.saver.save(fig, f'Variance-{self.iter_number}')
+
+    def save_model(self, model, X):
+        N = 500
+        fig = plt.figure()
+        X_ = np.linspace(X[:,0].min(), X[:,0].max(), N)
+        Y_ = model.predict(np.array([[x] for x in X_]))
+        plt.plot(X_, Y_)
+        plt.title('Model function after iteration {self.iter_number}')
+        self.saver.save(fig, f'Model-{self.iter_number}')
+            
+
+
