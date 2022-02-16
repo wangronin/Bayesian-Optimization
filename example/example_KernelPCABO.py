@@ -33,8 +33,8 @@ eprintf("new call to Kernel PCABO")
 opt = KernelPCABO(
     search_space=space,
     obj_fun=fitness,
-    DoE_size=20,
-    max_FEs=60,
+    DoE_size=5,
+    max_FEs=40,
     verbose=True,
     n_point=1,
     gamma = 0.0001,

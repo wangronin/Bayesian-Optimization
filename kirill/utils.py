@@ -118,3 +118,6 @@ def get_sorted_var_columns_pairs(X):
     return var_col
 
 
+def kernel_function(model, x1, x2):
+    return model._get_kernel([x1], [x2])[0][0]
+

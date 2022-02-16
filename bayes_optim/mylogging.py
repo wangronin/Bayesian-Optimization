@@ -14,7 +14,7 @@ class PictureSaver:
         self.extension = extension
 
     def save(self, fig, name):
-        fig.savefig(self.path + 'Pl-' +  name + '.' + self.extension)
+        fig.savefig(self.path + name + '.' + self.extension)
 
 
 MY_PROGRESS_LOG_FILE = 'progress.csv'
@@ -130,7 +130,7 @@ class MyChartSaver:
 
     def save_with_manifold(self, iter_number, X, X_transformed, inverser):
         fig = self.create_figure_with_domain()
-        self.add_mainfold(X_transformed, inverser)
+        # self.add_mainfold(X_transformed, inverser)
         self.add_evaluated_points(iter_number, X)
         self.saver.save(fig, f"DoE-{iter_number}")
         
@@ -158,7 +158,7 @@ class MyChartSaver:
         X_ = np.linspace(X[:,0].min(), X[:,0].max(), N)
         Y_ = model.predict(np.array([[x] for x in X_]))
         plt.plot(X_, Y_)
-        plt.title('Model function after iteration {self.iter_number}')
+        plt.title(f'Model function after iteration {self.iter_number}')
         self.saver.save(fig, f'Model-{self.iter_number}')
             
 

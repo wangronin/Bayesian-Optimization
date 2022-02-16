@@ -97,6 +97,7 @@ class InverseTransformKPCA:
         self.or_search_space = or_search_space
 
     def fit(self, Y):
+        self.feature_dim = len(Y[0])
         self.model.fit(self.X, Y)
         self.W = deepcopy(self.model.dual_coef_)
 
@@ -107,13 +108,20 @@ class InverseTransformKPCA:
         return initial_guess
 
 
-    def inverse(self, y):
+    def create_f(self, y):
         global CONTEXT
         CONTEXT = SystemContext(self.model._get_kernel, self.W, self.X, y)
+
+
+    def eval_function(self, x):
+        return f(x)
+
+    def inverse(self, y):
+        self.create_f(y)
         # TODO take into account the new dimensionality
         initial_guess = np.zeros(self.dim)
-        for i in range(len(initial_guess)):
-            initial_guess[i] = random.uniform(self.or_search_space.bounds[i][0], self.or_search_space.bounds[i][1])
+        # for i in range(len(initial_guess)):
+            # initial_guess[i] = random.uniform(self.or_search_space.bounds[i][0], self.or_search_space.bounds[i][1])
         eprintf('Point to transform back:', y)
         initial = f(initial_guess)
 #        if initial > 0.01:
@@ -123,10 +131,10 @@ class InverseTransformKPCA:
         minimized = optimize.minimize(f, x0=initial_guess, method='CG', bounds=self.or_search_space.bounds)
         eprintf('After optimization:', minimized.fun)
         eprintf('Minimization success', minimized)
-        if not minimized.success or initial < minimized.fun or (initial - minimized.fun) / initial < 0.5:
+        # if not minimized.success or initial < minimized.fun or (initial - minimized.fun) / initial < 0.5:
 #            for i in range(len(initial_guess)):
 #                initial_guess[i] = self.or_search_space.bounds[i][0] - 1.
-            return initial_guess
+            # return initial_guess
         eprintf('Pre-image found! It is:', minimized.x)
         return minimized.x
 
@@ -149,8 +157,8 @@ def test_gamma(gamma, n_components, X, X_weighted):
     variances = [0.] * len(Y[0])
     for i in range(len(Y[0])):
         variances[i] = statistics.variance(Y[:, i])
-    variances.sort()
-    variances.reverse()
+    # variances.sort()
+    # variances.reverse()
     value = sum(v for v in variances[:n_components]) / sum(v for v in variances)
     eprintf('gamma', gamma, 'value', value)
     return -value
@@ -181,6 +189,7 @@ def get_kernel_parameters(n_components, X, X_weighted):
 #    x,_,_=opt.run()
 #    minimized = optimize.minimize(f, x0=[0.5], method='CG')
     x = exponential_grid_minimizer(f, 0.00001, 10., 100)
+    eprintf("Chosen gamma is", x)
     return x
 
 
@@ -188,6 +197,8 @@ class KernelTransform(KernelPCA):
     def __init__(self, N, minimize: bool = True, or_search_space: RealSpace = None, **kwargs):
         super().__init__(**kwargs)
         self.N = N
+        self.z = np.zeros(or_search_space.dim)
+        self.rbf_separator = 0.
         #self.N = self.n_components
         self.or_search_space = or_search_space
         eprintf("Manifold dimensionality", self.N)
@@ -213,9 +224,10 @@ class KernelTransform(KernelPCA):
                           kernel_params=self.get_params())
         self.inverser = InverseTransformKPCA(X_sampled, krr, self.or_search_space)
         t1 = time.time()
-        self.inverser.fit(X_transformed[:, 0:self.N])
+        self.inverser.fit(X_transformed)
         t2 = time.time()
         eprintf("Learning the inverse transform for the X_sampled takes", t2 - t1, "secs")
+        # self.compute_rbf_separator()
         return X_initial_transformed[:, 0:self.N]
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> KernelTransform:
@@ -255,10 +267,50 @@ class KernelTransform(KernelPCA):
             return X
         inversed = []
         for x in X:
-            inversed.append(self.inverser.inverse(x))
+            x1 = [0.] * self.inverser.feature_dim
+            for i in range(len(x)):
+                x1[i] = x[i]
+            inversed.append(self.inverser.inverse(x1))
         t2 = time.time()
         eprintf("Inverse transform takes", t2 - t1, "secs")
         return np.array(inversed)
+
+    def compute_rbf_separator(self):
+        n = 500
+        ma = -1.
+        for x in self.or_search_space._sample(n):
+            y = super().transform([x])[0]
+            self.inverser.create_f(y)
+            value = self.inverser.eval_function(self.z)
+            ma = max(ma, value)
+        self.rbf_separator = ma + 0.1*ma
+        eprintf(f"rbf separtor {self.rbf_separator}")
+        return self.rbf_separator 
+
+    def is_pre_image_inside_bounds(self, y):
+        self.inverser.create_f(y)
+        value = self.inverser.eval_function(self.z)
+        eprintf(f"Value of separator function of point {y} is {value}")
+        return value < self.rbf_separator
+
+    def d(self,a,b):
+        return math.sqrt(sum((ai-bi)**2 for (ai,bi) in zip(a,b)))
+
+    def computes_bounds(self):
+        n = 500
+        parent = super()
+        Y = [parent.transform([x])[0, 0:self.N] for x in self.or_search_space._sample(n)]
+        center = [0.]*len(Y[0])
+        for y in Y:
+            for i in range(len(y)):
+                center[i] += y[i]
+        for i in range(len(center)):
+            center[i] /= len(Y)
+        ma = -1.
+        for i in range(len(Y)):
+            ma = max(ma, self.d(center, Y[i]))
+        eprintf(f"Radius of sphere in feature space is {ma}")
+        return [(xi-ma,xi+ma) for xi in center]   
 
 
 def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
@@ -271,10 +323,30 @@ def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
             np.sum([bounds_[i, 0] - x_[i] for i in idx_lower])
             + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
     )
-    penalty = 0
     if penalty == 0:
         out = acquisition_func(x)
     else:
+        if return_dx:
+            # TODO: fix this for kernel PCA!
+            # gradient of the penalty in the original space
+            g_ = np.zeros((len(x_), 1))
+            g_[idx_lower, :] = 1
+            g_[idx_upper, :] = -1
+            # get the gradient of the penalty in the reduced space
+            g = pca.components_.dot(g_)
+            out = (penalty, g)
+        else:
+            out = penalty
+    return out
+
+
+def kernel_penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
+    penalty = -1.
+    if pca.is_pre_image_inside_bounds(x):
+        eprintf(f"ACQ: point {x} inside")
+        out = acquisition_func(x)
+    else:
+        eprintf(f"ACQ: point {x} outside")
         if return_dx:
             # TODO: fix this for kernel PCA!
             # gradient of the penalty in the original space
@@ -423,7 +495,7 @@ class KernelPCABO(BO):
         eprintf("Initializing Kernel PCABO")
         set_logger_file('progressKernel.csv')
         global GLOBAL_CHARTS_SAVER
-        GLOBAL_CHARTS_SAVER = MyChartSaver('Kernel-PCABO', 'kernel-PCABO', self._search_space.bounds, self.obj_fun) 
+        GLOBAL_CHARTS_SAVER = MyChartSaver('Kernel-PCABO-1', 'kernel-PCABO', self._search_space.bounds, self.obj_fun) 
         if self.model is not None:
             self.logger.warning(
                 "The surrogate model will be created automatically by PCA-BO. "
@@ -477,23 +549,27 @@ class KernelPCABO(BO):
         C = np.array([(l + u) / 2 for l, u in search_space.bounds])[:2]
         return [(_ - r, _ + r) for _ in C]
 
-    def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
-        return super()._create_acquisition(
-            fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
-        )
-#        acquisition_func = super()._create_acquisition(
-#            fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
-#        )
-#        # TODO: make this more general for other acquisition functions
-#        # wrap the penalized acquisition function for handling the box constraints
-#        return functools.partial(
-#            penalized_acquisition,
-#            acquisition_func=acquisition_func,
-#            bounds=self.__search_space.bounds,  # hyperbox in the original space
-#            pca=self._pca,
-#            return_dx=return_dx,
-#        )
+    def _compute_bounds_rbf(self, X):
+        dim = len(X[0])
+        eprintf("Compute bounds rbf dim", dim)
+        return self._pca.computes_bounds()
 
+    def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
+        # return super()._create_acquisition(
+            # fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
+        # )
+       acquisition_func = super()._create_acquisition(
+           fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
+       )
+       # TODO: make this more general for other acquisition functions
+       # wrap the penalized acquisition function for handling the box constraints
+       return functools.partial(
+           penalized_acquisition,
+           acquisition_func=acquisition_func,
+           bounds=self.__search_space.bounds,  # hyperbox in the original space
+           pca=self._pca,
+           return_dx=return_dx,
+       )
 
     def pre_eval_check(self, X: List) -> List:
         """Note that we do not check against duplicated point in PCA-BO since those points are
@@ -540,7 +616,8 @@ class KernelPCABO(BO):
         X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
         eprintf("New points in the feature space are", X)
         GLOBAL_CHARTS_SAVER.save_with_manifold(self.iter_count, self.data, X, self._pca)
-        bounds = self._compute_bounds(self._pca, self.__search_space, X)
+        # bounds = self._compute_bounds(self._pca, self.__search_space, X)
+        bounds = self._compute_bounds_rbf(X)
         # re-set the search space object for the reduced (feature) space
         self._search_space = RealSpace(bounds)
         # update the surrogate model
@@ -559,11 +636,11 @@ class KernelPCABO(BO):
         self.fmin, self.fmax = np.min(y_), np.max(y_)
         self.frange = self.fmax - self.fmin
 
-        self.model.fit(X, y_)
+        self.model.fit(X, y)
         y_hat = self.model.predict(X)
 
-        r2 = r2_score(y_, y_hat)
-        MAPE = mean_absolute_percentage_error(y_, y_hat)
+        r2 = r2_score(y, y_hat)
+        MAPE = mean_absolute_percentage_error(y, y_hat)
         eprintf('Saving the model')
         GLOBAL_CHARTS_SAVER.save_model(self.model, X)
         self.logger.info(f"model r2: {r2}, MAPE: {MAPE}")
