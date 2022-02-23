@@ -292,7 +292,8 @@ class BaseBO(BaseOptimizer):
         else:  # take the initial DoE
             n_point = self._DoE_size if n_point is None else n_point
             msg = f"asking {n_point} points (using DoE):"
-            X = self.create_DoE(n_point, fixed=fixed)
+            X = self.create_DoE(n_point, fixed=fixed, initial_guess=not self.initial_guess is None)
+            self.logger.info(X)
 
         if len(X) == 0:
             raise AskEmptyError()
@@ -361,7 +362,7 @@ class BaseBO(BaseOptimizer):
             self.iter_count += 1
             self.hist_f.append(xopt.fitness)
 
-    def create_DoE(self, n_point: int, fixed: Dict = None) -> List:
+    def create_DoE(self, n_point: int, fixed: Dict = None, initial_guess=False) -> List:
         """get the initial sample points using Design of Experiemnt (DoE) methods
 
         Parameters
@@ -378,7 +379,7 @@ class BaseBO(BaseOptimizer):
         search_space = self.search_space.filter(fixed.keys(), invert=True)
 
         count = 0
-        if self.iter_count == 0 and not self.initial_guess is None:
+        if initial_guess and not self.initial_guess is None:
             assert self.initial_guess.shape[1] == self.dim
             assert all([isinstance(_, float) for _ in self.initial_guess[:, self.r_index].ravel()])
             assert all([isinstance(_, int) for _ in self.initial_guess[:, self.i_index].ravel()])
