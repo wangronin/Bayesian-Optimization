@@ -381,7 +381,7 @@ class BaseBO(BaseOptimizer):
 
         count = 0
         if initial_guess and not self.initial_guess is None:
-            assert self.initial_guess.shape[1] == self.dim or self.initial_guess.shape[0] == self.dim
+            assert self.initial_guess.shape[0] == self.dim or self.initial_guess.shape[1] == self.dim
             assert all([isinstance(_, float) for _ in self.initial_guess[:, self.r_index].ravel()])
             assert all([isinstance(_, int) for _ in self.initial_guess[:, self.i_index].ravel()])
             assert all([isinstance(_, str) for _ in self.initial_guess[:, self.d_index].ravel()])
