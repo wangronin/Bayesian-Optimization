@@ -39,6 +39,7 @@ class BaseBO(BaseOptimizer):
         eval_type: str = "list",
         DoE_size: Optional[int] = None,
         warm_data: Tuple = None,
+        initial_guess: np.ndarray = None,
         n_point: int = 1,
         acquisition_fun: str = "EI",
         acquisition_par: dict = None,
@@ -377,7 +378,14 @@ class BaseBO(BaseOptimizer):
         search_space = self.search_space.filter(fixed.keys(), invert=True)
 
         count = 0
-        DoE = []
+        if self.iter_count == 0 and not self.initial_guess is None:
+            assert self.initial_guess.shape[1] == self.dim
+            assert all([isinstance(_, float) for _ in X[:, self.r_index].ravel()])
+            assert all([isinstance(_, int) for _ in X[:, self.i_index].ravel()])
+            assert all([isinstance(_, str) for _ in X[:, self.d_index].ravel()])
+            DoE = [self.initial_guess]
+        else:
+            DoE = []
         while n_point:
             # NOTE: random sampling could generate duplicated points again
             # keep sampling until getting enough points
