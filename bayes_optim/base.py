@@ -293,6 +293,7 @@ class BaseBO(BaseOptimizer):
             n_point = self._DoE_size if n_point is None else n_point
             msg = f"asking {n_point} points (using DoE):"
             X = self.create_DoE(n_point, fixed=fixed, initial_guess=not self.initial_guess is None)
+            self.logger.info('*** Find me')
             self.logger.info(X)
 
         if len(X) == 0:
