@@ -60,9 +60,13 @@ class MyKernelPCA:
         global KERNEL_PARAMETERS
         for k,v in kernel_params_dict.items():
             KERNEL_PARAMETERS[k] = v
+        self.kernel_name = kernel_name
         self.kernel = PAIRWISE_KERNEL_FUNCTIONS[kernel_name]
         self.epsilon = epsilon
         self.X_initial_space = X_initial_space
+        
+    def set_initial_space_points(self, X):
+        self.X_initial_space = X
 
     def __center_G(self, G):
         ns = len(G)
@@ -138,15 +142,20 @@ class MyKernelPCA:
         return np.transpose((self.V @ M)[:self.k])
 
     def inverse_transform(self, Y: np.ndarray):
+        if not hasattr(self, "k"):
+            return Y
+        eprintf("attribute found")
         if not len(Y.shape) == 2:
             raise ValueError("Y array should be at least 2d but got this instead", Y)
         Y_inversed = []
         for y in Y:
             if not len(y) == self.k:
                 raise ValueError(f"dimensionality of point is supposed to be {self.k}, but it is {len(y)}")
+            eprintf("point to find inverse", y)
             partial_f = partial(MyKernelPCA.f, self.X_initial_space, self.kernel, self.V, y)
             w0, fopt, *rest = optimize.fmin_bfgs(partial_f, np.zeros(len(self.X_initial_space)), full_output=True, disp=False)
             inversed = MyKernelPCA.linear_combination(w0, self.X_initial_space)
             Y_inversed.append(inversed)
+            eprintf(f"the inverse of point {y} is {inversed}")
         return np.array(Y_inversed)
 
