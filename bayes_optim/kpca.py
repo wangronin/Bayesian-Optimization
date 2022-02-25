@@ -64,6 +64,7 @@ class MyKernelPCA:
         self.kernel = PAIRWISE_KERNEL_FUNCTIONS[kernel_name]
         self.epsilon = epsilon
         self.X_initial_space = X_initial_space
+        self.NN = 5
         
     def set_initial_space_points(self, X):
         self.X_initial_space = X
@@ -141,6 +142,24 @@ class MyKernelPCA:
         M = np.transpose(X_gram_lines)
         return np.transpose((self.V @ M)[:self.k])
 
+    def get_good_subspace(self, y):
+        Y = self.transform(self.X_initial_space)
+        dists = [[0., i] for i in range(len(Y))]
+        for i in range(len(Y)):
+            dists[i][0] = MyKernelPCA.l2(y - Y[i])
+        dists.sort()
+        sz = min(self.NN, len(self.X_initial_space))
+        good_subspace = [[] for i in range(sz)]
+        for i in range(sz):
+            good_subspace[i] = self.X_initial_space[dists[i][1]]
+        eprintf("V\n", self.V)
+        V1 = deepcopy(self.V[:,:sz])
+        for i in range(sz):
+            V1[:,i] = self.V[:,dists[i][1]]
+        eprintf("V1\n", V1)
+        return good_subspace, V1
+
+
     def inverse_transform(self, Y: np.ndarray):
         if not hasattr(self, "k"):
             return Y
@@ -152,10 +171,13 @@ class MyKernelPCA:
             if not len(y) == self.k:
                 raise ValueError(f"dimensionality of point is supposed to be {self.k}, but it is {len(y)}")
             eprintf("point to find inverse", y)
-            partial_f = partial(MyKernelPCA.f, self.X_initial_space, self.kernel, self.V, y)
-            w0, fopt, *rest = optimize.fmin_bfgs(partial_f, np.zeros(len(self.X_initial_space)), full_output=True, disp=False)
-            inversed = MyKernelPCA.linear_combination(w0, self.X_initial_space)
+            # good_subspace, V1 = self.get_good_subspace(y)
+            good_subspace, V1 = self.X_initial_space, self.V
+            partial_f = partial(MyKernelPCA.f, good_subspace, self.kernel, V1, y)
+            w0, fopt, *rest = optimize.fmin_bfgs(partial_f, np.zeros(len(good_subspace)), full_output=True, disp=False)
+            inversed = MyKernelPCA.linear_combination(w0, good_subspace)
             Y_inversed.append(inversed)
+            eprintf(f"the final value of J is {fopt}")
             eprintf(f"the inverse of point {y} is {inversed}")
         return np.array(Y_inversed)
 

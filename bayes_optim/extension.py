@@ -23,6 +23,9 @@ from .mylogging import *
 import time
 
 
+GLOBAL_CHARTS_SAVER = None
+
+
 class LinearTransform(PCA):
     def __init__(self, minimize: bool = True, **kwargs):
         super().__init__(**kwargs)
@@ -113,7 +116,7 @@ def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
     x_ = pca.inverse_transform(x)
     idx_lower = np.nonzero(x_ < bounds_[:, 0])[0]
     idx_upper = np.nonzero(x_ > bounds_[:, 1])[0]
-    penalty = -1 * (
+    penalty = -10 * (
         np.sum([bounds_[i, 0] - x_[i] for i in idx_lower])
         + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
     )
@@ -197,7 +200,11 @@ class PCABO(BO):
         return self._xopt
 
     def ask(self, n_point: int = None) -> List[List[float]]:
-        return self._pca.inverse_transform(super().ask(n_point))
+        new_x1 = self._pca.inverse_transform(super().ask(n_point))
+        new_x = new_x1[0]
+        is_inside = sum(1 for i in range(len(new_x)) if self.__search_space.bounds[i][0]<= new_x[i] <= self.__search_space.bounds[i][1])==len(new_x)
+        eprintf("Is inside?", is_inside)
+        return new_x1
 
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
@@ -249,6 +256,8 @@ class KernelPCABO(BO):
 
     def __init__(self, n_components: Union[float, int] = None, **kwargs):
         super().__init__(**kwargs)
+        global GLOBAL_CHARTS_SAVER
+        GLOBAL_CHARTS_SAVER = MyChartSaver('Kernel-PCABO-1', 'kernel-PCABO', self._search_space.bounds, self.obj_fun) 
         if self.model is not None:
             self.logger.warning(
                 "The surrogate model will be created automatically by PCA-BO. "
@@ -256,7 +265,7 @@ class KernelPCABO(BO):
             )
         assert isinstance(self._search_space, RealSpace)
         self.__search_space = deepcopy(self._search_space)  # the original search space
-        self._pca = KernelTransform(minimize=self.minimize, X_initial_space=[], kernel_name='rbf', epsilon=0.1, kernel_params_dict={'gamma': 0.001})
+        self._pca = KernelTransform(minimize=self.minimize, X_initial_space=[], kernel_name='rbf', epsilon=0.3, kernel_params_dict={'gamma': 0.0001})
 
     @staticmethod
     def _compute_bounds(kpca: MyKernelPCA, search_space: SearchSpace) -> List[float]:
@@ -267,7 +276,7 @@ class KernelPCABO(BO):
             eprintf("Mean in the initial space", c)
             half_diagonal_sqr = sum((ub - mean_i)**2 for ((_,ub), mean_i) in zip(search_space.bounds, c))
             eprintf("Squared half diagonal in the initial space is", half_diagonal_sqr)
-            max_features_space_distance_from_mean = 2 - 2*kpca.kernel(corner, c)
+            max_features_space_distance_from_mean = 2. - 2. * kpca.kernel(corner, c)
             eprintf(f'max feature space distance from the mean is {max_features_space_distance_from_mean}')
             C = kpca.transform([c])[0]
             eprintf(f'mean in the feature space is {C}')
@@ -308,6 +317,19 @@ class KernelPCABO(BO):
     def ask(self, n_point: int = None) -> List[List[float]]:
         return self._pca.inverse_transform(super().ask(n_point))
 
+    def _run_experiment(self, bounds):
+        eprintf('==================== Experiment =========================')
+        eprintf(bounds)
+        sampled_points = self.__search_space._sample(1000)
+        for p in sampled_points:
+            y = self._pca.transform([p])[0]
+            is_inside = sum(1 for i in range(len(y)) if bounds[i][0] <= y[i] <= bounds[i][1])==len(y)
+            eprintf(p, '->', y, str(is_inside))
+            if not is_inside:
+                sys.exit(0)
+        eprintf('==================== End =========================')
+        sys.exit(0)
+
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
         for i, x in enumerate(new_X):
@@ -320,6 +342,7 @@ class KernelPCABO(BO):
         new_X = self._to_geno(new_X, index=index, n_eval=1, fitness=new_y)
         self.iter_count += 1
         self.eval_count += len(new_X)
+        GLOBAL_CHARTS_SAVER.set_iter_number(self.iter_count)
 
         new_X = self.post_eval_check(new_X)  # remove NaN's
         self.data = self.data + new_X if hasattr(self, "data") else new_X
@@ -327,7 +350,9 @@ class KernelPCABO(BO):
         self._pca.set_initial_space_points(self.data)
         X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
         eprintf("Feature space points", X)
+        GLOBAL_CHARTS_SAVER.save_with_manifold(self.iter_count, self.data, X, self._pca)
         bounds = self._compute_bounds(self._pca, self.__search_space)
+        # self._run_experiment(bounds)
         # re-set the search space object for the reduced (feature) space
         self._search_space = RealSpace(bounds)
         # update the surrogate model
