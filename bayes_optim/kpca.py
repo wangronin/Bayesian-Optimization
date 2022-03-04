@@ -75,7 +75,14 @@ class MyKernelPCA:
         for i in range(len(G)):
             line[i] = sum(G[i])
         all_sum = sum(line)
-        return [[G[i][j] - line[i]/ns - line[j]/ns + all_sum/ns**2 for j in range(len(G))] for i in range(len(G))]
+        return [[G[i][j] - line[i]/ns - line[j]/ns + all_sum/ns**2 for j in range(len(G[i]))] for i in range(len(G))]
+
+    def __center_gram_line(self, g):
+        delta = sum(g) / len(g)
+        for i in range(len(g)):
+            g[i] -= delta
+        return g
+
 
     def __sorted_eig(self, X):
         values, vectors = np.linalg.eig(X)
@@ -120,6 +127,7 @@ class MyKernelPCA:
         return comb
 
     def fit(self, X_weighted: np.ndarray):
+        self.X_weighted = X_weighted
         G = [[self.kernel(x1, x2) for x1 in X_weighted] for x2 in X_weighted]
         G_centered = self.__center_G(G)
         eignValues, eignVectors = self.__sorted_eig(G_centered)
@@ -138,7 +146,11 @@ class MyKernelPCA:
     def transform(self, X: np.ndarray):
         X_gram_lines = []
         for x in X:
-            X_gram_lines.append(self.__get_gram_line(self.X_initial_space, x))
+            g = self.__get_gram_line(self.X_initial_space, x)
+            eprintf(f'Gram line before {g}')
+            g = self.__center_gram_line(g) 
+            eprintf(f'Gram line after (centred) {g}')
+            X_gram_lines.append(g)
         M = np.transpose(X_gram_lines)
         return np.transpose((self.V @ M)[:self.k])
 
@@ -177,6 +189,7 @@ class MyKernelPCA:
             w0, fopt, *rest = optimize.fmin_bfgs(partial_f, np.zeros(len(good_subspace)), full_output=True, disp=False)
             inversed = MyKernelPCA.linear_combination(w0, good_subspace)
             Y_inversed.append(inversed)
+            eprintf("values of the weights are", w0)
             eprintf(f"the final value of J is {fopt}")
             eprintf(f"the inverse of point {y} is {inversed}")
         return np.array(Y_inversed)

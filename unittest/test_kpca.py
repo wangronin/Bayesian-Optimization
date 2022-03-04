@@ -9,10 +9,11 @@ def test_kpca():
     Y = [35.441907931514024, 455.983619954143, 288.22967496622755, 26.86758082381718, 30.021247428418974]
     kpca = MyKernelPCA(X, 'rbf', epsilon=0.1, kernel_params_dict={'gamma': 0.01})
     kpca.fit(X_weighted)
-    point = [[0.97627008, 4.30378733]]
-    y = kpca.transform(point)
-    eprintf("transformed point is", y)
-    point1 = kpca.inverse_transform(y)
-    assert point == pytest.approx(point1, 0.001)
+    points = [[0.1, 4.3], [2.3, 3.2], [-1.2, 4.1], [0.97627008, 4.30378733]]
+    ys = kpca.transform(points)
+    eprintf("transformed point is", ys)
+    points1 = kpca.inverse_transform(ys)
+    for (point, point1) in zip(points, points1):
+        assert point == pytest.approx(point1, 0.01) 
 
 

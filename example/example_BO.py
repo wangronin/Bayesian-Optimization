@@ -19,7 +19,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 dim = 2
 lb, ub = -5, 5
-OBJECTIVE_FUNCTION = bn.F19()
+OBJECTIVE_FUNCTION = bn.F17()
 
 def fitness(x):
     # x = np.asarray(x)

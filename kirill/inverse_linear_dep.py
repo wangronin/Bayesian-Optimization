@@ -1,4 +1,4 @@
-from bayes_optim.extension import *
+from bayes_optim import RealSpace
 from bayes_optim.mylogging import *
 import benchmark.bbobbenchmarks as bn
 import random
@@ -63,7 +63,10 @@ def run_experiment():
     space = RealSpace([lb, ub],random_seed=0) * dim
     # kpca = KernelPCA(kernel="rbf", gamma=0.01)
     X, Y, colours = sample_doe(lb, ub, dim, DOESIZE, bn.F17())
+    print("DoE\n", X)
+    print("Y\n", Y)
     X_weighted = get_rescaled_points(X, Y)
+    eprintf("X_weighted\n", X_weighted)
     # X_weighted = X
     # kpca.fit(X_weighted)
     my_kernel = partial(rbf, 0.01)

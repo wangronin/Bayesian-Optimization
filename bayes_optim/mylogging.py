@@ -130,7 +130,7 @@ class MyChartSaver:
 
     def save_with_manifold(self, iter_number, X, X_transformed, inverser):
         fig = self.create_figure_with_domain()
-        # self.add_mainfold(X_transformed, inverser)
+        self.add_mainfold(X_transformed, inverser)
         self.add_evaluated_points(iter_number, X)
         self.saver.save(fig, f"DoE-{iter_number}")
         

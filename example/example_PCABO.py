@@ -7,7 +7,7 @@ from bayes_optim import RandomForest, BO, GaussianProcess
 
 sys.path.insert(0, "./")
 
-from bayes_optim.extension import PCABO, RealSpace, KernelPCABO
+from bayes_optim.extension import PCABO, RealSpace
 from bayes_optim.mylogging import eprintf
 import benchmark.bbobbenchmarks as bn
 import random
@@ -18,7 +18,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 dim = 2
 lb, ub = -5, 5
-OBJECTIVE_FUNCTION = bn.F21()
+OBJECTIVE_FUNCTION = bn.F17()
 
 def fitness(x):
     # x = np.asarray(x)
@@ -38,7 +38,7 @@ opt = PCABO(
     max_FEs=40,
     verbose=True,
     n_point=1,
-    n_components=1,
+    n_components=2,
     acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
 )
 

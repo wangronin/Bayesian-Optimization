@@ -37,7 +37,7 @@ opt = KernelPCABO(
     max_FEs=40,
     verbose=True,
     n_point=1,
-    gamma = 0.0001,
+    # gamma = 0.0001,
     acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
 )
 
