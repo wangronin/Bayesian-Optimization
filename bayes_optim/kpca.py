@@ -1,6 +1,6 @@
 from .mylogging import *
 import numpy as np
-from functools import partial 
+from functools import partial
 from scipy import optimize
 from math import exp
 from copy import deepcopy
@@ -20,9 +20,15 @@ def linear_kernel(a,b):
     # TODO
     raise NotImplementedError
 
-def polynomial_kernel(a,b):
-    # TODO
-    raise NotImplementedError
+def polynomial_kernel(a, b):
+    gamma = KERNEL_PARAMETERS['gamma']
+    d = KERNEL_PARAMETERS['d']
+    c0 = KERNEL_PARAMETERS['c0']
+    s = 0
+    for ai, bi in zip(a,b):
+        s += ai * bi * gamma
+    s += c0
+    return s ** d
 
 def rbf_kernel(a, b):
     gamma = KERNEL_PARAMETERS['gamma']
@@ -64,8 +70,8 @@ class MyKernelPCA:
         self.kernel = PAIRWISE_KERNEL_FUNCTIONS[kernel_name]
         self.epsilon = epsilon
         self.X_initial_space = X_initial_space
-        self.NN = 5
-        
+        self.NN = 100
+
     def set_initial_space_points(self, X):
         self.X_initial_space = X
 
@@ -77,7 +83,8 @@ class MyKernelPCA:
         all_sum = sum(line)
         return [[G[i][j] - line[i]/ns - line[j]/ns + all_sum/ns**2 for j in range(len(G[i]))] for i in range(len(G))]
 
-    def __center_gram_line(self, g):
+    @staticmethod
+    def __center_gram_line(g):
         delta = sum(g) / len(g)
         for i in range(len(g)):
             g[i] -= delta
@@ -99,7 +106,7 @@ class MyKernelPCA:
         for i in range(len(values)):
             sorted_values[i],_ = values_ids[i]
         return sorted_values, sorted_vectors
-    
+
     def __get_gram_line(self, X, p):
         return np.array([self.kernel(p, x) for x in X])
 
@@ -111,12 +118,13 @@ class MyKernelPCA:
         return ans
 
     @staticmethod
-    def f(X,k,V,z_star,w):
-        candidate_x = MyKernelPCA.linear_combination(w, X)
+    def f(X,good_subspace,k,V,z_star,w):
+        candidate_x = MyKernelPCA.linear_combination(w, good_subspace)
         g_star = [0.] * len(X)
         for i in range(len(X)):
             g_star[i] = k(X[i], candidate_x)
-        return MyKernelPCA.l2(np.transpose(np.array(z_star)) - np.matmul(V, np.array(g_star))) 
+        g_star = MyKernelPCA.__center_gram_line(g_star)
+        return sum((np.transpose(np.array(z_star)) - np.matmul(V, np.array(g_star)))**2)
 
     @staticmethod
     def linear_combination(w, X):
@@ -127,11 +135,18 @@ class MyKernelPCA:
         return comb
 
     def fit(self, X_weighted: np.ndarray):
+        eprintf("X for fit", X_weighted)
         self.X_weighted = X_weighted
         G = [[self.kernel(x1, x2) for x1 in X_weighted] for x2 in X_weighted]
+        eprintf("G", np.array(G))
         G_centered = self.__center_G(G)
+        eprintf("G_centred", np.array(G_centered))
         eignValues, eignVectors = self.__sorted_eig(G_centered)
+        eignValues = eignValues.view(np.float64)
+        eignVectors = eignVectors.view(np.float64)
         eignValuesSum = sum(eignValues)
+        eprintf("Values", eignValues)
+        eprintf("Vectors", eignVectors)
         s = 0
         self.k = 0
         while s<(1.-self.epsilon)*eignValuesSum:
@@ -142,14 +157,15 @@ class MyKernelPCA:
         eprintf("k equals to", self.k)
         V = np.transpose(eignVectors)
         self.V = V[:self.k]
-    
+        eprintf("V", self.V)
+
     def transform(self, X: np.ndarray):
         X_gram_lines = []
         for x in X:
             g = self.__get_gram_line(self.X_initial_space, x)
-            eprintf(f'Gram line before {g}')
-            g = self.__center_gram_line(g) 
-            eprintf(f'Gram line after (centred) {g}')
+            # eprintf(f'Gram line before {g}')
+            g = self.__center_gram_line(g)
+            # eprintf(f'Gram line after (centred) {g}')
             X_gram_lines.append(g)
         M = np.transpose(X_gram_lines)
         return np.transpose((self.V @ M)[:self.k])
@@ -164,33 +180,39 @@ class MyKernelPCA:
         good_subspace = [[] for i in range(sz)]
         for i in range(sz):
             good_subspace[i] = self.X_initial_space[dists[i][1]]
-        eprintf("V\n", self.V)
+        # eprintf("Good subspace\n", good_subspace)
+        # eprintf("V\n", self.V)
         V1 = deepcopy(self.V[:,:sz])
         for i in range(sz):
             V1[:,i] = self.V[:,dists[i][1]]
-        eprintf("V1\n", V1)
+        # eprintf("V1\n", V1)
         return good_subspace, V1
 
 
     def inverse_transform(self, Y: np.ndarray):
         if not hasattr(self, "k"):
             return Y
-        eprintf("attribute found")
         if not len(Y.shape) == 2:
             raise ValueError("Y array should be at least 2d but got this instead", Y)
         Y_inversed = []
         for y in Y:
             if not len(y) == self.k:
                 raise ValueError(f"dimensionality of point is supposed to be {self.k}, but it is {len(y)}")
-            eprintf("point to find inverse", y)
-            # good_subspace, V1 = self.get_good_subspace(y)
-            good_subspace, V1 = self.X_initial_space, self.V
-            partial_f = partial(MyKernelPCA.f, good_subspace, self.kernel, V1, y)
-            w0, fopt, *rest = optimize.fmin_bfgs(partial_f, np.zeros(len(good_subspace)), full_output=True, disp=False)
+            # eprintf("point to find inverse", y)
+            # eprintf("Constants in the system of non-linear equations", np.linalg.pinv(self.V) @ y)
+            good_subspace, V1 = self.get_good_subspace(y)
+            # good_subspace, V1 = self.X_initial_space, self.V
+            partial_f = partial(MyKernelPCA.f, self.X_initial_space, good_subspace, self.kernel, self.V, y)
+            initial_weights = np.zeros(len(good_subspace))
+            # eprintf("initial value of J", partial_f(initial_weights))
+            w0, fopt, *rest = optimize.fmin(partial_f, initial_weights, full_output=True, disp=False)
             inversed = MyKernelPCA.linear_combination(w0, good_subspace)
             Y_inversed.append(inversed)
-            eprintf("values of the weights are", w0)
-            eprintf(f"the final value of J is {fopt}")
-            eprintf(f"the inverse of point {y} is {inversed}")
+            # eprintf("Values of the weights are", w0)
+            eprintf("Restored point is", inversed)
+            # eprintf("Restored point is", inversed, "Image of the restored point", np.transpose(self.V @ [self.kernel(x, inversed) for x in self.X_initial_space]))
+            # eprintf(f"the final value of J is {fopt}")
+            # eprintf(f"the inverse of point {y} is {inversed}")
+
         return np.array(Y_inversed)
 

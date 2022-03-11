@@ -1,4 +1,4 @@
-from bayes_optim.kpca import MyKernelPCA
+from bayes_optim.kpca import *
 from bayes_optim.mylogging import eprintf
 import pytest
 
@@ -14,6 +14,14 @@ def test_kpca():
     eprintf("transformed point is", ys)
     points1 = kpca.inverse_transform(ys)
     for (point, point1) in zip(points, points1):
-        assert point == pytest.approx(point1, 0.01) 
+        assert point == pytest.approx(point1, 0.01)
+
+
+def test_poly_kernel():
+    global KERNEL_PARAMETERS
+    KERNEL_PARAMETERS['gamma'] = 0.1
+    KERNEL_PARAMETERS['d'] = 2
+    KERNEL_PARAMETERS['c0'] = 0
+    assert polynomial_kernel([1., 2.], [2., 3.]) == pytest.approx(0.64, 0.0001)
 
 

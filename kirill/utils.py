@@ -62,8 +62,8 @@ class PictureSaver:
 def get_rescaled_points(X, Y):
     w = ranking_based_weighting(Y)
     X_copy = deepcopy(X)
-    mu = compute_mean(X)
-    matrix_minus_vector(X, mu)
+    mu = compute_mean(X_copy)
+    matrix_minus_vector(X_copy, mu)
     for i in range(len(X_copy)):
         for j in range(len(X_copy[i])):
             X_copy[i][j] *= w[i]

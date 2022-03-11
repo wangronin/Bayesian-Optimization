@@ -19,13 +19,13 @@ random.seed(SEED)
 np.random.seed(SEED)
 dim = 2
 lb, ub = -5, 5
-OBJECTIVE_FUNCTION = bn.F17()
+OBJECTIVE_FUNCTION = bn.F21()
 
 
 def fitness(x):
 #     x = np.asarray(x)
 #     return np.sum((np.arange(1, dim + 1) * x) ** 2)
-    return OBJECTIVE_FUNCTION(x) 
+    return OBJECTIVE_FUNCTION(x)
 
 
 space = RealSpace([lb, ub], random_seed=SEED) * dim
@@ -37,7 +37,7 @@ opt = KernelPCABO(
     max_FEs=40,
     verbose=True,
     n_point=1,
-    # gamma = 0.0001,
+    n_components=2,
     acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
 )
 

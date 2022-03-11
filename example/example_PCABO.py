@@ -18,7 +18,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 dim = 2
 lb, ub = -5, 5
-OBJECTIVE_FUNCTION = bn.F17()
+OBJECTIVE_FUNCTION = bn.F21()
 
 def fitness(x):
     # x = np.asarray(x)
@@ -38,7 +38,7 @@ opt = PCABO(
     max_FEs=40,
     verbose=True,
     n_point=1,
-    n_components=2,
+    n_components=1,
     acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
 )
 

@@ -128,12 +128,20 @@ class MyChartSaver:
         self.add_evaluated_points(iter_number, X)
         self.saver.save(fig, f"DoE-{iter_number}")
 
-    def save_with_manifold(self, iter_number, X, X_transformed, inverser):
+    def save_with_manifold(self, iter_number, X, X_transformed, lb_f, ub_f, inverser):
         fig = self.create_figure_with_domain()
         self.add_mainfold(X_transformed, inverser)
         self.add_evaluated_points(iter_number, X)
+        N = 100
+        start = lb_f
+        step = (ub_f - lb_f) / N
+        extra_points = []
+        for i in range(N):
+            extra_points.append([start + i*step])
+        # extra_points = np.array(extra_points).transpose()
+        self.add_mainfold(extra_points, inverser)
         self.saver.save(fig, f"DoE-{iter_number}")
-        
+
     def save_feature_space(self, X, y):
         fig = plt.figure()
         colors = MyChartSaver.__compute_colours_2(y)
@@ -152,14 +160,16 @@ class MyChartSaver:
         plt.title(f'Iteration number {self.iter_number}')
         self.saver.save(fig, f'Variance-{self.iter_number}')
 
-    def save_model(self, model, X):
+    def save_model(self, model, X, y_):
         N = 500
         fig = plt.figure()
         X_ = np.linspace(X[:,0].min(), X[:,0].max(), N)
-        Y_ = model.predict(np.array([[x] for x in X_]))
-        plt.plot(X_, Y_)
+        np.concatenate((X_, np.array([x[0] for x in X])), axis=0)
+        Y_predicted = model.predict(np.array([[x] for x in X_]))
+        plt.plot(X_, Y_predicted)
         plt.title(f'Model function after iteration {self.iter_number}')
+        plt.scatter(X, y_, c='red')
         self.saver.save(fig, f'Model-{self.iter_number}')
-            
+
 
 
