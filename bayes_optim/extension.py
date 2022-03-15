@@ -253,6 +253,7 @@ class PCABO(BO):
         self.frange = self.fmax - self.fmin
 
         self.model.fit(X, y_)
+        GLOBAL_CHARTS_SAVER.save_model(self.model, X, y_)
         y_hat = self.model.predict(X)
 
         r2 = r2_score(y_, y_hat)

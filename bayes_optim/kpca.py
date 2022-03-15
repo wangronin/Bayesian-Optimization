@@ -70,7 +70,7 @@ class MyKernelPCA:
         self.kernel = PAIRWISE_KERNEL_FUNCTIONS[kernel_name]
         self.epsilon = epsilon
         self.X_initial_space = X_initial_space
-        self.NN = 100
+        self.NN = 5
 
     def set_initial_space_points(self, X):
         self.X_initial_space = X

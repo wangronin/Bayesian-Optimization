@@ -61,7 +61,7 @@ class MyChartSaver:
                 values[cnt] = obj_f([x, y])
                 cnt += 1
         return points, MyChartSaver.__compute_colours_2(values)
-   
+
     @staticmethod
     def __sample_on_axis(beg, end, step):
         N = int(math.ceil((end - beg) / step))
@@ -71,7 +71,7 @@ class MyChartSaver:
         while cnt < N:
             ans[cnt] = x0
             x0 += step
-            cnt += 1            
+            cnt += 1
         return ans
 
     @staticmethod
@@ -164,12 +164,18 @@ class MyChartSaver:
         N = 500
         fig = plt.figure()
         X_ = np.linspace(X[:,0].min(), X[:,0].max(), N)
-        np.concatenate((X_, np.array([x[0] for x in X])), axis=0)
+        X_ = np.concatenate((X_, np.array([x[0] for x in X])), axis=0)
+        X_.sort()
         Y_predicted = model.predict(np.array([[x] for x in X_]))
+        Y_predicted = [y[0] for y in Y_predicted]
         plt.plot(X_, Y_predicted)
         plt.title(f'Model function after iteration {self.iter_number}')
         plt.scatter(X, y_, c='red')
         self.saver.save(fig, f'Model-{self.iter_number}')
+        # eprintf(f'Iteration number {self.iter_number}')
+        # eprintf("Features space points\n", X)
+        # eprintf("Scaled function values\n", y_)
+        # eprintf("Model predicts\n", [y[0] for y in model.predict(X)])
 
 
 
