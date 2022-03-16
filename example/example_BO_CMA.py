@@ -5,7 +5,7 @@ import numpy as np
 sys.path.insert(0, "./")
 
 from bayes_optim import BO, OptimizerPipeline, RealSpace
-from bayes_optim.acquisition_optim import OnePlusOne_Cholesky_CMA
+from bayes_optim.acquisition import OnePlusOne_Cholesky_CMA
 from bayes_optim.surrogate import GaussianProcess, trend
 from deap import benchmarks
 

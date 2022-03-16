@@ -3,7 +3,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "./")
-from bayes_optim.acquisition_optim import OnePlusOne_Cholesky_CMA
+from bayes_optim.acquisition import OnePlusOne_Cholesky_CMA
 
 
 def obj_fun(x):

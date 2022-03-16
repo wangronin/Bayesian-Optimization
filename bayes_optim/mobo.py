@@ -7,7 +7,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import MinMaxScaler
 from torch import Tensor
 
-from .acquisition_optim import argmax_restart
+from .acquisition import argmax_restart
 from .bayes_opt import BO
 from .multi_objective import EHVI
 from .utils import dynamic_penalty, partial_argument, timeit
