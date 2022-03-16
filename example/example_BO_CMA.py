@@ -4,56 +4,89 @@ import numpy as np
 
 sys.path.insert(0, "./")
 
-from bayes_optim import BO, RealSpace
-from bayes_optim.acquisition_optim import OnePlusOne_Cholesky_CMA
+from bayes_optim import BO, OptimizerPipeline, RealSpace
+from bayes_optim.acquisition import OnePlusOne_Cholesky_CMA
 from bayes_optim.surrogate import GaussianProcess, trend
-import benchmark.bbobbenchmarks as bn
-from bayes_optim.mylogging import eprintf
-
-np.random.seed(0)
-dim = 5
-lb, ub = -5, 5
-OBJECTIVE_FUNCTION = bn.F17()
-
-def fitness(x):
-#     x = np.asarray(x)
-#     return np.sum((np.arange(1, dim + 1) * x) ** 2)
-    eprintf("Evaluated solution:", x, "type", type(x))
-    if type(x) is np.ndarray:
-        x = x.tolist()
-    return OBJECTIVE_FUNCTION(np.array(x)) 
+from deap import benchmarks
 
 
-space = RealSpace([lb, ub]) * dim
-eprintf("new call to PCABO")
-#opt = PCABO(
-#    search_space=space,
-#    obj_fun=fitness,
-#    DoE_size=5,
-#    max_FEs=40,
-#    verbose=True,
-#    n_point=1,
-#    acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
-#)
+class _BO(BO):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._hist_EI = np.zeros(3)
 
+    def ask(self, n_point=None):
+        X = super().ask(n_point=n_point)
+        if self.model.is_fitted:
+            _criter = self._create_acquisition(fun="EI", par={}, return_dx=False)
+            self._hist_EI[(self.iter_count - 1) % 3] = np.mean([_criter(x) for x in X])
+        return X
+
+    def check_stop(self):
+        _delta = self._fBest_DoE - self.fopt
+        if self.iter_count > 1 and np.mean(self._hist_EI[0 : min(3, self.iter_count - 1)]) < 0.01 * _delta:
+            self.stop_dict["low-EI"] = np.mean(self._hist_EI)
+
+        if self.eval_count >= (self.max_FEs / 2):
+            self.stop_dict["max_FEs"] = self.eval_count
+
+        return super().check_stop()
+
+
+np.random.seed(42)
+dim = 2
+max_FEs = 80
+obj_fun = lambda x: benchmarks.griewank(x)[0]
+lb, ub = -600, 600
+
+search_space = RealSpace([lb, ub]) * dim
 model = GaussianProcess(
-    domain=space,
-    n_obj=1,
+    domain=search_space,
+    n_obj=2,
     n_restarts_optimizer=dim,
 )
-
-bo = BO(
-    search_space=space,
-    obj_fun=fitness,
+bo = _BO(
+    search_space=search_space,
+    obj_fun=obj_fun,
     model=model,
-    #eval_type="list",
-    DoE_size=5,
+    eval_type="list",
+    DoE_size=10,
     n_point=1,
-    acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
+    acquisition_fun="EI",
     verbose=True,
     minimize=True,
-    max_FEs=40
 )
+cma = OnePlusOne_Cholesky_CMA(dim=dim, obj_fun=obj_fun, lb=lb, ub=ub)
 
-bo.run()
 
+def post_BO(BO):
+    xopt = BO.xopt
+    dim = BO.dim
+
+    H = BO.model.Hessian(xopt)
+    g = BO.model.gradient(xopt)[0]
+
+    w, B = np.linalg.eigh(H)
+    M = np.diag(1 / np.sqrt(w)).dot(B.T)
+    H_inv = B.dot(np.diag(1 / w)).dot(B.T)
+    sigma0 = np.linalg.norm(M.dot(g)) / np.sqrt(dim - 0.5)
+    if sigma0 == 0:
+        sigma0 = 1 / 5
+
+    if np.isnan(sigma0):
+        sigma0 = 1 / 5
+        H_inv = np.eye(dim)
+
+    kwargs = {
+        "x": xopt,
+        "fopt": BO.fopt,
+        "sigma": sigma0,
+        "C": H_inv,
+    }
+    return kwargs
+
+
+pipe = OptimizerPipeline(obj_fun=obj_fun, minimize=True, max_FEs=max_FEs, verbose=True)
+pipe.add(bo, transfer=post_BO)
+pipe.add(cma)
+pipe.run()

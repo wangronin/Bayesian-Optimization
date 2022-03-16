@@ -1,29 +1,41 @@
 import warnings
 from abc import ABC, abstractmethod
+from typing import Tuple, Union
 
 import numpy as np
 from numpy import exp, sqrt
 from scipy.stats import norm
 
+from ..surrogate import GaussianProcess, RandomForest
+
 __authors__ = ["Hao Wang"]
 
-# TODO: add annotations
 # TODO: implement noisy handling infill criteria, e.g., EQI (expected quantile improvement)
 # TODO: perphaps also enable acquisition function engineering here?
 # TODO: multi-objective extension
 
 
 class AcquisitionFunction(ABC):
-    def __init__(self, model=None, minimize=True):
+    """Base class for acquisition functions"""
+
+    def __init__(self, model: Union[GaussianProcess, RandomForest], minimize: bool = True):
+        """Base class for acquisition functions
+
+        Args:
+            model (Union[GaussianProcess, RandomForest], optional): the surrogate model on which the
+                acquisition function is defined.
+            minimize (bool, optional): whether the underlying problem is subject to minimization.
+                Defaults to True.
+        """
         self.model = model
         self.minimize = minimize
 
     @property
-    def model(self):
+    def model(self) -> Union[GaussianProcess, RandomForest]:
         return self._model
 
     @model.setter
-    def model(self, model):
+    def model(self, model: Union[GaussianProcess, RandomForest]):
         if model is not None:
             self._model = model
             assert hasattr(self._model, "predict")
@@ -31,17 +43,17 @@ class AcquisitionFunction(ABC):
             self._model = None
 
     @abstractmethod
-    def __call__(self, X):
+    def __call__(self, X: np.ndarray):
         raise NotImplementedError
 
-    def _predict(self, X):
+    def _predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         y_hat, sd2 = self._model.predict(X, eval_MSE=True)
         sd = sqrt(sd2)
         if not self.minimize:
             y_hat = -y_hat
         return y_hat, sd
 
-    def _gradient(self, X):
+    def _gradient(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         X_ = np.array(X, dtype=float)
         y_dx, sd2_dx = self._model.gradient(X_)
         y_dx = y_dx.T
@@ -50,49 +62,50 @@ class AcquisitionFunction(ABC):
             y_dx = -y_dx
         return y_dx, sd2_dx
 
-    def check_X(self, X):
-        """Keep input as '2D' object"""
+    def check_X(self, X: np.ndarray) -> np.ndarray:
+        """Check the shape of the input, which is enforced to a 2D array"""
         return np.atleast_2d(X)
 
 
 class ImprovementBased(AcquisitionFunction):
-    def __init__(self, plugin=None, **kwargs):
+    def __init__(self, plugin: float, **kwargs):
         super().__init__(**kwargs)
         self.plugin = plugin
 
     @property
-    def plugin(self):
+    def plugin(self) -> float:
         return self._plugin
 
     @plugin.setter
-    def plugin(self, plugin):
+    def plugin(self, plugin: float):
         if plugin is None:
-            if self._model is not None:
-                self._plugin = (
-                    np.min(self._model.y) if self.minimize else -1.0 * np.max(self._model.y)
-                )
-            else:
-                self._plugin = None
+            assert self._model is not None
+            self._plugin = np.min(self._model.y) if self.minimize else -1.0 * np.max(self._model.y)
         else:
             self._plugin = plugin if self.minimize else -1.0 * plugin
 
 
 class UCB(AcquisitionFunction):
-    def __init__(self, alpha=0.5, **kwargs):
-        """Upper Confidence Bound"""
+    def __init__(self, alpha: float = 0.5, **kwargs):
+        """Upper Confidence Bound
+
+        \alpha(x) = m(x) + \alpha * \sigma(x),
+
+        where m(x) the predicted value and \sigma(x) is the uncertainty of the prediction
+        """
         super().__init__(**kwargs)
         self.alpha = alpha
 
     @property
-    def alpha(self):
+    def alpha(self) -> float:
         return self._alpha
 
     @alpha.setter
-    def alpha(self, alpha):
+    def alpha(self, alpha: float):
         assert alpha > 0
         self._alpha = alpha
 
-    def __call__(self, X, return_dx=False):
+    def __call__(self, X: np.ndarray, return_dx: bool = False):
         X = self.check_X(X)
         n_sample = X.shape[0]
         y_hat, sd = self._predict(X)
@@ -116,7 +129,7 @@ class UCB(AcquisitionFunction):
 
 
 class EI(ImprovementBased):
-    def __call__(self, X, return_dx=False):
+    def __call__(self, X: np.ndarray, return_dx: bool = False) -> np.ndarray:
         X = self.check_X(X)
         n_sample = X.shape[0]
         y_hat, sd = self._predict(X)

@@ -12,7 +12,7 @@ from sklearn.gaussian_process.kernels import ConstantKernel, Matern
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 from abc import ABC, abstractmethod
 
-from . import acquisition_fun as AcquisitionFunction
+from .acquisition import acquisition_fun as AcquisitionFunction
 from .bayes_opt import BO, ParallelBO
 from .search_space import RealSpace, SearchSpace
 from .solution import Solution

@@ -4,7 +4,7 @@ from typing import Any, Callable, List, Optional, Tuple, Union
 
 import numpy as np
 
-from .acquisition_fun import EI, MGFI, PI, UCB
+from .acquisition.acquisition_fun import EI, MGFI, PI, UCB
 from .bayes_opt import BO, AnnealingBO, NoisyBO, ParallelBO
 from .mobo import MOBO
 from .search_space import (

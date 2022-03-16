@@ -12,6 +12,7 @@ from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel
 
 from ...search_space import RealSpace, SearchSpace
 from ...utils import safe_divide
+from .gpr import GaussianProcess
 from .utils import MSLL, SMSE
 
 # from sklearn.model_selection import cross_val_score
@@ -23,7 +24,7 @@ __author__ = "Hao Wang"
 __all__ = ["SMSE", "MSLL", "GaussianProcess"]
 
 
-class GaussianProcess:
+class GaussianProcessSklearn:
     """Wrapper for sklearn's GPR model"""
 
     def __init__(

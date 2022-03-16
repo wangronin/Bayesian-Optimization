@@ -12,10 +12,10 @@ from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
 from bayes_optim.utils.logger import dump_logger, load_logger
 
-from . import acquisition_fun as AcquisitionFunction
 from ._base import BaseOptimizer
-from .acquisition_optim import argmax_restart
-from .acquisition_optim.option import default_AQ_max_FEs, default_AQ_n_restart, default_AQ_wait_iter
+from .acquisition import acquisition_fun as AcquisitionFunction
+from .acquisition import argmax_restart
+from .acquisition.option import default_AQ_max_FEs, default_AQ_n_restart, default_AQ_wait_iter
 from .search_space import RealSpace
 from .solution import Solution
 from .utils import (
