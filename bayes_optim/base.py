@@ -236,12 +236,15 @@ class BaseBO(BaseOptimizer):
         if self._g is not None:
             self._g = func_with_list_arg(self._g, self._eval_type, self.search_space.var_name)
 
+    def _get_acq_function_search_space(self):
+        return self.search_space.filter(fixed.keys(), invert=True)
+
     def __set_argmax(self, fixed: Dict = None):
         """Set ``self._argmax_restart`` for optimizing the acquisition function"""
         fixed = {} if fixed is None else fixed
         self._argmax_restart = functools.partial(
             argmax_restart,
-            search_space=self.search_space.filter(fixed.keys(), invert=True),
+            search_space=self._get_acq_function_search_space(),
             h=partial_argument(self._h, self.search_space.var_name, fixed) if self._h else None,
             g=partial_argument(self._g, self.search_space.var_name, fixed) if self._g else None,
             eval_budget=self.AQ_max_FEs,
@@ -309,7 +312,7 @@ class BaseBO(BaseOptimizer):
         if hasattr(self, "data"):
             index += len(self.data)
 
-        X = Solution(X, index=index, var_name=self._search_space.var_name)
+        X = Solution(X, index=index, var_name=self._get_acq_function_search_space().var_name)
         self.logger.info(msg)
         for i, _ in enumerate(X):
             self.logger.info(f"#{i + 1} - {self._to_pheno(X[i])}")
