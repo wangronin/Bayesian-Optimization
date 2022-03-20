@@ -77,6 +77,8 @@ class KernelTransform(MyKernelPCA):
 
     @staticmethod
     def _check_input(X):
+        return np.atleast_2d(np.asarray(X, dtype=float))
+
     def fit_transform(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         X = self._check_input(X)
         self.fit(X, y)
