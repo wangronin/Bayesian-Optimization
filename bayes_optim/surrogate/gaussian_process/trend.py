@@ -1,23 +1,13 @@
-"""
-Created on Wed Aug 23 16:48:47 2017
+from abc import ABC, abstractmethod
 
-@author: Hao Wang
-@email: wangronin@gmail.com
-"""
-
-from pdb import set_trace
 import numpy as np
-
-from abc import abstractmethod, ABC
-from numpy import newaxis, zeros, tile, eye, r_, c_, ones, array, atleast_2d
+from numpy import array, atleast_2d, c_, eye, newaxis, ones, r_, tile, zeros
 from sklearn.ensemble import RandomForestRegressor
 
-
-class Trend(ABC):
-    pass
+__author__ = "Hao Wang"
 
 
-class BasisExpansionTrend(Trend):
+class BasisExpansionTrend:
     def __init__(self, n_feature, n_dim=None, beta=None):
         """n_dim : the dimension of the function space of the trend function"""
         self.n_feature = int(n_feature)
@@ -64,7 +54,7 @@ class BasisExpansionTrend(Trend):
         if X.shape[1] != self.n_feature:
             X = X.T
         if X.shape[1] != self.n_feature:
-            raise Exception("x does not have the right size!")
+            raise Exception("X does not have the right size!")
         return X
 
     def __eq__(self, trend_b):
@@ -83,7 +73,7 @@ class constant_trend(BasisExpansionTrend):
 
     """
 
-    def __init__(self, n_feature, beta=None):
+    def __init__(self, n_feature: int, beta: float = None):
         super(constant_trend, self).__init__(n_feature, 1, beta)
 
     def F(self, X):
@@ -135,9 +125,7 @@ class quadratic_trend(BasisExpansionTrend):
     """
 
     def __init__(self, n_feature, beta=None):
-        super(quadratic_trend, self).__init__(
-            n_feature, (n_feature + 1) * (n_feature + 2) / 2, beta
-        )
+        super(quadratic_trend, self).__init__(n_feature, (n_feature + 1) * (n_feature + 2) / 2, beta)
 
     def F(self, X):
         X = self.check_input(X)
@@ -154,90 +142,10 @@ class quadratic_trend(BasisExpansionTrend):
         raise NotImplementedError
 
 
-class NonparametricTrend(Trend):
+class NonparametricTrend:
     def __init__(self, X, y):
         self.regr = RandomForestRegressor(20)
         self.regr.fit(X, y)
 
     def __call__(self, X):
         return self.regr.predict(X)
-
-
-if __name__ == "__main__":
-    T = linear_trend(2, beta=(1, 2, 10))
-
-    X = np.random.randn(5, 2)
-    print(T(X))
-    print(T.Jacobian(X))
-
-
-# TODO: remove those functions
-# legacy functions
-def constant(x):
-
-    """
-    Parameters
-    ----------
-    x : array_like
-        An array with shape (n_eval, n_features) giving the locations x at
-        which the regression model should be evaluated.
-
-    Returns
-    -------
-    f : array_like
-        An array with shape (n_eval, p) with the values of the regression
-        model.
-    """
-    x = np.asarray(x, dtype=np.float64)
-    n_eval = x.shape[0]
-    f = np.ones([n_eval, 1])
-    return f
-
-
-def linear(x):
-    """
-    Parameters
-    ----------
-    x : array_like
-        An array with shape (n_eval, n_features) giving the locations x at
-        which the regression model should be evaluated.
-
-    Returns
-    -------
-    f : array_like
-        An array with shape (n_eval, p) with the values of the regression
-        model.
-    """
-    x = np.asarray(x, dtype=np.float64)
-    n_eval = x.shape[0]
-    f = np.hstack([np.ones([n_eval, 1]), x])
-    return f
-
-
-def quadratic(x):
-    """
-    Second order polynomial (quadratic, p = n*(n-1)/2+n+1) regression model.
-
-    x --> f(x) = [ 1, { x_i, i = 1,...,n }, { x_i * x_j,  (i,j) = 1,...,n } ].T
-                                                          i > j
-
-    Parameters
-    ----------
-    x : array_like
-        An array with shape (n_eval, n_features) giving the locations x at
-        which the regression model should be evaluated.
-
-    Returns
-    -------
-    f : array_like
-        An array with shape (n_eval, p) with the values of the regression
-        model.
-    """
-
-    x = np.asarray(x, dtype=np.float64)
-    n_eval, n_features = x.shape
-    f = np.hstack([np.ones([n_eval, 1]), x])
-    for k in range(n_features):
-        f = np.hstack([f, x[:, k, np.newaxis] * x[:, k:]])
-
-    return f

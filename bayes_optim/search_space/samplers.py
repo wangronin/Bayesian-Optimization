@@ -10,6 +10,8 @@ from ..utils.exception import ConstraintEvaluationError
 
 __author__ = "Hao Wang"
 
+warnings.filterwarnings("error")
+
 
 class SCMC:
     r"""Sequential Constrained Monte Carlo sampling
@@ -140,7 +142,7 @@ class SCMC:
     def _ess(self, nu: float, nu_ref: float, X: np.ndarray) -> float:
         """effective sample size"""
         w = self.get_weights(nu, nu_ref, X)
-        v = 0 if np.any(np.isnan(w)) else 1 / np.sum(w ** 2)
+        v = 0 if np.any(np.isnan(w)) else 1 / np.sum(w**2)
         return v - len(X) / 2
 
     def get_weights(self, nu, nu_ref, X):
@@ -170,9 +172,10 @@ class SCMC:
         for _ in range(self.mh_steps):
             X_ = self._rproposal(X, t)
             lp_ = np.array([self._log_posterior(x_, nu) for x_ in X_])
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            try:
                 prob = np.clip(np.exp(lp_ - lp), 0, 1)
+            except Warning:
+                prob = 1
             mask = np.random.rand(N) <= prob
             X[mask, :] = X_[mask, :]
             lp[mask] = lp_[mask]

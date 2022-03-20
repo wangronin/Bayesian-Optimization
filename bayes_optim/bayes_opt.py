@@ -78,6 +78,7 @@ class ParallelBO(BO):
         )
         assert self.n_point > 1
 
+        # TODO: this should be moved to the acquisition functions
         if self._acquisition_fun == "MGFI":
             self._par_name = "t"
             # Log-normal distribution for `t` supported on [0, \infty)
@@ -92,7 +93,7 @@ class ParallelBO(BO):
         else:
             raise NotImplementedError
 
-        _criterion = getattr(AcquisitionFunction, self._acquisition_fun)()
+        _criterion = getattr(AcquisitionFunction, self._acquisition_fun)(model=kwargs["model"])
         if self._par_name not in self._acquisition_par:
             self._acquisition_par[self._par_name] = getattr(_criterion, self._par_name)
 

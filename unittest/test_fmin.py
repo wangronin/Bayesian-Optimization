@@ -2,22 +2,21 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "../")
+sys.path.insert(0, "./")
 from bayes_optim import fmin
-
-np.random.seed(42)
 
 
 def test_fmin():
     def f(x):
         x = np.asarray(x)
-        return np.sum(x ** 2)
+        return np.sum(x**2)
 
     minimum = fmin(f, [-5] * 2, [5] * 2, seed=42, max_FEs=30, verbose=False)
     assert len(minimum) == 5
     assert len(minimum[0]) == 2
-    # assert np.isclose(minimum[1], 0.007165794451494286)
-    # assert all(np.isclose(minimum[0], [-0.04300030341296269, 0.07291617350003657]))
+    # TODO: fix this randomness
+    # assert np.isclose(minimum[1], 0.00392516)
+    # assert all(np.isclose(minimum[0], [-0.03987747660269521, -0.048321251582720576]))
 
     # test warm starting
     X = np.random.rand(10, 2) * 10 - 5

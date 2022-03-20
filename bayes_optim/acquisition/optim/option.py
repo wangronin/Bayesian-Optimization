@@ -1,6 +1,7 @@
 from typing import Callable, Dict
 
 # default aquisition optimization budget
+# TODO: create an Option class similar to CMA-ES
 default_AQ_max_FEs: Dict = {
     "MIES": lambda dim: int(1e3 * dim),
     "BFGS": lambda dim: int(1e2 * dim),

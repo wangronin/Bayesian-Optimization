@@ -40,11 +40,27 @@ obj_fun = lambda x: benchmarks.griewank(x)[0]
 lb, ub = -600, 600
 
 search_space = RealSpace([lb, ub]) * dim
+mean = trend.constant_trend(dim, beta=None)
+
+# autocorrelation parameters of GPR
+thetaL = 1e-10 * (ub - lb) * np.ones(dim)
+thetaU = 10 * (ub - lb) * np.ones(dim)
+theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
 model = GaussianProcess(
-    domain=search_space,
-    n_obj=2,
-    n_restarts_optimizer=dim,
+    mean=mean,
+    corr="squared_exponential",
+    theta0=theta0,
+    thetaL=thetaL,
+    thetaU=thetaU,
+    nugget=1e-5,
+    noise_estim=False,
+    optimizer="BFGS",
+    wait_iter=5,
+    random_start=5 * dim,
+    eval_budget=100 * dim,
 )
+
 bo = _BO(
     search_space=search_space,
     obj_fun=obj_fun,

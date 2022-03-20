@@ -3,7 +3,7 @@ import sys
 import numpy as np
 import pytest
 
-sys.path.insert(0, "../")
+sys.path.insert(0, "./")
 from bayes_optim import BO, IntegerSpace, RealSpace
 from bayes_optim.search_space import DiscreteSpace
 from bayes_optim.surrogate import GaussianProcess, RandomForest
@@ -26,11 +26,20 @@ def g(x):
     return [-x["pc"], x["mu"] - 1.9]
 
 
-@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_BO_equality():
-    dim = 5
+    dim = 2
     search_space = RealSpace([0, 1]) * dim
-    model = GaussianProcess(domain=search_space)
+    thetaL = 1e-5 * np.ones(dim)
+    thetaU = np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+    model = GaussianProcess(
+        corr="squared_exponential",
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=1e-1,
+        random_state=42,
+    )
     xopt, _, __ = BO(
         search_space=search_space,
         obj_fun=obj_fun,
@@ -47,7 +56,6 @@ def test_BO_equality():
     assert np.isclose(h(xopt), 0, atol=1e-1)
 
 
-@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_BO_constraints():
     search_space = (
         IntegerSpace([1, 10], var_name="mu")

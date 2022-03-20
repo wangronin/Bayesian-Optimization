@@ -1,5 +1,4 @@
 import functools
-import logging
 import os
 from abc import abstractmethod
 from copy import copy
@@ -13,8 +12,7 @@ from bayes_optim.utils.logger import dump_logger, load_logger
 
 from ._base import BaseOptimizer
 from .acquisition import acquisition_fun as AcquisitionFunction
-from .acquisition import argmax_restart
-from .acquisition.option import default_AQ_max_FEs, default_AQ_n_restart, default_AQ_wait_iter
+from .acquisition.optim import argmax_restart, default_AQ_max_FEs, default_AQ_n_restart, default_AQ_wait_iter
 from .search_space import RealSpace
 from .solution import Solution
 from .utils import (
@@ -33,6 +31,7 @@ __authors__ = ["Hao Wang"]
 class BaseBO(BaseOptimizer):
     """Bayesian Optimization base class, which implements the Ask-Evaluate-Tell interface"""
 
+    # TODO: `model` cannot be None
     def __init__(
         self,
         model: Optional[Any] = None,

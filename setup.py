@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="bayes-optim",
-    version="0.2.6",
+    version="0.2.7",
     author="Hao Wang",
     author_email="wangronin@gmail.com",
     packages=find_packages(),
@@ -35,5 +35,6 @@ setup(
         "sobol-seq>=0.2.0",
         "py-expression-eval>=0.3.13",
         "torch>=1.9.0",
+        "pytest>=6.2.5",
     ],
 )

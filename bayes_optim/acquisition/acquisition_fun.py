@@ -1,5 +1,6 @@
 import warnings
 from abc import ABC, abstractmethod
+from multiprocessing.sharedctypes import Value
 from typing import Tuple, Union
 
 import numpy as np
@@ -13,6 +14,9 @@ __authors__ = ["Hao Wang"]
 # TODO: implement noisy handling infill criteria, e.g., EQI (expected quantile improvement)
 # TODO: perphaps also enable acquisition function engineering here?
 # TODO: multi-objective extension
+# TODO: maybe handle the minimization/maximization in a abstract problem class
+# TODO: maybe attach the optimizer and constraints to the `AcquisitionFunction`
+# TODO: add an interface to get the free parameters of each acqusition function
 
 
 class AcquisitionFunction(ABC):
@@ -36,31 +40,44 @@ class AcquisitionFunction(ABC):
 
     @model.setter
     def model(self, model: Union[GaussianProcess, RandomForest]):
-        if model is not None:
-            self._model = model
-            assert hasattr(self._model, "predict")
-        else:
-            self._model = None
+        if model is None:
+            raise ValueError("model cannot be None")
+        self._model = model
+        assert hasattr(self._model, "predict")
 
     @abstractmethod
     def __call__(self, X: np.ndarray):
         raise NotImplementedError
 
     def _predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """wrap around `model.predict`
+
+        Args:
+            X (np.ndarray): the input points to be predicted
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: the predicted value and its standard deviation
+        """
         y_hat, sd2 = self._model.predict(X, eval_MSE=True)
-        sd = sqrt(sd2)
         if not self.minimize:
-            y_hat = -y_hat
-        return y_hat, sd
+            y_hat = -1 * y_hat
+        return y_hat, sqrt(sd2)
 
     def _gradient(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """wrap around `model.gradient`: reverse the gradient direction for maximization problem
+
+        Args:
+            X (np.ndarray): the input points to be predicted
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: the gradient of prediction and its standard deviation w.r.t.
+                the decision variables
+        """
         X_ = np.array(X, dtype=float)
         y_dx, sd2_dx = self._model.gradient(X_)
-        y_dx = y_dx.T
-        sd2_dx = sd2_dx.T
         if not self.minimize:
-            y_dx = -y_dx
-        return y_dx, sd2_dx
+            y_dx = -1.0 * y_dx
+        return y_dx.T, sd2_dx.T
 
     def check_X(self, X: np.ndarray) -> np.ndarray:
         """Check the shape of the input, which is enforced to a 2D array"""
@@ -68,7 +85,7 @@ class AcquisitionFunction(ABC):
 
 
 class ImprovementBased(AcquisitionFunction):
-    def __init__(self, plugin: float, **kwargs):
+    def __init__(self, plugin: float = None, **kwargs):
         super().__init__(**kwargs)
         self.plugin = plugin
 
@@ -79,8 +96,10 @@ class ImprovementBased(AcquisitionFunction):
     @plugin.setter
     def plugin(self, plugin: float):
         if plugin is None:
-            assert self._model is not None
-            self._plugin = np.min(self._model.y) if self.minimize else -1.0 * np.max(self._model.y)
+            if hasattr(self._model, "y"):
+                self._plugin = np.min(self._model.y) if self.minimize else -1.0 * np.max(self._model.y)
+            else:
+                self._plugin = None
         else:
             self._plugin = plugin if self.minimize else -1.0 * plugin
 
@@ -129,7 +148,11 @@ class UCB(AcquisitionFunction):
 
 
 class EI(ImprovementBased):
-    def __call__(self, X: np.ndarray, return_dx: bool = False) -> np.ndarray:
+    """Expected Improvement"""
+
+    def __call__(
+        self, X: np.ndarray, return_dx: bool = False
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         X = self.check_X(X)
         n_sample = X.shape[0]
         y_hat, sd = self._predict(X)
@@ -145,32 +168,31 @@ class EI(ImprovementBased):
             if sd < 1e-10:
                 return (0, np.zeros((len(X[0]), 1))) if return_dx else 0
         try:
-            xcr_ = self._plugin - y_hat
+            xcr_ = self.plugin - y_hat
             xcr = xcr_ / sd
             xcr_prob, xcr_dens = norm.cdf(xcr), norm.pdf(xcr)
-            f_value = xcr_ * xcr_prob + sd * xcr_dens
+            value = xcr_ * xcr_prob + sd * xcr_dens
             if n_sample == 1:
-                f_value = sum(f_value)
+                value = sum(value)
         except Exception:  # in case of numerical errors
             # IMPORTANT: always keep the output in the same type
-            f_value = 0
+            value = 0
 
         if return_dx:
             y_dx, sd2_dx = self._gradient(X)
             sd_dx = sd2_dx / (2.0 * sd)
             try:
-                f_dx = -y_dx * xcr_prob + sd_dx * xcr_dens
+                dx = -y_dx * xcr_prob + sd_dx * xcr_dens
             except Exception:
-                f_dx = np.zeros((len(X[0]), 1))
-            return f_value, f_dx
-        return f_value
+                dx = np.zeros((len(X[0]), 1))
+            return value, dx
+        return value
 
 
 class EpsilonPI(ImprovementBased):
+    """epsilon-Probability of Improvement"""
+
     def __init__(self, epsilon=1e-10, **kwargs):
-        """epsilon-Probability of Improvement
-        # TODO: verify the implementation
-        """
         super(EpsilonPI, self).__init__(**kwargs)
         self.epsilon = epsilon
 
@@ -214,22 +236,35 @@ class PI(EpsilonPI):
 
 
 class MGFI(ImprovementBased):
-    def __init__(self, t=1, **kwargs):
+    """Moment Generating Function of the Improvement (MGFI)
+
+    M(x; t) = \Phi((plugin - m(x) + s(x)^2 * t - 1) / s(x)) * exp((plugin - m(x) - 1) * t + (s(x) * t)^2 / 2)
+
+    References:
+
+        Wang, Hao, Bas van Stein, Michael Emmerich, and Thomas Back. "A new acquisition function for Bayesian
+        optimization based on the moment-generating function." In 2017 IEEE International Conference on
+        Systems, Man, and Cybernetics (SMC), pp. 507-512. IEEE, 2017.
+    """
+
+    def __init__(self, t: float = 1, **kwargs):
         """Moment-Generating Function of Improvement proposed in SMC'17 paper"""
         super().__init__(**kwargs)
         self.t = t
 
     @property
-    def t(self):
+    def t(self) -> float:
         return self._t
 
     @t.setter
-    def t(self, t):
+    def t(self, t: float):
         assert t > 0
-        t = min(t, 22.36)  # bigger `t` value would cause numerical overflow
+        t = min(t, 22.36)  # NOTE: huge `t` values would cause numerical overflow
         self._t = t
 
-    def __call__(self, X, return_dx=False):
+    def __call__(
+        self, X: np.ndarray, return_dx: bool = False
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         X = self.check_X(X)
         y_hat, sd = self._predict(X)
         n_sample = X.shape[0]
@@ -242,10 +277,10 @@ class MGFI(ImprovementBased):
         with warnings.catch_warnings():
             warnings.filterwarnings("error")
             try:
-                y_hat_p = y_hat - self._t * sd ** 2.0
+                y_hat_p = y_hat - self._t * sd**2.0
                 beta_p = (self._plugin - y_hat_p) / sd
                 term = self._t * (self._plugin - y_hat - 1)
-                f_ = norm.cdf(beta_p) * exp(term + self._t ** 2.0 * sd ** 2.0 / 2.0)
+                f_ = norm.cdf(beta_p) * exp(term + self._t**2.0 * sd**2.0 / 2.0)
                 if n_sample == 1:
                     f_ = sum(f_)
             except Exception:  # in case of numerical errors
@@ -261,13 +296,13 @@ class MGFI(ImprovementBased):
             with warnings.catch_warnings():
                 warnings.filterwarnings("error")
                 try:
-                    term = exp(self._t * (self._plugin + self._t * sd ** 2.0 / 2 - y_hat - 1))
+                    term = exp(self._t * (self._plugin + self._t * sd**2.0 / 2 - y_hat - 1))
                     m_prime_dx = y_dx - 2.0 * self._t * sd * sd_dx
                     beta_p_dx = -(m_prime_dx + beta_p * sd_dx) / sd
 
                     f_dx = term * (
                         norm.pdf(beta_p) * beta_p_dx
-                        + norm.cdf(beta_p) * ((self._t ** 2) * sd * sd_dx - self._t * y_dx)
+                        + norm.cdf(beta_p) * ((self._t**2) * sd * sd_dx - self._t * y_dx)
                     )
                 except Exception:
                     f_dx = np.zeros((len(X[0]), 1))
@@ -275,22 +310,22 @@ class MGFI(ImprovementBased):
         return f_
 
 
-class GEI(ImprovementBased):
-    def __init__(self, g=1, **kwargs):
-        """Generalized Expected Improvement"""
-        super().__init__(**kwargs)
-        self.g = g
+# class GEI(ImprovementBased):
+#     def __init__(self, g=1, **kwargs):
+#         """Generalized Expected Improvement"""
+#         super().__init__(**kwargs)
+#         self.g = g
 
-    @property
-    def g(self):
-        return self._g
+#     @property
+#     def g(self):
+#         return self._g
 
-    @g.setter
-    def g(self, g):
-        g = int(g)
-        assert g >= 0
-        self._g = g
+#     @g.setter
+#     def g(self, g):
+#         g = int(g)
+#         assert g >= 0
+#         self._g = g
 
-    def __call__(self, X, return_dx=False):
-        # TODO: implement this!!!
-        raise NotImplementedError
+#     def __call__(self, X, return_dx=False):
+#         # TODO: implement this!!!
+#         raise NotImplementedError

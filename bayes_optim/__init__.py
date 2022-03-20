@@ -22,7 +22,7 @@ from .search_space import (
 from .solution import Solution
 from .surrogate import GaussianProcess, RandomForest, trend
 
-__all__ = [
+__all__: List[str] = [
     "BO",
     "ParallelBO",
     "NoisyBO",
@@ -31,7 +31,6 @@ __all__ = [
     "Solution",
     "RandomForest",
     "GaussianProcess",
-    "trend",
     "SearchSpace",
     "IntegerSpace",
     "RealSpace",
@@ -48,6 +47,7 @@ __all__ = [
     "Real",
     "Bool",
     "Discrete",
+    "trend",
 ]
 
 # To use `dill` for the pickling, which works for
@@ -68,8 +68,6 @@ def fmin(
     y0: Union[Vector, None] = None,
     n_point: int = 1,
     args: Tuple = (),
-    # xtol: float = 1e-4,
-    # ftol: float = 1e-4,
     max_FEs: Optional[int] = None,
     verbose: Optional[bool] = False,
     # callback: Optional[Callable] = None,
@@ -136,21 +134,29 @@ def fmin(
     >>> minimum[0]
     0.007165794451494286
     """
-    if seed is not None:
-        _state = np.random.get_state()
-        np.random.seed(seed)
-
     obj_func = lambda x: func(x, *args)
 
     if isinstance(lower, float) and isinstance(upper, float):
-        space = RealSpace([lower, upper])
+        search_space = RealSpace([lower, upper])
     elif isinstance(lower, list) and isinstance(upper, list):
         assert len(lower) == len(upper)
-        space = RealSpace(list(zip(lower, upper)))
+        search_space = RealSpace(list(zip(lower, upper)))
 
+    dim = search_space.dim
+    bounds = np.asarray(search_space.bounds)
     model = GaussianProcess(
-        domain=space,
-        n_restarts_optimizer=space.dim,
+        mean=trend.constant_trend(dim),
+        corr="matern",
+        thetaL=1e-3 * (bounds[:, 1] - bounds[:, 0]),
+        thetaU=1e3 * (bounds[:, 1] - bounds[:, 0]),
+        nugget=1e-6,
+        noise_estim=False,
+        optimizer="BFGS",
+        wait_iter=3,
+        random_start=max(10, dim),
+        likelihood="concentrated",
+        eval_budget=100 * dim,
+        random_state=seed,
     )
 
     # set up the warm-starting and DoE size
@@ -168,7 +174,7 @@ def fmin(
 
     _BO = BO if n_point == 1 else ParallelBO
     opt = _BO(
-        search_space=space,
+        search_space=search_space,
         obj_fun=obj_func,
         model=model,
         DoE_size=DoE_size,
@@ -177,12 +183,10 @@ def fmin(
         max_FEs=max_FEs,
         verbose=verbose,
         n_point=n_point,
+        random_seed=seed,
         **kwargs,
     )
     opt.run()
-
-    if seed is not None:
-        np.random.set_state(_state)
 
     N, n = opt.DoE_size, opt.n_point
     _data, data = opt.data[:N, :], opt.data[N:, :]

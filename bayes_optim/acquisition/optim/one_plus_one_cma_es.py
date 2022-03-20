@@ -5,8 +5,8 @@ from typing import Callable, Dict, List, Union
 import numpy as np
 from scipy.linalg import solve_triangular
 
-from ..search_space import RealSpace, SearchSpace
-from ..utils import dynamic_penalty, get_logger, handle_box_constraint, set_bounds
+from ...search_space import RealSpace, SearchSpace
+from ...utils import dynamic_penalty, get_logger, handle_box_constraint, set_bounds
 
 Vector = List[float]
 Matrix = List[Vector]
@@ -25,7 +25,7 @@ class OnePlusOne_CMA(object):
         h: Callable = None,
         g: Callable = None,
         x0: Union[str, Vector, np.ndarray] = None,
-        sigma0: Union[float] = None,
+        sigma0: float = None,
         C0: Union[Matrix, np.ndarray] = None,
         ftarget: Union[int, float] = None,
         max_FEs: Union[int, str] = np.inf,
@@ -149,7 +149,7 @@ class OnePlusOne_CMA(object):
         self.prob_target = opts["p_succ_target"] if "p_succ_target" in opts else 2 / 11
         self.threshold = opts["p_threshold"] if "p_threshold" in opts else 0.44
         self.d = opts["d"] if "d" in opts else 1 + self.dim / 2
-        self.ccov = opts["ccov"] if "ccov" in opts else 2 / (self.dim ** 2 + 6)
+        self.ccov = opts["ccov"] if "ccov" in opts else 2 / (self.dim**2 + 6)
         self.cp = opts["cp"] if "cp" in opts else 1 / 12
         self.cc = opts["cc"] if "cc" in opts else 2 / (self.dim + 2)
 
@@ -459,7 +459,7 @@ class OnePlusOne_Cholesky_CMA(OnePlusOne_CMA):
 
         w = self.pc.dot(self._A_inv.T)
         w_ = w.dot(self._A_inv)
-        L = np.sum(w ** 2)
+        L = np.sum(w**2)
 
         self._A += (np.sqrt(1 + L * cb / ca) - 1) / L * np.outer(self.pc, w)
         self._A *= np.sqrt(ca)
