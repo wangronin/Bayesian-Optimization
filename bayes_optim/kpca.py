@@ -6,8 +6,6 @@ from math import exp
 from copy import deepcopy
 
 
-KERNEL_PARAMETERS = {}
-
 def additive_chi2_kernel(a, b):
     # TODO
     raise NotImplementedError
@@ -20,19 +18,11 @@ def linear_kernel(a,b):
     # TODO
     raise NotImplementedError
 
-def polynomial_kernel(a, b):
-    gamma = KERNEL_PARAMETERS['gamma']
-    d = KERNEL_PARAMETERS['d']
-    c0 = KERNEL_PARAMETERS['c0']
-    s = 0
-    for ai, bi in zip(a,b):
-        s += ai * bi * gamma
-    s += c0
-    return s ** d
+def polynomial_kernel(a, b, gamma, d, c0, **kwargs):
+    return (sum(ai * bi * gamma for ai, bi in zip(a, b)) + c0) ** d
 
-def rbf_kernel(a, b):
-    gamma = KERNEL_PARAMETERS['gamma']
-    return exp(-gamma*np.sum((np.array(a)-np.array(b))**2))
+def rbf_kernel(a, b, gamma, **kwargs):
+    return exp(-gamma * np.sum((np.array(a) - np.array(b)) ** 2))
 
 def laplacian_kernel(a,b):
     # TODO
@@ -58,22 +48,25 @@ PAIRWISE_KERNEL_FUNCTIONS = {
     "cosine": cosine_similarity,
 }
 
+
+def create_kernel(kernel_name, parameters):
+    kernel_function = PAIRWISE_KERNEL_FUNCTIONS[kernel_name]
+    return partial(kernel_function, **parameters)
+
+
 class MyKernelPCA:
     # Implementation is based on paper García_González_et_al_2021_A_kernel_Principal_Component_Analysis
-    def __init__(self, X_initial_space, kernel_name, epsilon, kernel_params_dict):
-        if kernel_name not in PAIRWISE_KERNEL_FUNCTIONS:
-            raise ValueError(f'There is no kernel with name {kernel_name}')
-        global KERNEL_PARAMETERS
-        for k,v in kernel_params_dict.items():
-            KERNEL_PARAMETERS[k] = v
+    def __init__(self, epsilon, X_initial_space, kernel_name, kernel_params_dict):
         self.kernel_name = kernel_name
-        self.kernel = PAIRWISE_KERNEL_FUNCTIONS[kernel_name]
+        self.kernel_parameters = kernel_params_dict
+        self.kernel = create_kernel(self.kernel_name, self.kernel_parameters)
         self.epsilon = epsilon
         self.X_initial_space = X_initial_space
         self.NN = 5
 
     def set_initial_space_points(self, X):
         self.X_initial_space = X
+
 
     def __center_G(self, G):
         ns = len(G)
@@ -89,7 +82,6 @@ class MyKernelPCA:
         for i in range(len(g)):
             g[i] -= delta
         return g
-
 
     def __sorted_eig(self, X):
         values, vectors = np.linalg.eig(X)
@@ -134,30 +126,42 @@ class MyKernelPCA:
                 comb[j]+=w[i]*X[i][j]
         return comb
 
+    def __is_too_compressed(self, G_centered):
+        EPS = 1e-4
+        too_compressed_points_cnt = 0
+        for i in range(len(G_centered)):
+            ok = False
+            for j in range(len(G_centered[i])):
+                if abs(G_centered[i][j]) > EPS:
+                    ok = True
+                    break
+            if not ok:
+                too_compressed_points_cnt += 1
+        return too_compressed_points_cnt > int(len(G_centered)/2)
+
     def fit(self, X_weighted: np.ndarray):
-        eprintf("X for fit", X_weighted)
+        self.kernel = create_kernel(self.kernel_name, self.kernel_parameters)
         self.X_weighted = X_weighted
         G = [[self.kernel(x1, x2) for x1 in X_weighted] for x2 in X_weighted]
         eprintf("G", np.array(G))
         G_centered = self.__center_G(G)
         eprintf("G_centred", np.array(G_centered))
+        self.too_compressed = self.__is_too_compressed(G_centered)
         eignValues, eignVectors = self.__sorted_eig(G_centered)
         eignValues = eignValues.view(np.float64)
         eignVectors = eignVectors.view(np.float64)
-        eignValuesSum = sum(eignValues)
-        eprintf("Values", eignValues)
-        eprintf("Vectors", eignVectors)
+        eignValuesSum = sum(t**2 for t in eignValues)
         s = 0
         self.k = 0
         while s<(1.-self.epsilon)*eignValuesSum:
             eprintf(f"percentage of first {self.k} components is {s/eignValuesSum*100.}")
-            s += eignValues[self.k]
+            s += eignValues[self.k]**2
             self.k += 1
-        eprintf(f"percentage of first {self.k} components is {s/eignValuesSum*100.}")
+        self.extracted_information = s / eignValuesSum
+        eprintf(f"percentage of first {self.k} components is {self.extracted_information*100.}")
         eprintf("k equals to", self.k)
         V = np.transpose(eignVectors)
         self.V = V[:self.k]
-        eprintf("V", self.V)
 
     def transform(self, X: np.ndarray):
         X_gram_lines = []
@@ -187,7 +191,6 @@ class MyKernelPCA:
             V1[:,i] = self.V[:,dists[i][1]]
         # eprintf("V1\n", V1)
         return good_subspace, V1
-
 
     def inverse_transform(self, Y: np.ndarray):
         if not hasattr(self, "k"):

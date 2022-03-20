@@ -86,7 +86,7 @@ class MyChartSaver:
         for y in Y:
             colours.append(jet_cmap(1. - math.exp(m * (y - min_value))))
         return colours
-        
+    
     @staticmethod
     def __get_column_variances(X):
         variances = []
@@ -161,6 +161,11 @@ class MyChartSaver:
         self.saver.save(fig, f'Variance-{self.iter_number}')
 
     def save_model(self, model, X, y_):
+        if len(X[0]) > 1:
+            fig = plt.figure()
+            plt.title(f'Model function after iteration {self.iter_number} has dimensionality {len(X[0])}')
+            self.saver.save(fig, f'Model-{self.iter_number}')
+            return
         N = 500
         fig = plt.figure()
         X_ = np.linspace(X[:,0].min(), X[:,0].max(), N)
@@ -172,6 +177,7 @@ class MyChartSaver:
         plt.title(f'Model function after iteration {self.iter_number}')
         plt.scatter(X, y_, c='red')
         self.saver.save(fig, f'Model-{self.iter_number}')
+        # eprintf("Length scale", model.my_internal_kernel.length_scale)
         # eprintf(f'Iteration number {self.iter_number}')
         # eprintf("Features space points\n", X)
         # eprintf("Scaled function values\n", y_)

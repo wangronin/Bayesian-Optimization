@@ -10,6 +10,7 @@ from scipy.stats import rankdata
 from sklearn.decomposition import PCA
 from sklearn.gaussian_process.kernels import ConstantKernel, Matern
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
+from abc import ABC, abstractmethod
 
 from . import acquisition_fun as AcquisitionFunction
 from .bayes_opt import BO, ParallelBO
@@ -17,7 +18,7 @@ from .search_space import RealSpace, SearchSpace
 from .solution import Solution
 from .surrogate import GaussianProcess, RandomForest
 from .utils import timeit
-from .kpca import MyKernelPCA
+from .kpca import MyKernelPCA, create_kernel
 
 from .mylogging import *
 import time
@@ -76,8 +77,6 @@ class KernelTransform(MyKernelPCA):
 
     @staticmethod
     def _check_input(X):
-        return np.atleast_2d(np.asarray(X, dtype=float))
-
     def fit_transform(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         X = self._check_input(X)
         self.fit(X, y)
@@ -109,6 +108,82 @@ class KernelTransform(MyKernelPCA):
         return X_scaled
 
     def _fit_kernel_parameters(self, X):
+        self.kernel_name, self.kernel_parameters, result = KernelParamsGridSearch(self.X_initial_space, X, self.epsilon).find_best_for_kernel(self.kernel_name)
+        eprintf(f'Best parameters for {self.kernel_name} are {self.kernel_parameters} and k for them is {result}')
+        self.kernel = create_kernel(self.kernel_name, self.kernel_parameters)
+
+
+class KernelParamsSearchStrategy(ABC):
+    def __init__(self, X: np.ndarray, X_weighted: np.ndarray, epsilon: float):
+        self._X = X
+        self._X_weighted = X_weighted
+        self._epsilon = epsilon
+
+    def find_best_kernel(self, kernel_names: List):
+        best_result = -10
+        best_kernel = None
+        for kernel_name in kernel_names:
+            kernel_name, kernel_params, result = self.find_best_for_kernel(kernel_name)
+            if result > best_result:
+                best_result = result
+                best_kernel = kernel
+        return kernel_name, kernel_params, result
+
+    def find_best_for_kernel(self, kernel_name: String):
+        if kernel_name == 'rbf':
+            params, result = self.find_best_for_rbf()
+        elif kernel_name == 'poly':
+            params, result = self.find_best_for_poly()
+        else:
+            raise NotImplementedError
+        return kernel_name, params, result
+
+    @staticmethod
+    def _try_kernel(parameters, epsilon, X_initial_space, X_weighted, kernel_name):
+        kpca = MyKernelPCA(epsilon, X_initial_space, kernel_name, parameters)
+        kpca.fit(X_weighted)
+        if kpca.too_compressed:
+            return int(1e9), 0
+        return kpca.k, kpca.extracted_information
+
+    @abstractmethod
+    def find_best_for_rbf(self):
+        pass
+
+    @abstractmethod
+    def find_best_for_poly(self):
+        pass
+
+
+class KernelParamsGridSearch(KernelParamsSearchStrategy):
+    @staticmethod
+    def __gamma_exponential_grid_minimizer(f, start, end, steps):
+        t1 = math.log(start)
+        t2 = math.log(end)
+        eps = (t2 - t1) / 100
+        mi, max_second_value, optimal_parameter = int(1e9), int(-1e9), 0.
+        for i in range(steps):
+            gamma = math.pow(math.e, t1 + i*eps)
+            eprintf('Try gamma =', gamma)
+            first_value, second_value = f({'gamma': gamma})
+            if math.isnan(first_value) or math.isnan(second_value):
+                continue
+            eprintf("second value is", second_value)
+            if first_value == mi and second_value > max_second_value:
+                max_second_value = second_value
+                optimal_parameter = gamma
+            if first_value < mi:
+                mi = first_value
+                max_second_value = second_value
+                optimal_parameter = gamma
+        eprintf(f"Min dimensionality is {mi}, with max extracted information {max_second_value} and parameters {optimal_parameter}")
+        return {'gamma': optimal_parameter}, mi
+
+    def find_best_for_rbf(self):
+        f = functools.partial(KernelParamsSearchStrategy._try_kernel, epsilon=self._epsilon, X_initial_space=self._X, X_weighted=self._X_weighted, kernel_name='rbf')
+        return KernelParamsGridSearch.__gamma_exponential_grid_minimizer(f, 1e-16, 1., 100)
+
+    def find_best_for_poly(self):
         pass
 
 
@@ -275,7 +350,7 @@ class KernelPCABO1(BO):
                 "The input argument `model` will be ignored"
             )
         self.__search_space = deepcopy(self._search_space)  # the original search space
-        self._pca = KernelTransform(minimize=self.minimize, X_initial_space=[], kernel_name='rbf', epsilon=0.7, kernel_params_dict={'gamma': 0.0001, 'd': 2, 'c0': 0})
+        self._pca = KernelTransform(minimize=self.minimize, X_initial_space=[], kernel_name='rbf', epsilon=0.8, kernel_params_dict={'gamma': 0.0001, 'd': 2, 'c0': 0})
 
     @staticmethod
     def my_acquisition_function(x, lower_dimensional_acquisition_function, kpca):
@@ -368,7 +443,7 @@ class KernelPCABO1(BO):
         bounds = self._compute_bounds(self._pca, self.__search_space)
         self._search_space = RealSpace(bounds)
         dim = self._search_space.dim
-        self.model = GaussianProcess(domain=self._search_space, n_restarts_optimizer=dim)
+        self.model = GaussianProcess(domain=self._search_space, n_restarts_optimizer=10*dim)
 
         _std = np.std(y)
         y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
