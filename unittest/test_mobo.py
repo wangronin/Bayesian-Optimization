@@ -3,7 +3,7 @@ import sys
 import numpy as np
 import pytest
 
-sys.path.insert(0, "../")
+sys.path.insert(0, "./")
 from bayes_optim import MOBO
 from bayes_optim.search_space import BoolSpace, DiscreteSpace, IntegerSpace, RealSpace
 from bayes_optim.surrogate import GaussianProcess, RandomForest
@@ -30,7 +30,6 @@ def f2(x):
     )
 
 
-@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_3D():
     search_space = (
         RealSpace([0, 100], var_name="Kp", precision=2)
@@ -40,8 +39,19 @@ def test_3D():
     f1 = lambda x: x["Kp"] ** 2 + x["Ki"] + x["Kd"] ** 2
     f2 = lambda x: x["Kp"] + x["Ki"] ** 2 + x["Kd"] ** 2
     f3 = lambda x: x["Kp"] ** 2 + x["Ki"] + x["Kd"]
-    model = GaussianProcess(domain=search_space, n_obj=3)
+    dim = search_space.dim
+    thetaL = 1e-10 * 100 * np.ones(dim)
+    thetaU = 10 * 100 * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
 
+    model = GaussianProcess(
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=0,
+        noise_estim=False,
+        likelihood="concentrated",
+    )
     opt = MOBO(
         search_space=search_space,
         obj_fun=(f1, f2, f3),
@@ -63,7 +73,6 @@ def test_3D():
         X = opt.ask(3)
 
 
-@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_with_constraints():
     search_space = (
         RealSpace([0, 100], var_name="left", precision=2)
@@ -73,14 +82,26 @@ def test_with_constraints():
     f1 = lambda x: x["left"] ** 2 + x["up"] + x["right"] ** 2
     f2 = lambda x: 10 * x["left"] - x["up"] ** 2 + x["right"]
     g = lambda x: x["left"] + x["up"] + x["right"] - 100
-    model = GaussianProcess(domain=search_space, n_obj=2)
+    dim = search_space.dim
+    thetaL = 1e-10 * 100 * np.ones(dim)
+    thetaU = 10 * 100 * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
+    model = GaussianProcess(
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=0,
+        noise_estim=False,
+        likelihood="concentrated",
+    )
     opt = MOBO(
         search_space=search_space,
         obj_fun=(f1, f2),
         ineq_fun=g,
         model=model,
         max_FEs=100,
-        DoE_size=5,  # the initial DoE size
+        DoE_size=1,  # the initial DoE size
         eval_type="dict",
         n_job=1,  # number of processes
         verbose=True,  # turn this off, if you prefer no output

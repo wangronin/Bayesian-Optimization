@@ -7,13 +7,28 @@ sys.path.insert(0, "./")
 import matplotlib.pyplot as plt
 from bayes_optim import DiscreteSpace, IntegerSpace, RealSpace
 from bayes_optim.search_space.samplers import SCMC
+from scipy.stats import norm
 
-# from scipy.stats import norm
-
-tol = 1e-2
 dim = 2
-search_space = RealSpace([-0.2, 0.2]) * dim + DiscreteSpace(["A", "B", "C", "D"]) + IntegerSpace([1, 10])
+search_space = RealSpace([0, 1]) * dim
+h = lambda x: np.abs(np.sum(x) - 1)
+tol = 1e-3
+sampler = SCMC(
+    search_space,
+    [
+        h,
+    ],
+    tol=tol,
+)
 
+for i in range(10):
+    X = sampler.sample(5)
+    print(X)
+    assert np.all([np.isclose(h(x), 0, atol=1e-2, rtol=1e-2) for x in X])
+
+
+dim = 2
+search_space = RealSpace([-5, 5]) * dim + DiscreteSpace(["A", "B", "C", "D"]) + IntegerSpace([1, 10])
 sampler = SCMC(
     search_space,
     [
@@ -24,9 +39,8 @@ sampler = SCMC(
     ],
     # target_dist=lambda x: norm.pdf(x[0], scale=3) * norm.pdf(x[1]),
     tol=tol,
-    sample_out_of_bound=True,
 )
-X = sampler.sample(300)
+X = sampler.sample(100)
 assert np.all([x[2] in ["A", "B"] for x in X])
 
 plt.plot(X[:, 0], X[:, 1], "r.")

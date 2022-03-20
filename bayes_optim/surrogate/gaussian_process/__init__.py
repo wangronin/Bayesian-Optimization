@@ -12,6 +12,7 @@ from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel
 
 from ...search_space import RealSpace, SearchSpace
 from ...utils import safe_divide
+from . import trend
 from .gpr import GaussianProcess
 from .utils import MSLL, SMSE
 
@@ -21,7 +22,7 @@ from .utils import MSLL, SMSE
 warnings.filterwarnings("ignore")
 
 __author__ = "Hao Wang"
-__all__ = ["SMSE", "MSLL", "GaussianProcess"]
+__all__ = ["SMSE", "MSLL", "GaussianProcess", "trend"]
 
 
 class GaussianProcessSklearn:
@@ -186,7 +187,7 @@ class GaussianProcessSklearn:
                 setattr(gp, "_K_inv", L_inv.dot(L_inv.T))
 
             mean_dx[i, ...] = scale * k_dx @ gp.alpha_
-            var_dx[i, ...] = -2.0 * scale ** 2 * np.squeeze(k_dx @ getattr(gp, "_K_inv") @ k)
+            var_dx[i, ...] = -2.0 * scale**2 * np.squeeze(k_dx @ getattr(gp, "_K_inv") @ k)
         return mean_dx, var_dx
 
     def kernel_dx(self, gp: sk_gpr, X: np.ndarray) -> np.ndarray:
@@ -214,7 +215,7 @@ class GaussianProcessSklearn:
         X_ = np.expand_dims(X, 2)  # shape (n_samples, dim, 1)
         X_train_ = np.expand_dims(gp.X_train_.T, 0)  # shape (1, dim, n_train)
         # shape (n_samples, dim, n_train)
-        dd = safe_divide(X_ - X_train_, d * np.expand_dims(length_scale ** 2, 1))
+        dd = safe_divide(X_ - X_train_, d * np.expand_dims(length_scale**2, 1))
 
         if isinstance(kernel, Matern):
             nu = kernel.nu
@@ -225,5 +226,5 @@ class GaussianProcessSklearn:
             elif nu == 2.5:
                 g = -5.0 / 3 * sigma2 * np.exp(-np.sqrt(5) * d) * (1 + np.sqrt(5) * d) * d * dd
         elif isinstance(kernel, RBF):
-            g = -sigma2 * np.exp(-0.5 * d ** 2) * dd
+            g = -sigma2 * np.exp(-0.5 * d**2) * dd
         return g

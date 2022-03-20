@@ -2,9 +2,7 @@ import os
 import string
 import sys
 
-import pytest
-
-sys.path.insert(0, "../")
+sys.path.insert(0, "./")
 import numpy as np
 import pytest
 from bayes_optim import BO, ParallelBO
@@ -16,25 +14,40 @@ from bayes_optim.search_space import (
     RealSpace,
     SubsetSpace,
 )
-from bayes_optim.surrogate import GaussianProcess, RandomForest
+from bayes_optim.surrogate import GaussianProcess, RandomForest, trend
 from bayes_optim.utils.exception import AskEmptyError, FlatFitnessError
 
 np.random.seed(123)
 
 
-@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_pickling():
     dim = 5
     lb, ub = -1, 5
 
     def fitness(x):
         x = np.asarray(x)
-        return np.sum(x ** 2)
+        return np.sum(x**2)
 
     space = RealSpace([lb, ub]) * dim
+
+    mean = trend.constant_trend(dim, beta=None)
+    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
+    thetaU = 10 * (ub - lb) * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
     model = GaussianProcess(
-        domain=space,
-        n_restarts_optimizer=dim,
+        mean=mean,
+        corr="squared_exponential",
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=0,
+        noise_estim=False,
+        optimizer="BFGS",
+        wait_iter=3,
+        random_start=dim,
+        likelihood="concentrated",
+        eval_budget=100 * dim,
     )
     opt = BO(
         search_space=space,
@@ -54,14 +67,14 @@ def test_pickling():
     os.remove("test")
     os.remove("log")
 
-    opt = BO(
+    opt = ParallelBO(
         search_space=space,
         obj_fun=fitness,
         model=model,
         DoE_size=5,
         max_FEs=10,
         verbose=True,
-        n_point=1,
+        n_point=3,
         log_file="log",
     )
     opt.save("test")
@@ -72,7 +85,6 @@ def test_pickling():
     os.remove("log")
 
 
-@pytest.mark.filterwarnings("ignore:The optimal value")
 @pytest.mark.parametrize("var_type", ["r", "b", "c", "i", "o", "s"])
 def test_homogenous(var_type):
     dim = 5
@@ -81,15 +93,26 @@ def test_homogenous(var_type):
         return np.random.rand()
 
     if var_type == "r":
-
-        def fitness(x):
-            return np.sum(np.asarray(x) ** 2)
-
         lb, ub = -1, 5
         space = RealSpace([lb, ub]) * dim
+        mean = trend.constant_trend(dim, beta=None)
+        thetaL = 1e-10 * (ub - lb) * np.ones(dim)
+        thetaU = 10 * (ub - lb) * np.ones(dim)
+        theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
         model = GaussianProcess(
-            domain=space,
-            n_restarts_optimizer=dim,
+            mean=mean,
+            corr="squared_exponential",
+            theta0=theta0,
+            thetaL=thetaL,
+            thetaU=thetaU,
+            nugget=0,
+            noise_estim=False,
+            optimizer="BFGS",
+            wait_iter=3,
+            random_start=dim,
+            likelihood="concentrated",
+            eval_budget=100 * dim,
         )
     else:
         if var_type == "b":
@@ -99,7 +122,7 @@ def test_homogenous(var_type):
         elif var_type == "c":
             space = DiscreteSpace(list(range(10))) * dim
         elif var_type == "o":
-            space = OrdinalSpace(list(string.ascii_letters))
+            space = OrdinalSpace(list(string.ascii_lowercase))
         elif var_type == "s":
             space = SubsetSpace(list(string.ascii_lowercase)[:5])
         model = RandomForest(levels=space.levels)
@@ -109,8 +132,8 @@ def test_homogenous(var_type):
         obj_fun=fitness,
         model=model,
         DoE_size=5,
-        max_FEs=5,
-        verbose=False,
+        max_FEs=10,
+        verbose=True,
         n_point=1,
     )
     print(opt.run())
@@ -153,7 +176,6 @@ def test_fixed_var():
     assert all([x["nominal"] == "OK" and not x["bool"] for x in X])
 
 
-@pytest.mark.filterwarnings("ignore:The optimal value")
 def test_flat_continuous():
     dim = 5
     lb, ub = -1, 5
@@ -162,9 +184,25 @@ def test_flat_continuous():
         return 1
 
     space = RealSpace([lb, ub]) * dim
+
+    mean = trend.constant_trend(dim, beta=None)
+    thetaL = 1e-10 * (ub - lb) * np.ones(dim)
+    thetaU = 10 * (ub - lb) * np.ones(dim)
+    theta0 = np.random.rand(dim) * (thetaU - thetaL) + thetaL
+
     model = GaussianProcess(
-        domain=space,
-        n_restarts_optimizer=dim,
+        mean=mean,
+        corr="squared_exponential",
+        theta0=theta0,
+        thetaL=thetaL,
+        thetaU=thetaU,
+        nugget=0,
+        noise_estim=False,
+        optimizer="BFGS",
+        wait_iter=3,
+        random_start=dim,
+        likelihood="concentrated",
+        eval_budget=100 * dim,
     )
     opt = BO(
         search_space=space,
@@ -213,7 +251,7 @@ def test_mix_space(eval_type):
             x_i = int(x["ordinal"])
             x_d = x["nominal"]
             _ = 0 if x_d == "OK" else 1
-            return np.sum(x_r ** 2) + abs(x_i - 10) / 123.0 + _ * 2
+            return np.sum(x_r**2) + abs(x_i - 10) / 123.0 + _ * 2
 
     elif eval_type == "list":
 
@@ -222,7 +260,7 @@ def test_mix_space(eval_type):
             x_i = x[dim_r]
             x_d = x[dim_r + 1]
             _ = 0 if x_d == "OK" else 1
-            return np.sum(x_r ** 2) + abs(x_i - 10) / 123.0 + _ * 2
+            return np.sum(x_r**2) + abs(x_i - 10) / 123.0 + _ * 2
 
     else:
         raise NotImplementedError

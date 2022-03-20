@@ -4,9 +4,9 @@ import numpy as np
 from numpy import argsort, ceil, exp, mod, zeros
 from numpy.random import geometric, rand, randint, randn
 
-from ..search_space import SearchSpace
-from ..solution import Solution
-from ..utils import dynamic_penalty, handle_box_constraint
+from ...search_space import SearchSpace
+from ...solution import Solution
+from ...utils import dynamic_penalty, handle_box_constraint
 
 __author__ = "Hao Wang"
 
@@ -101,9 +101,7 @@ class MIES:
         self._id_var = np.arange(self.dim)
         self._id_sigma = np.arange(self.N_r) + len(self._id_var)
         self._id_eta = np.arange(self.N_i) + len(self._id_var) + len(self._id_sigma)
-        self._id_p = (
-            np.arange(self.N_p) + len(self._id_var) + len(self._id_sigma) + len(self._id_eta)
-        )
+        self._id_p = np.arange(self.N_p) + len(self._id_var) + len(self._id_sigma) + len(self._id_eta)
         self._id_hyperpar = np.arange(self.dim, self._len)
 
         # initialize the populations
@@ -179,9 +177,7 @@ class MIES:
         if id1 != id2:
             p2 = self.pop[id2]
             # intermediate recombination for the mutation strengths
-            p1[self._id_hyperpar] = (
-                np.array(p1[self._id_hyperpar]) + np.array(p2[self._id_hyperpar])
-            ) / 2
+            p1[self._id_hyperpar] = (np.array(p1[self._id_hyperpar]) + np.array(p2[self._id_hyperpar])) / 2
 
             # dominant recombination for solution parameters
             (_,) = np.nonzero(randn(self.dim) > 0.5)
@@ -208,9 +204,7 @@ class MIES:
         pop.fitness = np.array(list(map(self.obj_func, X))).ravel()
         self.eval_count += pop.N
         _penalized_fitness = (
-            self._penalty_func(
-                X, self.iter_count + 1, self.eq_func, self.ineq_func, minimize=self.minimize
-            )
+            self._penalty_func(X, self.iter_count + 1, self.eq_func, self.ineq_func, minimize=self.minimize)
             + pop.fitness
         )
         return _penalized_fitness if return_penalized else pop.fitness
@@ -263,9 +257,7 @@ class MIES:
         x_ = x + geometric(p) - geometric(p)
 
         # Interval Bounds Treatment
-        x_ = np.asarray(
-            handle_box_constraint(x_, self.bounds_i[:, 0], self.bounds_i[:, 1]), dtype="int"
-        )
+        x_ = np.asarray(handle_box_constraint(x_, self.bounds_i[:, 0], self.bounds_i[:, 1]), dtype="int")
         individual[self.id_i] = x_
         individual[self._id_eta] = eta
 

@@ -8,7 +8,6 @@ import numpy as np
 from joblib import Parallel, delayed
 from scipy.stats import rankdata
 from sklearn.decomposition import PCA
-from sklearn.gaussian_process.kernels import ConstantKernel, Matern
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 from abc import ABC, abstractmethod
 
@@ -16,7 +15,7 @@ from .acquisition import acquisition_fun as AcquisitionFunction
 from .bayes_opt import BO, ParallelBO
 from .search_space import RealSpace, SearchSpace
 from .solution import Solution
-from .surrogate import GaussianProcess, RandomForest
+from .surrogate import GaussianProcess, RandomForest, trend
 from .utils import timeit
 from .kpca import MyKernelPCA, create_kernel
 
@@ -686,7 +685,20 @@ class KernelPCABO(BO):
         # NOTE: the GPR model will be created since the effective search space (the reduced space
         # is dynamic)
         dim = self._search_space.dim
-        self.model = GaussianProcess(domain=self._search_space, n_restarts_optimizer=dim)
+        bounds = np.asarray(self._search_space.bounds)
+        self.model = GaussianProcess(
+            mean=trend.constant_trend(dim),
+            corr="matern",
+            thetaL=1e-3 * (bounds[:, 1] - bounds[:, 0]),
+            thetaU=1e3 * (bounds[:, 1] - bounds[:, 0]),
+            nugget=1e-6,
+            noise_estim=False,
+            optimizer="BFGS",
+            wait_iter=3,
+            random_start=max(10, dim),
+            likelihood="concentrated",
+            eval_budget=100 * dim,
+        )
 
         _std = np.std(y)
         y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
@@ -705,7 +717,7 @@ class KernelPCABO(BO):
 
 class ConditionalBO(ParallelBO):
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(model=RandomForest(levels={}), **kwargs)
         self._create_optimizer(**kwargs)
         self._ucb = np.zeros(self.n_subspace)
         self._to_pheno = lambda x: x.to_dict()
@@ -819,7 +831,7 @@ class MultiAcquisitionBO(ParallelBO):
         self._N_acquisition = len(self._acquisition_fun_list)
 
         for i, _n in enumerate(self._par_name_list):
-            _criterion = getattr(AcquisitionFunction, self._acquisition_fun_list[i])()
+            _criterion = getattr(AcquisitionFunction, self._acquisition_fun_list[i])(model=kwargs["model"])
             if _n not in self._acquisition_par_list[i]:
                 self._acquisition_par_list[i][_n] = getattr(_criterion, _n)
 

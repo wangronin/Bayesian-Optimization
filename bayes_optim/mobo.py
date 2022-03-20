@@ -7,7 +7,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import MinMaxScaler
 from torch import Tensor
 
-from .acquisition import argmax_restart
+from .acquisition.optim import argmax_restart
 from .bayes_opt import BO
 from .multi_objective import EHVI
 from .utils import dynamic_penalty, partial_argument, timeit
@@ -26,7 +26,7 @@ class BaseMOBO(BO):
         self._check_obj_fun(n_obj)
         self._check_minimize(minimize)
 
-    def _check_minimize(self, minimize):
+    def _check_minimize(self, minimize: bool):
         self.minimize = minimize
         if isinstance(self.minimize, bool):
             self.minimize = [self.minimize] * self.n_obj
@@ -34,7 +34,7 @@ class BaseMOBO(BO):
             assert len(self.minimize) == self.n_obj
         self.minimize = np.asarray(self.minimize)
 
-    def _check_obj_fun(self, n_obj):
+    def _check_obj_fun(self, n_obj: int):
         """check the objective functions"""
         self.n_obj = n_obj
         if self.obj_fun is None:

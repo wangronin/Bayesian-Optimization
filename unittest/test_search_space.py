@@ -1,7 +1,7 @@
 import re
 import sys
 
-sys.path.insert(0, "../")
+sys.path.insert(0, "./")
 
 import numpy as np
 import pytest
@@ -34,8 +34,7 @@ def test_Variable():
 
 
 def test_real_warning():
-    with pytest.warns(UserWarning):
-        x = Real([-np.inf, 5], "x", 2, scale="log10")
+    x = Real([-np.inf, 5], "x", 2, scale="log10")
     assert x.bounds[0] == 1e-300
 
 

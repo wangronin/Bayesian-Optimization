@@ -2,14 +2,12 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "../")
+sys.path.insert(0, "./")
 
 from bayes_optim import DiscreteSpace, IntegerSpace, RealSpace
 from bayes_optim.search_space.samplers import SCMC
 
-search_space = (
-    RealSpace([-5, 5]) * 2 + DiscreteSpace(["A", "B", "C", "D"]) + IntegerSpace([1, 10]) * 2
-)
+search_space = RealSpace([-5, 5]) * 2 + DiscreteSpace(["A", "B", "C", "D"]) + IntegerSpace([1, 10]) * 2
 
 
 def h(x):

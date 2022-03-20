@@ -2,22 +2,22 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "../")
-from bayes_optim.acquisition import MIES, OnePlusOne_Cholesky_CMA
+sys.path.insert(0, "./")
+from bayes_optim.acquisition.optim import MIES, OnePlusOne_Cholesky_CMA
 from bayes_optim.search_space import Bool, Discrete, Integer, Ordinal, Real, RealSpace, SearchSpace
 
 
 def obj_fun_min(x):
-    return np.sum(x ** 2)
+    return np.sum(x**2)
 
 
 def obj_fun_max(x):
-    return -np.sum(x ** 2)
+    return -np.sum(x**2)
 
 
 def obj_fun_mies(x):
     x1, x2, x3, x4, x5 = x.tolist()
-    return x1 ** 2 + abs(x5) + x4 - 2 + 10 * int(x3 == "B") + 5 * int(not x2)
+    return x1**2 + abs(x5) + x4 - 2 + 10 * int(x3 == "B") + 5 * int(not x2)
 
 
 def h(x):

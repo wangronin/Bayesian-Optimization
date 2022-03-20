@@ -1,7 +1,7 @@
 import os
 import sys
 
-sys.path.insert(0, "../")
+sys.path.insert(0, "./")
 
 import dill
 import numpy as np
@@ -67,6 +67,7 @@ def test_pickling():
 
 
 def test_to_csv():
+    # # test saving to csv
     s = Solution(np.random.randn(10, 5))
     s.to_csv("test.csv", header=True, attribute=True, index=True)
     os.remove("test.csv")
