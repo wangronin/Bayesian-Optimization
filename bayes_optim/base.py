@@ -4,6 +4,7 @@ import os
 from abc import abstractmethod
 from copy import copy
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from copy import copy, deepcopy
 
 import dill
 import numpy as np
@@ -114,6 +115,7 @@ class BaseBO(BaseOptimizer):
         self.DoE_size = DoE_size
 
         self.acquisition_fun = acquisition_fun
+        self.acq_function_search_space = deepcopy(self.search_space)
         self._acquisition_par = acquisition_par if acquisition_par else {}
         # the callback functions executed after every call of `arg_max_acquisition`
         self._acquisition_callbacks = []
@@ -236,15 +238,19 @@ class BaseBO(BaseOptimizer):
         if self._g is not None:
             self._g = func_with_list_arg(self._g, self._eval_type, self.search_space.var_name)
 
-    def _get_acq_function_search_space(self):
+    def _get_acq_function_search_space(self, fixed):
         return self.search_space.filter(fixed.keys(), invert=True)
+
+    def _get_acq_function_var_names(self):
+        return self._search_space.var_name
 
     def __set_argmax(self, fixed: Dict = None):
         """Set ``self._argmax_restart`` for optimizing the acquisition function"""
         fixed = {} if fixed is None else fixed
+        self.acq_function_search_space = self._get_acq_function_search_space(fixed)
         self._argmax_restart = functools.partial(
             argmax_restart,
-            search_space=self._get_acq_function_search_space(),
+            search_space=self.acq_function_search_space,
             h=partial_argument(self._h, self.search_space.var_name, fixed) if self._h else None,
             g=partial_argument(self._g, self.search_space.var_name, fixed) if self._g else None,
             eval_budget=self.AQ_max_FEs,
@@ -312,7 +318,7 @@ class BaseBO(BaseOptimizer):
         if hasattr(self, "data"):
             index += len(self.data)
 
-        X = Solution(X, index=index, var_name=self._get_acq_function_search_space().var_name)
+        X = Solution(X, index=index, var_name=self._get_acq_function_var_names())
         self.logger.info(msg)
         for i, _ in enumerate(X):
             self.logger.info(f"#{i + 1} - {self._to_pheno(X[i])}")

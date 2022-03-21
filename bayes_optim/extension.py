@@ -436,16 +436,19 @@ class KernelPCABO1(BO):
         GLOBAL_CHARTS_SAVER.save(self.iter_count, self.data)
         self.logger.info(f"xopt/fopt:\n{self.xopt}\n")
 
-    def _get_acq_function_search_space(self):
+    def _get_acq_function_search_space(self, fixed):
         return self.__search_space
+
+    def _get_acq_function_var_names(self):
+        return self.__search_space.var_name
 
     def update_model(self, X: np.ndarray, y: np.ndarray):
         # NOTE: the GPR model will be created since the effective search space (the reduced space
         # is dynamic)
         bounds = self._compute_bounds(self._pca, self.__search_space)
-        self._search_space = RealSpace(bounds)
-        dim = self._search_space.dim
-        self.model = GaussianProcess(domain=self._search_space, n_restarts_optimizer=10*dim)
+        self.search_space = RealSpace(bounds)
+        dim = self.search_space.dim
+        self.model = GaussianProcess(domain=self.search_space, n_restarts_optimizer=10*dim)
 
         _std = np.std(y)
         y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
