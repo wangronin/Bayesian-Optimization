@@ -130,7 +130,7 @@ class KernelParamsSearchStrategy(ABC):
                 best_kernel = kernel
         return kernel_name, kernel_params, result
 
-    def find_best_for_kernel(self, kernel_name: String):
+    def find_best_for_kernel(self, kernel_name: str):
         if kernel_name == 'rbf':
             params, result = self.find_best_for_rbf()
         elif kernel_name == 'poly':
@@ -444,10 +444,22 @@ class KernelPCABO1(BO):
     def update_model(self, X: np.ndarray, y: np.ndarray):
         # NOTE: the GPR model will be created since the effective search space (the reduced space
         # is dynamic)
-        bounds = self._compute_bounds(self._pca, self.__search_space)
+        bounds = np.asarray(self._compute_bounds(self._pca, self.__search_space))
         self.search_space = RealSpace(bounds)
         dim = self.search_space.dim
-        self.model = GaussianProcess(domain=self.search_space, n_restarts_optimizer=10*dim)
+        self.model = GaussianProcess(
+            mean=trend.constant_trend(dim),
+            corr="matern",
+            thetaL=1e-3 * (bounds[:, 1] - bounds[:, 0]),
+            thetaU=1e3 * (bounds[:, 1] - bounds[:, 0]),
+            nugget=1e-6,
+            noise_estim=False,
+            optimizer="BFGS",
+            wait_iter=3,
+            random_start=max(10, dim),
+            likelihood="concentrated",
+            eval_budget=100 * dim,
+        )
 
         _std = np.std(y)
         y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
