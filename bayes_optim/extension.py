@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 from copy import copy, deepcopy
 from typing import Callable, Dict, List, Union
+from enum import Enum
 
 import numpy as np
 from joblib import Parallel, delayed
@@ -69,10 +70,15 @@ class LinearTransform(PCA):
         return inversed
 
 
+KernelFitStrategy = Enum('KernelFitStrategy', 'AUTO FIXED_KERNEL LIST_OF_KERNEL')
+
+
 class KernelTransform(MyKernelPCA):
-    def __init__(self, minimize: bool = True, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, dimensions: int, minimize: bool = True, kernel_fit_strategy: KernelFitStrategy = KernelFitStrategy.AUTO, kernel_config: dict = None, **kwargs):
+        super().__init__(kernel_config=kernel_config, dimensions=dimensions, **kwargs)
         self.minimize = minimize
+        self.kernel_fit_strategy = kernel_fit_strategy
+        self.kernel_config = kernel_config
 
     @staticmethod
     def _check_input(X):
@@ -109,9 +115,16 @@ class KernelTransform(MyKernelPCA):
         return X_scaled
 
     def _fit_kernel_parameters(self, X):
-        self.kernel_name, self.kernel_parameters, result = KernelParamsGridSearch(self.X_initial_space, X, self.epsilon).find_best_for_kernel(self.kernel_name)
-        eprintf(f'Best parameters for {self.kernel_name} are {self.kernel_parameters} and k for them is {result}')
-        self.kernel = create_kernel(self.kernel_name, self.kernel_parameters)
+        if self.kernel_fit_strategy is KernelFitStrategy.FIXED_KERNEL:
+            pass
+        elif self.kernel_fit_strategy is KernelFitStrategy.AUTO:
+            kernel_name, kernel_parameters, result = KernelParamsGridSearch(self.X_initial_space, X, self.epsilon).find_best_kernel(['rbf'])
+            self.kernel_config = {'kernel_name': kernel_name, 'kernel_parameters': kernel_parameters}
+        elif self.kernel_fit_strategy is KernelFitStrategy.LIST_OF_KERNEL:
+            kernel_name, kernel_parameters, result = KernelParamsGridSearch(self.X_initial_space, X, self.epsilon).find_best_kernel(kernel_config['kernel_names'])
+            self.kernel_config = {'kernel_name': kernel_name, 'kernel_parameters': kernel_parameters}
+        else:
+            raise ValueError(f'Kernel fit strategy str(KernelFitStrategy) is not known')
 
 
 class KernelParamsSearchStrategy(ABC):
@@ -122,13 +135,13 @@ class KernelParamsSearchStrategy(ABC):
 
     def find_best_kernel(self, kernel_names: List):
         best_result = -10
-        best_kernel = None
+        best_kernel, best_kernel_name, best_kernel_params = None, None, None
         for kernel_name in kernel_names:
             kernel_name, kernel_params, result = self.find_best_for_kernel(kernel_name)
             if result > best_result:
                 best_result = result
-                best_kernel = kernel
-        return kernel_name, kernel_params, result
+                best_kernel_name, best_kernel_params = kernel_name, kernel_params
+        return best_kernel_name, best_kernel_params, best_result
 
     def find_best_for_kernel(self, kernel_name: str):
         if kernel_name == 'rbf':
@@ -141,7 +154,7 @@ class KernelParamsSearchStrategy(ABC):
 
     @staticmethod
     def _try_kernel(parameters, epsilon, X_initial_space, X_weighted, kernel_name):
-        kpca = MyKernelPCA(epsilon, X_initial_space, kernel_name, parameters)
+        kpca = MyKernelPCA(epsilon, X_initial_space, {'kernel_name': kernel_name, 'kernel_parameters': parameters})
         kpca.fit(X_weighted)
         if kpca.too_compressed:
             return int(1e9), 0
@@ -169,6 +182,7 @@ class KernelParamsGridSearch(KernelParamsSearchStrategy):
             first_value, second_value = f({'gamma': gamma})
             if math.isnan(first_value) or math.isnan(second_value):
                 continue
+            eprintf("first value is", first_value)
             eprintf("second value is", second_value)
             if first_value == mi and second_value > max_second_value:
                 max_second_value = second_value
@@ -185,7 +199,7 @@ class KernelParamsGridSearch(KernelParamsSearchStrategy):
         return KernelParamsGridSearch.__gamma_exponential_grid_minimizer(f, 1e-16, 1., 100)
 
     def find_best_for_poly(self):
-        pass
+        raise NotImplementedError
 
 
 def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
@@ -252,6 +266,12 @@ class PCABO(BO):
         C_ = C.dot(pca.components_.T)
         return [(_ - radius, _ + radius) for _ in C_]
 
+    def get_lower_space_dimensionality(self):
+        return self.search_space.dim
+
+    def get_extracted_information(self):
+        return self._pca.explained_variance_ratio_
+
     def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
         acquisition_func = super()._create_acquisition(
             fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
@@ -307,11 +327,8 @@ class PCABO(BO):
         self.data = self.data + new_X if hasattr(self, "data") else new_X
         # re-fit the PCA transformation
         X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
-        GLOBAL_CHARTS_SAVER.save_with_manifold(self.iter_count, self.data, X, self._pca)
+        # GLOBAL_CHARTS_SAVER.save_with_manifold(self.iter_count, self.data, X, self._pca)
 
-        bounds = self._compute_bounds(self._pca, self.__search_space)
-        # re-set the search space object for the reduced (feature) space
-        self._search_space = RealSpace(bounds)
         # update the surrogate model
         self.update_model(X, self.data.fitness)
         self.logger.info(f"xopt/fopt:\n{self.xopt}\n")
@@ -319,8 +336,23 @@ class PCABO(BO):
     def update_model(self, X: np.ndarray, y: np.ndarray):
         # NOTE: the GPR model will be created since the effective search space (the reduced space
         # is dynamic)
+        bounds = self._compute_bounds(self._pca, self.__search_space)
+        self._search_space = RealSpace(bounds)
+        bounds = np.asarray(bounds)
         dim = self._search_space.dim
-        self.model = GaussianProcess(domain=self._search_space, n_restarts_optimizer=dim)
+        self.model = GaussianProcess(
+            mean=trend.constant_trend(dim),
+            corr="matern",
+            thetaL=1e-3 * (bounds[:, 1] - bounds[:, 0]),
+            thetaU=1e3 * (bounds[:, 1] - bounds[:, 0]),
+            nugget=1e-6,
+            noise_estim=False,
+            optimizer="BFGS",
+            wait_iter=3,
+            random_start=max(10, dim),
+            likelihood="concentrated",
+            eval_budget=100 * dim,
+        )
 
         _std = np.std(y)
         y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
@@ -341,17 +373,18 @@ class KernelPCABO1(BO):
     """Dimensionality reduction using Principle Component Decomposition with kernel trick (Kernel-PCA)
     """
 
-    def __init__(self, n_components: Union[float, int] = None, **kwargs):
+    def __init__(self, max_information_loss=0.2, kernel_fit_strategy: KernelFitStrategy = KernelFitStrategy.AUTO, kernel_config=None, NN: int = None, **kwargs):
         super().__init__(**kwargs)
         global GLOBAL_CHARTS_SAVER
-        GLOBAL_CHARTS_SAVER = MyChartSaver('Kernel-PCABO-Approach-1', 'kernel-PCABO-Ap1', self._search_space.bounds, self.obj_fun)
+        GLOBAL_CHARTS_SAVER = MyChartSaver('Kernel-PCABO-1', 'kernel-PCABO', self._search_space.bounds, self.obj_fun)
         if self.model is not None:
             self.logger.warning(
                 "The surrogate model will be created automatically by PCA-BO. "
                 "The input argument `model` will be ignored"
             )
+        assert isinstance(self._search_space, RealSpace)
         self.__search_space = deepcopy(self._search_space)  # the original search space
-        self._pca = KernelTransform(minimize=self.minimize, X_initial_space=[], kernel_name='rbf', epsilon=0.8, kernel_params_dict={'gamma': 0.0001, 'd': 2, 'c0': 0})
+        self._pca = KernelTransform(dimensions=self.search_space.dim, minimize=self.minimize, X_initial_space=[], epsilon=max_information_loss, kernel_fit_strategy=kernel_fit_strategy, kernel_config=kernel_config, NN=NN)
 
     @staticmethod
     def my_acquisition_function(x, lower_dimensional_acquisition_function, kpca):
@@ -388,7 +421,7 @@ class KernelPCABO1(BO):
 
     @staticmethod
     def _compute_bounds(kpca: MyKernelPCA, search_space: SearchSpace) -> List[float]:
-        if kpca.kernel_name == 'rbf':
+        if kpca.kernel_config['kernel_name'] == 'rbf':
             eprintf("The bounds are", search_space.bounds)
             c = [(lb + ub)/2 for lb,ub in search_space.bounds]
             corner = [ub for _,ub in search_space.bounds]
@@ -400,7 +433,7 @@ class KernelPCABO1(BO):
             C = kpca.transform([c])[0]
             eprintf(f'mean in the feature space is {C}')
             return [(_ - max_features_space_distance_from_mean, _ + max_features_space_distance_from_mean) for _ in C]
-        elif kpca.kernel_name == 'polynomial':
+        elif kpca.kernel_config['kernel_name'] == 'polynomial':
             # TODO implement for the case when the bound box is not centred 
             c = [(lb + ub)/2 for lb,ub in search_space.bounds]
             corner = [ub for _,ub in search_space.bounds]
@@ -410,6 +443,7 @@ class KernelPCABO1(BO):
             return [(_ - max_features_space_distance_from_origin, _ + max_features_space_distance_from_origin) for _ in C]
         else:
             raise NotImplementedError
+
 
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
@@ -578,7 +612,7 @@ class KernelPCABO(BO):
     """Dimensionality reduction using Principle Component Decomposition with kernel trick (Kernel-PCA)
     """
 
-    def __init__(self, n_components: Union[float, int] = None, **kwargs):
+    def __init__(self, max_information_loss=0.2, kernel_fit_strategy: KernelFitStrategy = KernelFitStrategy.AUTO, kernel_config=None, NN: int = None, **kwargs):
         super().__init__(**kwargs)
         global GLOBAL_CHARTS_SAVER
         GLOBAL_CHARTS_SAVER = MyChartSaver('Kernel-PCABO-1', 'kernel-PCABO', self._search_space.bounds, self.obj_fun)
@@ -589,11 +623,11 @@ class KernelPCABO(BO):
             )
         assert isinstance(self._search_space, RealSpace)
         self.__search_space = deepcopy(self._search_space)  # the original search space
-        self._pca = KernelTransform(minimize=self.minimize, X_initial_space=[], kernel_name='rbf', epsilon=0.7, kernel_params_dict={'gamma': 0.0001, 'd': 2, 'c0': 0})
+        self._pca = KernelTransform(dimensions=self.search_space.dim, minimize=self.minimize, X_initial_space=[], epsilon=max_information_loss, kernel_fit_strategy=kernel_fit_strategy, kernel_config=kernel_config, NN=NN)
 
     @staticmethod
     def _compute_bounds(kpca: MyKernelPCA, search_space: SearchSpace) -> List[float]:
-        if kpca.kernel_name == 'rbf':
+        if kpca.kernel_config['kernel_name'] == 'rbf':
             eprintf("The bounds are", search_space.bounds)
             c = [(lb + ub)/2 for lb,ub in search_space.bounds]
             corner = [ub for _,ub in search_space.bounds]
@@ -605,7 +639,7 @@ class KernelPCABO(BO):
             C = kpca.transform([c])[0]
             eprintf(f'mean in the feature space is {C}')
             return [(_ - max_features_space_distance_from_mean, _ + max_features_space_distance_from_mean) for _ in C]
-        elif kpca.kernel_name == 'polynomial':
+        elif kpca.kernel_config['kernel_name'] == 'polynomial':
             # TODO implement for the case when the bound box is not centred 
             c = [(lb + ub)/2 for lb,ub in search_space.bounds]
             corner = [ub for _,ub in search_space.bounds]
@@ -662,6 +696,12 @@ class KernelPCABO(BO):
                 sys.exit(0)
         eprintf('==================== End =========================')
         sys.exit(0)
+
+    def get_lower_space_dimensionality(self):
+        return self._pca.k
+
+    def get_extracted_information(self):
+        return self._pca.extracted_information
 
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")

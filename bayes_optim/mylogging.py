@@ -5,6 +5,7 @@ import os
 import math
 import statistics
 import numpy as np
+from enum import Enum
 
 
 class PictureSaver:
@@ -17,14 +18,13 @@ class PictureSaver:
         fig.savefig(self.path + name + '.' + self.extension)
 
 
-MY_PROGRESS_LOG_FILE = 'progress.csv'
-
-def set_logger_file(file_name_str):
-    global MY_PROGRESS_LOG_FILE
-    MY_PROGRESS_LOG_FILE = file_name_str
+MODE = Enum('EXECUTION MODE', 'DEBUG RELEASE')
+MY_EXECUTION_MODE = MODE.RELEASE
 
 
 def eprintf(*args, **kwargs):
+    if MY_EXECUTION_MODE is not MODE.DEBUG:
+        return
     print(*args, file=sys.stderr, **kwargs)
 
 
@@ -35,6 +35,8 @@ def fprintf(*args, **kwargs):
 
 class MyChartSaver:
     def __init__(self, folder_name, name, bounds, obj_function):
+        if MY_EXECUTION_MODE is not MODE.DEBUG:
+            return
         directory = './'+folder_name+'/'
         self.saver = PictureSaver(directory, "-"+name, "png")
         self.bounds = bounds
@@ -86,7 +88,7 @@ class MyChartSaver:
         for y in Y:
             colours.append(jet_cmap(1. - math.exp(m * (y - min_value))))
         return colours
-    
+
     @staticmethod
     def __get_column_variances(X):
         variances = []
@@ -105,9 +107,13 @@ class MyChartSaver:
         return var_col
 
     def set_iter_number(self, iter_number):
+        if MY_EXECUTION_MODE is not MODE.DEBUG:
+            return
         self.iter_number = iter_number
 
     def create_figure_with_domain(self):
+        if MY_EXECUTION_MODE is not MODE.DEBUG:
+            return
         fig = plt.figure()
         plt.xlim(list(self.bounds[0]))
         plt.ylim(list(self.bounds[1]))
@@ -115,20 +121,28 @@ class MyChartSaver:
         return fig
 
     def add_evaluated_points(self, iter_number, X):
+        if MY_EXECUTION_MODE is not MODE.DEBUG:
+            return
         plt.title(f'Iteration number {iter_number}, last point is ({X[-1][0]:.4f}, {X[-1][1]:.4f})')
         plt.scatter(X[:-1, 0], X[:-1, 1], c='black', marker='X')
         plt.scatter(X[-1][0], X[-1][1], c='red', marker='X')
 
     def add_mainfold(self, X_transformed, inverser):
+        if MY_EXECUTION_MODE is not MODE.DEBUG:
+            return
         X = inverser.inverse_transform(X_transformed)
         plt.scatter(X[:, 0], X[:, 1], c='green')
 
     def save(self, iter_number, X):
+        if MY_EXECUTION_MODE is not MODE.DEBUG:
+            return
         fig = self.create_figure_with_domain()
         self.add_evaluated_points(iter_number, X)
         self.saver.save(fig, f"DoE-{iter_number}")
 
     def save_with_manifold(self, iter_number, X, X_transformed, lb_f, ub_f, inverser):
+        if MY_EXECUTION_MODE is not MODE.DEBUG:
+            return
         fig = self.create_figure_with_domain()
         self.add_mainfold(X_transformed, inverser)
         self.add_evaluated_points(iter_number, X)
@@ -143,6 +157,8 @@ class MyChartSaver:
         self.saver.save(fig, f"DoE-{iter_number}")
 
     def save_feature_space(self, X, y):
+        if MY_EXECUTION_MODE is not MODE.DEBUG:
+            return
         fig = plt.figure()
         colors = MyChartSaver.__compute_colours_2(y)
         plt.title(f'Iteration number {self.iter_number}, last point is ({X[-1][0]:.4f}, {X[-1][1]:.4f})')
@@ -150,6 +166,8 @@ class MyChartSaver:
         self.saver.save(fig, f"Feature-Space-{self.iter_number}")
 
     def save_variances(self, X):
+        if MY_EXECUTION_MODE is not MODE.DEBUG:
+            return
         fig = plt.figure()
         var = self.__get_sorted_var_columns_pairs(X)
         plt.bar([i for i in range(len(var))], [a for (a,b) in var])
@@ -161,6 +179,8 @@ class MyChartSaver:
         self.saver.save(fig, f'Variance-{self.iter_number}')
 
     def save_model(self, model, X, y_):
+        if MY_EXECUTION_MODE is not MODE.DEBUG:
+            return
         if len(X[0]) > 1:
             fig = plt.figure()
             plt.title(f'Model function after iteration {self.iter_number} has dimensionality {len(X[0])}')

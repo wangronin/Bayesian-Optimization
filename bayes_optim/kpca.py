@@ -56,13 +56,11 @@ def create_kernel(kernel_name, parameters):
 
 class MyKernelPCA:
     # Implementation is based on paper García_González_et_al_2021_A_kernel_Principal_Component_Analysis
-    def __init__(self, epsilon, X_initial_space, kernel_name, kernel_params_dict):
-        self.kernel_name = kernel_name
-        self.kernel_parameters = kernel_params_dict
-        self.kernel = create_kernel(self.kernel_name, self.kernel_parameters)
+    def __init__(self, epsilon, X_initial_space, kernel_config, dimensions: int = None, NN: int = None):
+        self.kernel_config = kernel_config
         self.epsilon = epsilon
         self.X_initial_space = X_initial_space
-        self.NN = 5
+        self.NN = dimensions if NN is None else NN
 
     def set_initial_space_points(self, X):
         self.X_initial_space = X
@@ -140,7 +138,8 @@ class MyKernelPCA:
         return too_compressed_points_cnt > int(len(G_centered)/2)
 
     def fit(self, X_weighted: np.ndarray):
-        self.kernel = create_kernel(self.kernel_name, self.kernel_parameters)
+        self.NN = len(X_weighted[0]) + 1
+        self.kernel = create_kernel(self.kernel_config['kernel_name'], self.kernel_config['kernel_parameters'])
         self.X_weighted = X_weighted
         G = [[self.kernel(x1, x2) for x1 in X_weighted] for x2 in X_weighted]
         eprintf("G", np.array(G))

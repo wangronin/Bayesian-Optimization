@@ -271,7 +271,6 @@ class BaseBO(BaseOptimizer):
         func_vals = self.evaluate(X)
         eprintf("candidate solution", X, "function values", func_vals)
         self.tell(X, func_vals)
-        fprintf(f"{self.iter_count},{self.xopt.fitness[0]}\n")
 
     @timeit
     def ask(
