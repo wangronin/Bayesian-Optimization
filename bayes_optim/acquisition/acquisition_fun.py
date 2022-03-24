@@ -6,6 +6,7 @@ from typing import Tuple, Union
 import numpy as np
 from numpy import exp, sqrt
 from scipy.stats import norm
+from bayes_optim.mylogging import eprintf
 
 from ..surrogate import GaussianProcess, RandomForest
 

@@ -143,6 +143,8 @@ class MyChartSaver:
     def save_with_manifold(self, iter_number, X, X_transformed, lb_f, ub_f, inverser):
         if MY_EXECUTION_MODE is not MODE.DEBUG:
             return
+        if len(X_transformed[0]) > 1:
+            return
         fig = self.create_figure_with_domain()
         self.add_mainfold(X_transformed, inverser)
         self.add_evaluated_points(iter_number, X)

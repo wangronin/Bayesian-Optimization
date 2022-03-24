@@ -117,7 +117,7 @@ class Solution(np.ndarray):
                 var_name = ["x"]
             else:
                 var_name = ["x" + str(i) for i in range(obj.dim)]
-        # assert len(var_name) == obj.dim
+        assert len(var_name) == obj.dim
 
         if fitness_name is None:
             if obj.n_obj == 1:
@@ -147,7 +147,7 @@ class Solution(np.ndarray):
         assert self.dim == other.dim
         assert self.n_obj == other.n_obj
         assert len(set(self.fitness_name).symmetric_difference(other.fitness_name)) == 0
-        # assert len(set(self.var_name).symmetric_difference(other.var_name)) == 0
+        assert len(set(self.var_name).symmetric_difference(other.var_name)) == 0
 
         _ = [self.tolist()] if len(self.shape) == 1 else self.tolist()
         __ = [other.tolist()] if len(other.shape) == 1 else other.tolist()

@@ -17,6 +17,8 @@ seed = 0
 random.seed(seed)
 np.random.seed(seed)
 lb, ub = -5, 5
+# OBJECTIVE_FUNCTION = bn.F21()
+
 
 def create_algorithm(func, dim, total_budget, doe_size):
     space = RealSpace([lb, ub], random_seed=seed) * dim
@@ -116,7 +118,7 @@ class AlgorithmWrapper:
         if self.opt is None:
             return -1
         if optimizer_name == 'BO':
-            return self.dim
+            return 1.0
         return self.opt.get_extracted_information()
 
 

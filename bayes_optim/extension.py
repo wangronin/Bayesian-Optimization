@@ -19,6 +19,7 @@ from .solution import Solution
 from .surrogate import GaussianProcess, RandomForest, trend
 from .utils import timeit
 from .kpca import MyKernelPCA, create_kernel
+from .utils import partial_argument
 
 from .mylogging import *
 import time
@@ -178,12 +179,9 @@ class KernelParamsGridSearch(KernelParamsSearchStrategy):
         mi, max_second_value, optimal_parameter = int(1e9), int(-1e9), 0.
         for i in range(steps):
             gamma = math.pow(math.e, t1 + i*eps)
-            eprintf('Try gamma =', gamma)
             first_value, second_value = f({'gamma': gamma})
             if math.isnan(first_value) or math.isnan(second_value):
                 continue
-            eprintf("first value is", first_value)
-            eprintf("second value is", second_value)
             if first_value == mi and second_value > max_second_value:
                 max_second_value = second_value
                 optimal_parameter = gamma
@@ -388,15 +386,24 @@ class KernelPCABO1(BO):
 
     @staticmethod
     def my_acquisition_function(x, lower_dimensional_acquisition_function, kpca):
-        return lower_dimensional_acquisition_function(kpca.transform(x))
+        eprintf('acq x =', x)
+        eprintf('acq lower dim x =', kpca.transform(x))
+        return lower_dimensional_acquisition_function(kpca.transform(x)[0])
 
     def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
-        acquisition_func = super()._create_acquisition(
-            fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
+        fun = fun if fun is not None else self._acquisition_fun
+        par = copy(self._acquisition_par)
+        par.update({"model": self.model, "minimize": self.minimize})
+        criterion = getattr(AcquisitionFunction, fun)(**par)
+        lower_dim_acq_function = partial_argument(
+            func=functools.partial(criterion, return_dx=return_dx),
+            var_name=self.lower_dim_search_space.var_name,
+            fixed=None,
+            reduce_output=return_dx,
         )
         return functools.partial(
             KernelPCABO1.my_acquisition_function,
-            lower_dimensional_acquisition_function=acquisition_func,
+            lower_dimensional_acquisition_function=lower_dim_acq_function,
             kpca=self._pca,
         )
 
@@ -469,18 +476,12 @@ class KernelPCABO1(BO):
         GLOBAL_CHARTS_SAVER.save(self.iter_count, self.data)
         self.logger.info(f"xopt/fopt:\n{self.xopt}\n")
 
-    def _get_acq_function_search_space(self, fixed):
-        return self.__search_space
-
-    def _get_acq_function_var_names(self):
-        return self.__search_space.var_name
-
     def update_model(self, X: np.ndarray, y: np.ndarray):
         # NOTE: the GPR model will be created since the effective search space (the reduced space
         # is dynamic)
         bounds = np.asarray(self._compute_bounds(self._pca, self.__search_space))
-        self.search_space = RealSpace(bounds)
-        dim = self.search_space.dim
+        self.lower_dim_search_space = RealSpace(bounds)
+        dim = self.lower_dim_search_space.dim
         self.model = GaussianProcess(
             mean=trend.constant_trend(dim),
             corr="matern",

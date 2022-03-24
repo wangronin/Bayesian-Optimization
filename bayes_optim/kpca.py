@@ -142,9 +142,7 @@ class MyKernelPCA:
         self.kernel = create_kernel(self.kernel_config['kernel_name'], self.kernel_config['kernel_parameters'])
         self.X_weighted = X_weighted
         G = [[self.kernel(x1, x2) for x1 in X_weighted] for x2 in X_weighted]
-        eprintf("G", np.array(G))
         G_centered = self.__center_G(G)
-        eprintf("G_centred", np.array(G_centered))
         self.too_compressed = self.__is_too_compressed(G_centered)
         eignValues, eignVectors = self.__sorted_eig(G_centered)
         eignValues = eignValues.view(np.float64)
@@ -153,12 +151,9 @@ class MyKernelPCA:
         s = 0
         self.k = 0
         while s<(1.-self.epsilon)*eignValuesSum:
-            eprintf(f"percentage of first {self.k} components is {s/eignValuesSum*100.}")
             s += eignValues[self.k]**2
             self.k += 1
         self.extracted_information = s / eignValuesSum
-        eprintf(f"percentage of first {self.k} components is {self.extracted_information*100.}")
-        eprintf("k equals to", self.k)
         V = np.transpose(eignVectors)
         self.V = V[:self.k]
 
@@ -166,9 +161,7 @@ class MyKernelPCA:
         X_gram_lines = []
         for x in X:
             g = self.__get_gram_line(self.X_initial_space, x)
-            # eprintf(f'Gram line before {g}')
             g = self.__center_gram_line(g)
-            # eprintf(f'Gram line after (centred) {g}')
             X_gram_lines.append(g)
         M = np.transpose(X_gram_lines)
         return np.transpose((self.V @ M)[:self.k])
@@ -183,12 +176,9 @@ class MyKernelPCA:
         good_subspace = [[] for i in range(sz)]
         for i in range(sz):
             good_subspace[i] = self.X_initial_space[dists[i][1]]
-        # eprintf("Good subspace\n", good_subspace)
-        # eprintf("V\n", self.V)
         V1 = deepcopy(self.V[:,:sz])
         for i in range(sz):
             V1[:,i] = self.V[:,dists[i][1]]
-        # eprintf("V1\n", V1)
         return good_subspace, V1
 
     def inverse_transform(self, Y: np.ndarray):
@@ -199,22 +189,15 @@ class MyKernelPCA:
         Y_inversed = []
         for y in Y:
             if not len(y) == self.k:
-                raise ValueError(f"dimensionality of point is supposed to be {self.k}, but it is {len(y)}")
-            # eprintf("point to find inverse", y)
-            # eprintf("Constants in the system of non-linear equations", np.linalg.pinv(self.V) @ y)
+                raise ValueError(f"dimensionality of point is supposed to be {self.k}, but it is {len(y)}, the point {y}")
             good_subspace, V1 = self.get_good_subspace(y)
             # good_subspace, V1 = self.X_initial_space, self.V
             partial_f = partial(MyKernelPCA.f, self.X_initial_space, good_subspace, self.kernel, self.V, y)
             initial_weights = np.zeros(len(good_subspace))
-            # eprintf("initial value of J", partial_f(initial_weights))
             w0, fopt, *rest = optimize.fmin(partial_f, initial_weights, full_output=True, disp=False)
             inversed = MyKernelPCA.linear_combination(w0, good_subspace)
             Y_inversed.append(inversed)
-            # eprintf("Values of the weights are", w0)
-            eprintf("Restored point is", inversed)
-            # eprintf("Restored point is", inversed, "Image of the restored point", np.transpose(self.V @ [self.kernel(x, inversed) for x in self.X_initial_space]))
-            # eprintf(f"the final value of J is {fopt}")
-            # eprintf(f"the inverse of point {y} is {inversed}")
+            eprintf(f"Inverse of point {y} is {inversed}")
 
         return np.array(Y_inversed)
 
