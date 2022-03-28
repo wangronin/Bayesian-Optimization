@@ -80,15 +80,25 @@ class KernelTransform(MyKernelPCA):
         self.minimize = minimize
         self.kernel_fit_strategy = kernel_fit_strategy
         self.kernel_config = kernel_config
+        self.N_same_kernel = 10
+        self.__count_same_kernel = self.N_same_kernel
 
     @staticmethod
     def _check_input(X):
         return np.atleast_2d(np.asarray(X, dtype=float))
 
     def fit_transform(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
+        # eprintf(f"My kernel parameters {self.kernel_config}")
+        # eprintf(f"{self.fit_transform.__name__}: Fit X")
+        # eprintf(X.tolist())
+        # eprintf(f"{self.fit_transform.__name__}: Fit y")
+        # eprintf(y.tolist())
         X = self._check_input(X)
         self.fit(X, y)
-        return self.transform(X)
+        transformed = self.transform(X)
+        # eprintf(f"Transformed")
+        # eprintf(transformed.tolist())
+        return transformed
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> KernelTransform:
         X_scaled = self._weighting_scheme(X, y)
@@ -116,13 +126,17 @@ class KernelTransform(MyKernelPCA):
         return X_scaled
 
     def _fit_kernel_parameters(self, X):
+        if self.__count_same_kernel < self.N_same_kernel:
+            self.__count_same_kernel += 1
+            return
+        self.__count_same_kernel = 0
         if self.kernel_fit_strategy is KernelFitStrategy.FIXED_KERNEL:
             pass
         elif self.kernel_fit_strategy is KernelFitStrategy.AUTO:
             kernel_name, kernel_parameters, result = KernelParamsGridSearch(self.X_initial_space, X, self.epsilon).find_best_kernel(['rbf'])
             self.kernel_config = {'kernel_name': kernel_name, 'kernel_parameters': kernel_parameters}
         elif self.kernel_fit_strategy is KernelFitStrategy.LIST_OF_KERNEL:
-            kernel_name, kernel_parameters, result = KernelParamsGridSearch(self.X_initial_space, X, self.epsilon).find_best_kernel(kernel_config['kernel_names'])
+            kernel_name, kernel_parameters, result = KernelParamsGridSearch(self.X_initial_space, X, self.epsilon).find_best_kernel(self.kernel_config['kernel_names'])
             self.kernel_config = {'kernel_name': kernel_name, 'kernel_parameters': kernel_parameters}
         else:
             raise ValueError(f'Kernel fit strategy str(KernelFitStrategy) is not known')
@@ -305,6 +319,8 @@ class PCABO(BO):
         new_x = new_x1[0]
         is_inside = sum(1 for i in range(len(new_x)) if self.__search_space.bounds[i][0]<= new_x[i] <= self.__search_space.bounds[i][1])==len(new_x)
         eprintf("Is inside?", is_inside)
+        if type(new_x1) is np.ndarray:
+            new_x1 = new_x1.tolist()
         return new_x1
 
     def tell(self, new_X, new_y):
@@ -451,6 +467,11 @@ class KernelPCABO1(BO):
         else:
             raise NotImplementedError
 
+    def get_lower_space_dimensionality(self):
+        return self._pca.k
+
+    def get_extracted_information(self):
+        return self._pca.extracted_information
 
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
@@ -504,7 +525,7 @@ class KernelPCABO1(BO):
 
         self.model.fit(X, y_)
         GLOBAL_CHARTS_SAVER.save_model(self.model, X, y_)
-        y_hat = self.model.predict(X)
+        y_hat = self.model.predict(X, batch_size=None)
 
         r2 = r2_score(y_, y_hat)
         MAPE = mean_absolute_percentage_error(y_, y_hat)
