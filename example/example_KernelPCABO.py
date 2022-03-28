@@ -7,7 +7,7 @@ from bayes_optim import RandomForest, BO, GaussianProcess
 
 sys.path.insert(0, "./")
 
-from bayes_optim.extension import PCABO, RealSpace, KernelPCABO
+from bayes_optim.extension import PCABO, RealSpace, KernelPCABO, KernelFitStrategy
 from bayes_optim.mylogging import eprintf
 
 import benchmark.bbobbenchmarks as bn
@@ -37,8 +37,9 @@ opt = KernelPCABO(
     max_FEs=40,
     verbose=True,
     n_point=1,
-    n_components=2,
     acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
+    max_information_loss = 0.01,
+    kernel_fit_strategy = KernelFitStrategy.AUTO
 )
 
 
