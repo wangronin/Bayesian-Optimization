@@ -1,7 +1,10 @@
 import sys
-from ioh import Experiment, logger, get_problem, problem, OptimizationType
+import os
+from ioh import Experiment, get_problem, logger, problem, OptimizationType
+from bayes_optim.acquisition import OnePlusOne_Cholesky_CMA
 import numpy as np
 import copy
+import time
 
 sys.path.insert(0, "./")
 
@@ -13,12 +16,13 @@ import random
 from functools import partial
 
 
-MY_EXPEREMENT_FOLDER = "TMP"
+MY_EXPEREMENT_FOLDER = "lunchtime_experiment_30_04"
 fids = [21]
 iids = [0]
 dims = [10]
 reps = 5
 problem_type = 'BBOB'
+optimizers = sys.argv[1:]
 optimizer_name = sys.argv[1]
 seed = 0
 random.seed(seed)
@@ -89,8 +93,25 @@ def create_algorithm(func, dim, total_budget, doe_size):
                     ),
                 acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
             )
+    elif optimizer_name == 'CMA_ES':
+        return OnePlusOne_Cholesky_CMA(
+            search_space=space,
+            obj_fun=obj_fun,
+            lb=lb,
+            ub=ub,
+            sigma0=40,
+            ftarget=1e-8,
+            verbose=False,
+        )
     else:
         raise NotImplementedError
+
+
+def validate_optimizers(optimizers):
+    for optimizer in optimizers:
+        global optimizer_name
+        optimizer_name = optimizer
+        create_algorithm(lambda x: 1, 10, 10, 10)
 
 
 class AlgorithmWrapper:
@@ -136,33 +157,126 @@ def get_function_name(fid, iid):
     return 'F' + str(fid) + '_' + str(iid)
 
 
-def create_bbob_problems():
-    for fid in fids:
-        for iid in  iids:
-            my_function = bn.instantiate(ifun=fid, iinstance=iid)[0]
-            f = AlgorithmWrapper.create_fitness(my_function)
-            problem.wrap_real_problem(f, get_function_name(fid, iid), optimization_type=OptimizationType.Minimization)
+class MyFitnessWrapper:
+    def __init__(self, fid, iid, dim, directed_by='Hao'):
+        self.fid = fid
+        self.iid = iid
+        self.dim = dim
+        self.my_loggers = []
+        if directed_by == 'Hao':
+            self.my_function, self.optimum = bn.instantiate(ifun=fid, iinstance=iid)
+            iohf = get_problem(fid, dimension=dim, instance=iid, problem_type = 'Real')
+            self.func_name = iohf.meta_data.name
+        elif directed_by == 'IOH':
+            _, self.optimum = bn.instantiate(ifun=fid, iinstance=iid)
+            self.my_function = get_problem(fid, dimension=dim, instance=iid, problem_type = 'Real')
+            self.func_name = self.my_function.name
+        else:
+            raise ValueError('Unknown way to create function using', directed_by)
+        self.cnt_eval = 0
+        self.best_so_far = float('inf')
+
+    def __call__(self, x):
+        cur_value = self.my_function(x)
+        self.best_so_far = min(self.best_so_far, cur_value)
+        self.cnt_eval += 1
+        for l in self.my_loggers:
+            l.log(self.cnt_eval, cur_value, self.best_so_far)
+        return cur_value
+
+    def attach_logger(self, logger):
+        self.my_loggers.append(logger)
+        logger._set_up_logger(self.fid, self.iid, self.dim, self.func_name)
+
+
+class MyLogger:
+    def __init__(self, folder_name='TMP', algorithm_name='UNKNOWN', suite='unkown suite', algorithm_info='algorithm_info'):
+        self.folder_name = MyLogger.__generate_dir_name(folder_name)
+        self.algorithm_name = algorithm_name
+        self.algorithm_info = algorithm_info
+        self.suite = suite
+        self.create_time = time.time()
+
+    @staticmethod
+    def __generate_dir_name(name, x=0):
+        while True:
+            dir_name = (name + ('-' + str(x))).strip()
+            if not os.path.exists(dir_name):
+                os.mkdir(dir_name)
+                return dir_name
+            else:
+                x = x + 1
+
+    def watch(self, algorithm, extra_data):
+        # self.extra_info_getters = [getattr(algorithm, attr) for attr in extra_data]
+        self.algorithm = algorithm
+        self.extra_info_getters = extra_data
+
+    def _set_up_logger(self, fid, iid, dim, func_name):
+        self.log_info_path = f'{self.folder_name}/IOHprofiler_f{fid}_{func_name}.info'
+        with open(self.log_info_path, 'a') as f:
+            f.write(f'suite = \"{self.suite}\", funcId = {fid}, funcName = \"{func_name}\", DIM = {dim}, maximization = \"F\", algId = \"{self.algorithm_name}\", algInfo = \"{self.algorithm_info}\"\n')
+        self.log_file_path = f'data_f{fid}_{func_name}/IOHprofiler_f{fid}_DIM{dim}.dat'
+        self.log_file_full_path = f'{self.folder_name}/{self.log_file_path}'
+        os.makedirs(os.path.dirname(self.log_file_full_path), exist_ok=True)
+        self.first_line = 0
+        self.last_line = 0
+        with open(self.log_file_full_path, 'a') as f:
+            f.write('\"function evaluation\" \"current f(x)\" \"best-so-far f(x)\" \"current af(x)+b\" \"best af(x)+b\" lower_space_dim extracted_information\n')
+
+    def log(self, cur_evaluation, cur_fitness, best_so_far):
+        with open(self.log_file_full_path, 'a') as f:
+            f.write(f'{cur_evaluation} {cur_fitness} {best_so_far} {cur_fitness} {best_so_far}')
+            for fu in self.extra_info_getters:
+                try:
+                    extra_info = getattr(self.algorithm, fu)
+                except Exception as e:
+                    extra_info = 'None'
+                f.write(f' {extra_info}')
+            f.write('\n')
+            self.last_line += 1
+
+    def finish_logging(self):
+        time_taken = time.time() - self.create_time
+        with open(self.log_info_path, 'a') as f:
+            f.write('%\n')
+            f.write(f'{self.log_file_path}, {self.first_line}:{self.last_line}|{time_taken}')
+
+
+def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep):
+    global seed, optimizer_name
+    seed = rep
+    optimizer_name = my_optimizer_name
+    algorithm = AlgorithmWrapper()
+    l = MyLogger(folder_name=MY_EXPEREMENT_FOLDER, algorithm_name=optimizer_name)
+    print(f'    Logging to the folder {l.folder_name}')
+    l.watch(algorithm, ['lower_space_dim', 'extracted_information'])
+    p = MyFitnessWrapper(fid, iid, dim)
+    p.attach_logger(l)
+    algorithm(p, fid, iid, dim)
+    l.finish_logging()
+
 
 
 def run_experiment():
-    create_bbob_problems()
-    runs_number = len(fids) * len(iids) * len(dims) * reps
+    validate_optimizers(optimizers)
+    runs_number = len(optimizers) * len(fids) * len(iids) * len(dims) * reps
     cur_run_number = 1
-    for fid in fids:
-        for iid in iids:
-            for dim in dims:
-                for rep in range(reps):
-                    print(f'Run {cur_run_number} out of {runs_number}, Algorithm {optimizer_name}, Problem {fid}, Instance {iid}, Dimension {dim}, Repetition {rep+1} ...')
-                    algorithm = AlgorithmWrapper()
-                    l = logger.Analyzer(folder_name=MY_EXPEREMENT_FOLDER, algorithm_name=optimizer_name, triggers=[logger.trigger.ALWAYS])
-                    l.watch(algorithm, ['lower_space_dim', 'extracted_information'])
-                    p = get_problem(get_function_name(fid, iid), instance=iid, dimension=dim)
-                    p.attach_logger(l)
-                    algorithm(p, fid, iid, dim)
-                    print(f'Done')
-                    cur_run_number += 1
+    for my_optimizer_name in optimizers:
+        for fid in fids:
+            for iid in iids:
+                for dim in dims:
+                    for rep in range(reps):
+                        print(f'Run {cur_run_number} out of {runs_number}, Algorithm {my_optimizer_name}, Problem {fid}, Instance {iid}, Dimension {dim}, Repetition {rep+1} ...')
+                        start = time.time()
+                        run_particular_experiment(my_optimizer_name, fid, iid, dim, rep)
+                        end = time.time()
+                        print(f'    Done in {end - start} secs')
+                        cur_run_number += 1
 
 
 if __name__ == '__main__':
+    # import cProfile
+    # cProfile.run('run_experiment()')
     run_experiment()
 
