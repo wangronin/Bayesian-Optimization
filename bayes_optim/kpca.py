@@ -50,6 +50,8 @@ PAIRWISE_KERNEL_FUNCTIONS = {
 
 
 def create_kernel(kernel_name, parameters):
+    if kernel_name == '__internal_rbf':
+        return partial(__internal_rbf, **parameters)
     kernel_function = PAIRWISE_KERNEL_FUNCTIONS[kernel_name]
     return partial(kernel_function, **parameters)
 
@@ -61,10 +63,10 @@ class MyKernelPCA:
         self.epsilon = epsilon
         self.X_initial_space = X_initial_space
         self.NN = dimensions if NN is None else NN
+        self._reuse_rbf_data = False
 
     def set_initial_space_points(self, X):
         self.X_initial_space = X
-
 
     def __center_G(self, G):
         ns = len(G)
@@ -137,11 +139,25 @@ class MyKernelPCA:
                 too_compressed_points_cnt += 1
         return too_compressed_points_cnt > int(len(G_centered)/2)
 
+    def _set_reuse_rbf_data(self, l2_norm_matrix):
+        kernel_name = self.kernel_config['kernel_name']
+        if  kernel_name != 'rbf':
+            raise ValueError(f'rbf kernel is expected, but {kernel_name} found')
+        self._reuse_rbf_data = True
+        self._l2_norm_matrix = l2_norm_matrix
+
+    def __compute_G(self, X_weighted):
+        if self._reuse_rbf_data:
+            G = self._l2_norm_matrix
+            gamma = self.kernel_config['kernel_parameters']['gamma']
+            return [[exp(-gamma * gij) for gij in Gi] for Gi in G]
+        return [[self.kernel(x1, x2) for x1 in X_weighted] for x2 in X_weighted]
+
     def fit(self, X_weighted: np.ndarray):
         self.NN = len(X_weighted[0]) + 1
         self.kernel = create_kernel(self.kernel_config['kernel_name'], self.kernel_config['kernel_parameters'])
         self.X_weighted = X_weighted
-        G = [[self.kernel(x1, x2) for x1 in X_weighted] for x2 in X_weighted]
+        G = self.__compute_G(X_weighted)
         G_centered = self.__center_G(G)
         self.too_compressed = self.__is_too_compressed(G_centered)
         eignValues, eignVectors = self.__sorted_eig(G_centered)

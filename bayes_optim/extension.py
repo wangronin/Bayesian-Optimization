@@ -70,6 +70,9 @@ class LinearTransform(PCA):
         eprintf("Restored point is", inversed)
         return inversed
 
+    def get_explained_variance_ratio(self):
+        return super().explained_variance_ratio_
+
 
 KernelFitStrategy = Enum('KernelFitStrategy', 'AUTO FIXED_KERNEL LIST_OF_KERNEL')
 
@@ -80,7 +83,7 @@ class KernelTransform(MyKernelPCA):
         self.minimize = minimize
         self.kernel_fit_strategy = kernel_fit_strategy
         self.kernel_config = kernel_config
-        self.N_same_kernel = 10
+        self.N_same_kernel = 1
         self.__count_same_kernel = self.N_same_kernel
 
     @staticmethod
@@ -206,8 +209,18 @@ class KernelParamsGridSearch(KernelParamsSearchStrategy):
         eprintf(f"Min dimensionality is {mi}, with max extracted information {max_second_value} and parameters {optimal_parameter}")
         return {'gamma': optimal_parameter}, mi
 
+    @staticmethod
+    def __try_kernel(parameters, epsilon, X_initial_space, X_weighted, kernel_name, l2_norm_matrix):
+        kpca = MyKernelPCA(epsilon, X_initial_space, {'kernel_name': kernel_name, 'kernel_parameters': parameters})
+        kpca._set_reuse_rbf_data(l2_norm_matrix)
+        kpca.fit(X_weighted)
+        if kpca.too_compressed:
+            return int(1e9), 0
+        return kpca.k, kpca.extracted_information
+
     def find_best_for_rbf(self):
-        f = functools.partial(KernelParamsSearchStrategy._try_kernel, epsilon=self._epsilon, X_initial_space=self._X, X_weighted=self._X_weighted, kernel_name='rbf')
+        self.__l2_norm_matrix = [[np.sum((np.array(a) - np.array(b)) ** 2) for a in self._X_weighted] for b in self._X_weighted]
+        f = functools.partial(KernelParamsGridSearch.__try_kernel, epsilon=self._epsilon, X_initial_space=self._X, X_weighted=self._X_weighted, kernel_name='rbf', l2_norm_matrix=self.__l2_norm_matrix)
         return KernelParamsGridSearch.__gamma_exponential_grid_minimizer(f, 1e-16, 1., 100)
 
     def find_best_for_poly(self):
@@ -282,7 +295,9 @@ class PCABO(BO):
         return self.search_space.dim
 
     def get_extracted_information(self):
-        return self._pca.explained_variance_ratio_
+        if hasattr(self._pca, 'explained_variance_ratio_'):
+            return sum(self._pca.explained_variance_ratio_)
+        return None
 
     def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
         acquisition_func = super()._create_acquisition(
