@@ -40,5 +40,5 @@ def test_kernel_parameter_fit():
     best_gamma = 0.002754228703338166
     kernel_transform.fit_transform(X, y)
     my_gamma = kernel_transform.kernel_config['kernel_parameters']['gamma']
-    my_gamma == pytest.approx(best_gamma, 0.0001)
+    assert my_gamma == pytest.approx(best_gamma, abs=0.01)
 

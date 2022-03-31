@@ -116,6 +116,9 @@ class KernelTransform(MyKernelPCA):
         Y = self._check_input(Y)
         return super().inverse_transform(Y)
 
+    def get_kernel_parameters(self):
+        return self.kernel_config
+
     def _weighting_scheme(self, X, y):
         X = self._check_input(X)
         self.center = X.mean(axis=0)
@@ -210,6 +213,25 @@ class KernelParamsGridSearch(KernelParamsSearchStrategy):
         return {'gamma': optimal_parameter}, mi
 
     @staticmethod
+    def __gamma_sequential_grid_minimizer(f, start, end, steps):
+        step_size = (end - start) / 100
+        mi, max_second_value, optimal_parameter = int(1e9), int(-1e9), 0.
+        for i in range(steps):
+            gamma = start + i * step_size
+            first_value, second_value = f({'gamma': gamma})
+            if math.isnan(first_value) or math.isnan(second_value):
+                continue
+            if first_value == mi and second_value > max_second_value:
+                max_second_value = second_value
+                optimal_parameter = gamma
+            if first_value < mi:
+                mi = first_value
+                max_second_value = second_value
+                optimal_parameter = gamma
+        eprintf(f"Min dimensionality is {mi}, with max extracted information {max_second_value} and parameters {optimal_parameter}")
+        return {'gamma': optimal_parameter}, mi
+
+    @staticmethod
     def __try_kernel(parameters, epsilon, X_initial_space, X_weighted, kernel_name, l2_norm_matrix):
         kpca = MyKernelPCA(epsilon, X_initial_space, {'kernel_name': kernel_name, 'kernel_parameters': parameters})
         kpca._set_reuse_rbf_data(l2_norm_matrix)
@@ -221,7 +243,7 @@ class KernelParamsGridSearch(KernelParamsSearchStrategy):
     def find_best_for_rbf(self):
         self.__l2_norm_matrix = [[np.sum((np.array(a) - np.array(b)) ** 2) for a in self._X_weighted] for b in self._X_weighted]
         f = functools.partial(KernelParamsGridSearch.__try_kernel, epsilon=self._epsilon, X_initial_space=self._X, X_weighted=self._X_weighted, kernel_name='rbf', l2_norm_matrix=self.__l2_norm_matrix)
-        return KernelParamsGridSearch.__gamma_exponential_grid_minimizer(f, 1e-16, 1., 100)
+        return KernelParamsGridSearch.__gamma_sequential_grid_minimizer(f, 1e-4, 1., 100)
 
     def find_best_for_poly(self):
         raise NotImplementedError

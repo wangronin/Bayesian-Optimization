@@ -205,5 +205,3 @@ class MyChartSaver:
         # eprintf("Scaled function values\n", y_)
         # eprintf("Model predicts\n", [y[0] for y in model.predict(X)])
 
-
-
