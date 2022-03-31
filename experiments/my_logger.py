@@ -82,7 +82,6 @@ class MyObjectiveFunctionWrapper:
         self.min_distance = float('inf')
 
     def __call__(self, x):
-        print(x)
         cur_value = self.my_function(x)
         distance = cur_value - self.optimum
         self.best_so_far = min(self.best_so_far, cur_value)
