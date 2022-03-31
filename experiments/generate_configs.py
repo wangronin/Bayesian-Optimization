@@ -4,17 +4,16 @@ import json
 from run_by_config import validate_optimizers
 
 
-MY_EXPEREMENT_FOLDER = "TMP"
-fids = [21]
-iids = [0]
-dims = [10]
-reps = 5
-problem_type = 'BBOB'
-optimizers = sys.argv[1:]
-lb, ub = -5, 5
-
-
-def generate_configs():
+def generate_configs(experiment_config_file_name):
+    with open(experiment_config_file_name, 'r') as f:
+        config = json.load(f)
+    results_folder = config['folder']
+    fids = config['optimizers']
+    iids = config['iids']
+    dims = config['dims']
+    reps = config['reps']
+    optimizers = config['optimizers']
+    lb, ub = config['lb'], config['ub']
     validate_optimizers(optimizers)
     runs_number = len(optimizers) * len(fids) * len(iids) * len(dims) * reps
     cur_config_number = 0
@@ -28,7 +27,7 @@ def generate_configs():
                 for dim in dims:
                     for rep in range(reps):
                         experiment_config = {
-                                'folder': f'{MY_EXPEREMENT_FOLDER}-{cur_config_number}',
+                                'folder': f'{results_folder}-{cur_config_number}',
                                 'opt': my_optimizer_name,
                                 'fid': fid,
                                 'iid': iid,
@@ -40,8 +39,9 @@ def generate_configs():
                         with open(f'{dir_name}/{cur_config_number}.json', 'w') as f:
                             json.dump(experiment_config, f)
                         cur_config_number += 1
+    print(f'Generated {cur_config_number} files')
 
 
 if __name__ == '__main__':
-    generate_configs()
+    generate_configs(sys.argv[1])
 
