@@ -8,7 +8,7 @@ def generate_configs(experiment_config_file_name):
     with open(experiment_config_file_name, 'r') as f:
         config = json.load(f)
     results_folder = config['folder']
-    fids = config['optimizers']
+    fids = config['fids']
     iids = config['iids']
     dims = config['dims']
     reps = config['reps']
