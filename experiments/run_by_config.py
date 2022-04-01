@@ -159,16 +159,6 @@ def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep):
     algorithm(my_optimizer_name, p, fid, iid, dim)
     l.finish_logging()
 
-def get_time_hh_mm_ss(sec):
-    # create timedelta and convert it into string
-    td_str = str(timedelta(seconds=sec))
-    print('Time in seconds:', sec)
-
-    # split string into individual component
-    x = td_str.split(':')
-    print('Time in hh:mm:ss:', x[0], 'Hours', x[1], 'Minutes', x[2], 'Seconds')
-
-
 def run_experiment():
     if len(sys.argv) == 1:
         print('No configs given')
