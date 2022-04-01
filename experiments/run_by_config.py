@@ -6,6 +6,7 @@ from bayes_optim.acquisition import OnePlusOne_Cholesky_CMA
 import numpy as np
 import copy
 import time
+from datetime import timedelta
 
 sys.path.insert(0, "./")
 
@@ -158,9 +159,21 @@ def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep):
     algorithm(my_optimizer_name, p, fid, iid, dim)
     l.finish_logging()
 
+def get_time_hh_mm_ss(sec):
+    # create timedelta and convert it into string
+    td_str = str(timedelta(seconds=sec))
+    print('Time in seconds:', sec)
 
-def run_experiment(config_file_name):
-    with open(config_file_name) as f:
+    # split string into individual component
+    x = td_str.split(':')
+    print('Time in hh:mm:ss:', x[0], 'Hours', x[1], 'Minutes', x[2], 'Seconds')
+
+
+def run_experiment():
+    if len(sys.argv) == 1:
+        print('No configs given')
+        return
+    with open(sys.argv[1]) as f:
         m = json.load(f)
     print(f'Running with config {m} ...')
     global MY_EXPEREMENT_FOLDER, lb, ub
@@ -170,9 +183,11 @@ def run_experiment(config_file_name):
     start = time.time()
     run_particular_experiment(m['opt'], m['fid'], m['iid'], m['dim'], m['seed'])
     end = time.time()
-    print(f'    Done in {(end - start):.2f} secs')
+    sec = int(round(end - start))
+    x = str(timedelta(seconds=sec)).split(':')
+    print(f'    Done in {sec} seconds. Which is {x[0]} hours, {x[1]} minutes and {x[2]} seconds')
 
 
 if __name__ == '__main__':
-    run_experiment(sys.argv[1])
+    run_experiment()
 
