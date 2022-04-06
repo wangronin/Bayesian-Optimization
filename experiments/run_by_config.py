@@ -16,6 +16,7 @@ from my_logger import MyIOHFormatOnEveryEvaluationLogger, MyObjectiveFunctionWra
 
 import random
 from functools import partial
+from maria_laura.wrapper import marialaura as create_saasbo
 
 
 MY_EXPEREMENT_FOLDER = "TMP"
@@ -99,6 +100,15 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
             verbose=False,
             random_seed=seed
         )
+    elif optimizer_name == 'SAASBO':
+        return create_saasbo(
+                optimizer_name='saasbo',
+                func=func,
+                ml_dim=dim,
+                ml_total_budget=total_budget,
+                ml_DoE_size=doe_size,
+                random_seed=seed
+                )
     else:
         raise NotImplementedError
 

@@ -25,6 +25,7 @@ def generate_configs(experiment_config_file_name):
         for fid in fids:
             for iid in iids:
                 for dim in dims:
+                    print(f'Ids for opt={my_optimizer_name}, fid={fid}, iid={iid}, dim={dim} are [{cur_config_number}, {cur_config_number+reps-1}]')
                     for rep in range(reps):
                         experiment_config = {
                                 'folder': f'{results_folder}-{cur_config_number}',
