@@ -93,13 +93,14 @@ python ../single_experiment.py $CONFIG
         print(f'Generated {cur_config_number} files')
         self.generated_configs = cur_config_number
 
-    def go_to_experiment_folder():
-        os.chdir(self.experiment_root)
+    def print_helper(self):
+        print(f'cd {self.experiment_root} && sbatch slurm.sh')
 
 
 def main(argv):
     env = ExperimentEnvironment()
     env.set_up_by_experiment_config_file(argv[1])
+    env.print_helper()
 
 
 if __name__ == '__main__':
