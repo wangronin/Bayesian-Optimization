@@ -8,7 +8,7 @@ from single_experiment import validate_optimizers
 class ExperimentEnvironment:
     SLURM_SCRIPT_TEMPLATE = '''#!/bin/env bash
 
-#SBATCH --job-name=BO-##folder##
+#SBATCH --job-name=##folder##
 #SBATCH --array=0-##number##
 #SBATCH --partition=cpu-long
 #SBATCH --mem-per-cpu=1G
