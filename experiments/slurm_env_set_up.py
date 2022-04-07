@@ -6,8 +6,7 @@ from single_experiment import validate_optimizers
 
 
 class ExperimentEnvironment:
-    SLURM_SCRIPT_TEMPLATE = '''
-#!/bin/env bash
+    SLURM_SCRIPT_TEMPLATE = '''#!/bin/env bash
 
 #SBATCH --job-name=BO-##folder##
 #SBATCH --array=0-##number##
@@ -36,13 +35,17 @@ python ../single_experiment.py $CONFIG
 
     def set_up_by_experiment_config_file(self, experiment_config_file_name):
         self.__generate_configs(experiment_config_file_name)
+        self.__create_log_dir()
         self.__generate_slurm_script()
+
+    def __create_log_dir(self):
+        self.logs_folder = os.path.join(self.experiment_root, 'logs')
+        os.mkdir(self.logs_folder)
 
     def __generate_slurm_script(self):
         slurm_script_file_name = os.path.join(self.experiment_root, 'slurm.sh')
-        logs_folder = os.path.join(self.experiment_root, 'logs')
-        logs_out = os.path.join(logs_folder, '%A_%a.out')
-        logs_err = os.path.join(logs_folder, '%A_%a.err')
+        logs_out = os.path.join(self.logs_folder, '%A_%a.out')
+        logs_err = os.path.join(self.logs_folder, '%A_%a.err')
         script = ExperimentEnvironment.SLURM_SCRIPT_TEMPLATE\
                 .replace('##folder##', self.result_folder_prefix)\
                 .replace('##number##', str(self.generated_configs))\
