@@ -161,13 +161,17 @@ class MyKernelPCA:
         G_centered = self.__center_G(G)
         self.too_compressed = self.__is_too_compressed(G_centered)
         eignValues, eignVectors = self.__sorted_eig(G_centered)
+        eignValues[eignValues < 0] = 0
+        for e in eignValues:
+            if e < 0:
+                breakpoint()
         eignValues = eignValues.view(np.float64)
         eignVectors = eignVectors.view(np.float64)
-        eignValuesSum = sum(t**2 for t in eignValues)
+        eignValuesSum = sum(t for t in eignValues)
         s = 0
         self.k = 0
         while s<(1.-self.epsilon)*eignValuesSum:
-            s += eignValues[self.k]**2
+            s += eignValues[self.k]
             self.k += 1
         self.extracted_information = s / eignValuesSum
         V = np.transpose(eignVectors)
@@ -210,7 +214,7 @@ class MyKernelPCA:
             # good_subspace, V1 = self.X_initial_space, self.V
             partial_f = partial(MyKernelPCA.f, self.X_initial_space, good_subspace, self.kernel, self.V, y)
             initial_weights = np.zeros(len(good_subspace))
-            w0, fopt, *rest = optimize.fmin(partial_f, initial_weights, full_output=True, disp=False)
+            w0, fopt, *rest = optimize.fmin_bfgs(partial_f, initial_weights, full_output=True, disp=False)
             inversed = MyKernelPCA.linear_combination(w0, good_subspace)
             Y_inversed.append(inversed)
             eprintf(f"Inverse of point {y} is {inversed}")
