@@ -35,7 +35,7 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
                 verbose=False,
                 n_point=1,
                 acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
-                max_information_loss = 0.2,
+                max_information_loss = 0.1,
                 kernel_fit_strategy=KernelFitStrategy.AUTO,
                 NN=dim
             )
