@@ -121,7 +121,7 @@ class MyKernelPCA:
         idx_lower = np.where(x_ < bounds_[:, 0])[0]
         idx_upper = np.where(x_ > bounds_[:, 1])[0]
         penalty = np.sum([bounds_[i, 0] - x_[i] for i in idx_lower]) + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
-        return sum((np.transpose(np.array(z_star)) - np.matmul(V, np.array(g_star)))**2) + math.exp(penalty)
+        return sum((np.transpose(np.array(z_star)) - np.matmul(V, np.array(g_star)))**2) + np.exp(penalty)
 
     @staticmethod
     def linear_combination(w, X):
