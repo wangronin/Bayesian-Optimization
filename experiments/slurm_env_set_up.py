@@ -9,7 +9,7 @@ class ExperimentEnvironment:
     SLURM_SCRIPT_TEMPLATE = '''#!/bin/env bash
 
 #SBATCH --job-name=##folder##
-#SBATCH --array=0-##number##
+#SBATCH --array=##from_number##-##to_number##
 #SBATCH --partition=cpu-long
 #SBATCH --mem-per-cpu=1G
 #SBATCH --time=7-00:00:00
@@ -20,9 +20,7 @@ class ExperimentEnvironment:
 #SBATCH --output=##logs_out##
 #SBATCH --error=##logs_err##
 
-FILES=(configs/*)
-CONFIG=${FILES[$SLURM_ARRAY_TASK_ID]}
-python ../single_experiment.py $CONFIG
+python ../single_experiment.py configs/${SLURM_ARRAY_TASK_ID}.json
 '''
 
     def __init__(self):
@@ -32,6 +30,8 @@ python ../single_experiment.py $CONFIG
         os.makedirs(folder_name, exist_ok=False)
         print(f'Experiment root is: {folder_name}')
         self.experiment_root = os.path.abspath(folder_name)
+        self.__max_array_size = 1000
+        self.__number_of_slurm_scripts = 0
 
     def set_up_by_experiment_config_file(self, experiment_config_file_name):
         self.__generate_configs(experiment_config_file_name)
@@ -43,16 +43,29 @@ python ../single_experiment.py $CONFIG
         os.mkdir(self.logs_folder)
 
     def __generate_slurm_script(self):
-        slurm_script_file_name = os.path.join(self.experiment_root, 'slurm.sh')
+        self.__number_of_slurm_scripts = 0
         logs_out = os.path.join(self.logs_folder, '%A_%a.out')
         logs_err = os.path.join(self.logs_folder, '%A_%a.err')
         script = ExperimentEnvironment.SLURM_SCRIPT_TEMPLATE\
                 .replace('##folder##', self.result_folder_prefix)\
-                .replace('##number##', str(self.generated_configs))\
                 .replace('##logs_out##', logs_out)\
                 .replace('##logs_err##', logs_err)
-        with open(slurm_script_file_name, 'w') as f:
-            f.write(script)
+        offset = 0
+        for i in range(self.generated_configs // self.__max_array_size):
+            with open(os.path.join(self.experiment_root, f'slurm{self.__number_of_slurm_scripts}.sh'), 'w') as f:
+                f.write(script\
+                        .replace('##from_number##', str(offset))\
+                        .replace('##to_number##', str(offset + self.__max_array_size - 1)))
+            offset += self.__max_array_size
+            self.__number_of_slurm_scripts += 1
+        r = self.generated_configs % self.__max_array_size
+        if r > 0:
+            with open(os.path.join(self.experiment_root, f'slurm{self.__number_of_slurm_scripts}.sh'), 'w') as f:
+                f.write(script\
+                        .replace('##from_number##', str(offset))\
+                        .replace('##to_number##', str(offset + r - 1)))
+            offset += self.__max_array_size
+            self.__number_of_slurm_scripts += 1
 
     def __generate_configs(self, experiment_config_file_name):
         with open(experiment_config_file_name, 'r') as f:
@@ -97,7 +110,7 @@ python ../single_experiment.py $CONFIG
         self.generated_configs = cur_config_number
 
     def print_helper(self):
-        print(f'cd {self.experiment_root} && sbatch slurm.sh')
+        print(f'cd {self.experiment_root} && for (( i=0; i<{self.__number_of_slurm_scripts}; ++i )); do sbatch slurm$i.sh; done')
 
 
 def main(argv):
