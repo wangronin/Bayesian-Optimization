@@ -1,10 +1,11 @@
 {
     "folder": "Results",
-    "optimizers": ["BO", "LinearPCABO", "KernelPCABOCheat", "CMA_ES"],
-    "fids": [15, 16, 17, 18, 19, 20, 21],
+    "optimizers": ["LinearPCABO", "KernelPCABOCheat", "BO", "CMA_ES"],
+    "fids": [15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
     "iids": [0],
     "dims": [10, 20, 40],
     "reps": 10,
     "lb": -5,
-    "ub": 5
+    "ub": 5,
+    "extra": "These are the experiments for Maria Laura"
 }
