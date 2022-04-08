@@ -684,6 +684,7 @@ class KernelPCABO(BO):
         self.__search_space = deepcopy(self._search_space)  # the original search space
         self._pca = KernelTransform(dimensions=self.search_space.dim, minimize=self.minimize, X_initial_space=[], epsilon=max_information_loss, kernel_fit_strategy=kernel_fit_strategy, kernel_config=kernel_config, NN=NN)
         self._pca.enable_inverse_transform(self.__search_space.bounds)
+        self.out_solutions = 0
 
     @staticmethod
     def _compute_bounds(kpca: MyKernelPCA, search_space: SearchSpace) -> List[float]:
@@ -743,7 +744,20 @@ class KernelPCABO(BO):
 
     def ask(self, n_point: int = None) -> List[List[float]]:
         eprintf("Beginning of acq optimization")
-        return self._pca.inverse_transform(super().ask(n_point))
+        new_points = self._pca.inverse_transform(super().ask(n_point))
+        is_out = False
+        bounds = self.__search_space.bounds
+        for new_point in new_points:
+            for i in range(len(bounds)):
+                if new_point[i] < bounds[i][0]:
+                    new_point[i] = bounds[i][0]
+                    is_out = True
+                if new_point[i] > bounds[i][1]:
+                    new_point[i] = bounds[i][1]
+                    is_out = True
+            if is_out:
+                self.out_solutions += 1
+        return new_points
 
     def _run_experiment(self, bounds):
         eprintf('==================== Experiment =========================')

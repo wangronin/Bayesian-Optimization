@@ -153,6 +153,10 @@ class AlgorithmWrapper:
     def kernel_config(self) -> float:
         return self.opt._pca.get_kernel_parameters()
 
+    @property
+    def out_of_the_box_solutions(self) -> int:
+        return self.opt.out_solutions
+
 
 def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep):
     global seed
@@ -160,7 +164,7 @@ def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep):
     algorithm = AlgorithmWrapper()
     l = MyIOHFormatOnEveryEvaluationLogger(folder_name=MY_EXPEREMENT_FOLDER, algorithm_name=my_optimizer_name)
     print(f'    Logging to the folder {l.folder_name}')
-    l.watch(algorithm, ['lower_space_dim', 'extracted_information', 'kernel_config'])
+    l.watch(algorithm, ['lower_space_dim', 'extracted_information', 'out_of_the_box_solutions', 'kernel_config'])
     p = MyObjectiveFunctionWrapper(fid, iid, dim)
     p.attach_logger(l)
     algorithm(my_optimizer_name, p, fid, iid, dim)
