@@ -4,6 +4,7 @@ from functools import partial
 from scipy import optimize
 from math import exp
 from copy import deepcopy
+import random
 
 
 def additive_chi2_kernel(a, b):
@@ -65,6 +66,9 @@ class MyKernelPCA:
         self.NN = dimensions if NN is None else NN
         self._reuse_rbf_data = False
 
+    def enable_inverse_transform(self, bounds):
+        self.bounds = bounds
+
     def set_initial_space_points(self, X):
         self.X_initial_space = X
 
@@ -110,13 +114,14 @@ class MyKernelPCA:
         return ans
 
     @staticmethod
-    def f(X,good_subspace,k,V,z_star,w):
-        candidate_x = MyKernelPCA.linear_combination(w, good_subspace)
-        g_star = [0.] * len(X)
-        for i in range(len(X)):
-            g_star[i] = k(X[i], candidate_x)
-        g_star = MyKernelPCA.__center_gram_line(g_star)
-        return sum((np.transpose(np.array(z_star)) - np.matmul(V, np.array(g_star)))**2)
+    def f(X, good_subspace, k, V, z_star, bounds, w):
+        x_ = MyKernelPCA.linear_combination(w, good_subspace)
+        g_star = MyKernelPCA.__center_gram_line([k(X[i], x_) for i in range(len(X))])
+        bounds_ = np.atleast_2d(bounds)
+        idx_lower = np.where(x_ < bounds_[:, 0])[0]
+        idx_upper = np.where(x_ > bounds_[:, 1])[0]
+        penalty = np.sum([bounds_[i, 0] - x_[i] for i in idx_lower]) + np.sum([x_[i] - bounds_[i, 1] for i in idx_upper])
+        return sum((np.transpose(np.array(z_star)) - np.matmul(V, np.array(g_star)))**2) + math.exp(penalty)
 
     @staticmethod
     def linear_combination(w, X):
@@ -187,19 +192,11 @@ class MyKernelPCA:
         return np.transpose((self.V @ M)[:self.k])
 
     def get_good_subspace(self, y):
-        Y = self.transform(self.X_initial_space)
-        dists = [[0., i] for i in range(len(Y))]
-        for i in range(len(Y)):
-            dists[i][0] = MyKernelPCA.l2(y - Y[i])
-        dists.sort()
-        sz = min(self.NN, len(self.X_initial_space))
-        good_subspace = [[] for i in range(sz)]
-        for i in range(sz):
-            good_subspace[i] = self.X_initial_space[dists[i][1]]
-        V1 = deepcopy(self.V[:,:sz])
-        for i in range(sz):
-            V1[:,i] = self.V[:,dists[i][1]]
-        return good_subspace, V1
+        p = [i for i in range(len(self.X_initial_space))]
+        for i in range(len(p)):
+            ind = random.randint(0, i)
+            p[ind], p[i] = p[i], p[ind]
+        return [self.X_initial_space[i] for i in p[:self.NN]]
 
     def inverse_transform(self, Y: np.ndarray):
         if not hasattr(self, "k"):
@@ -210,9 +207,9 @@ class MyKernelPCA:
         for y in Y:
             if not len(y) == self.k:
                 raise ValueError(f"dimensionality of point is supposed to be {self.k}, but it is {len(y)}, the point {y}")
-            good_subspace, V1 = self.get_good_subspace(y)
+            good_subspace = self.get_good_subspace(y)
             # good_subspace, V1 = self.X_initial_space, self.V
-            partial_f = partial(MyKernelPCA.f, self.X_initial_space, good_subspace, self.kernel, self.V, y)
+            partial_f = partial(MyKernelPCA.f, self.X_initial_space, good_subspace, self.kernel, self.V, y, self.bounds)
             initial_weights = np.zeros(len(good_subspace))
             w0, fopt, *rest = optimize.fmin_bfgs(partial_f, initial_weights, full_output=True, disp=False)
             inversed = MyKernelPCA.linear_combination(w0, good_subspace)

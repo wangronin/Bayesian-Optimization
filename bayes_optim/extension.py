@@ -683,6 +683,7 @@ class KernelPCABO(BO):
         assert isinstance(self._search_space, RealSpace)
         self.__search_space = deepcopy(self._search_space)  # the original search space
         self._pca = KernelTransform(dimensions=self.search_space.dim, minimize=self.minimize, X_initial_space=[], epsilon=max_information_loss, kernel_fit_strategy=kernel_fit_strategy, kernel_config=kernel_config, NN=NN)
+        self._pca.enable_inverse_transform(self.__search_space.bounds)
 
     @staticmethod
     def _compute_bounds(kpca: MyKernelPCA, search_space: SearchSpace) -> List[float]:
@@ -715,13 +716,14 @@ class KernelPCABO(BO):
         )
         # TODO: make this more general for other acquisition functions
         # wrap the penalized acquisition function for handling the box constraints
-        return functools.partial(
-            penalized_acquisition,
-            acquisition_func=acquisition_func,
-            bounds=self.__search_space.bounds,  # hyperbox in the original space
-            pca=self._pca,
-            return_dx=return_dx,
-        )
+        # return functools.partial(
+            # penalized_acquisition,
+            # acquisition_func=acquisition_func,
+            # bounds=self.__search_space.bounds,  # hyperbox in the original space
+            # pca=self._pca,
+            # return_dx=return_dx,
+        # )
+        return acquisition_func
 
     def pre_eval_check(self, X: List) -> List:
         """Note that we do not check against duplicated point in PCA-BO since those points are

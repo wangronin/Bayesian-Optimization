@@ -1,6 +1,6 @@
 from bayes_optim.kpca import *
 from bayes_optim.mylogging import eprintf
-from bayes_optim.extension import KernelTransform, KernelFitStrategy
+from bayes_optim.extension import KernelTransform, KernelFitStrategy, RealSpace
 import pytest
 
 
@@ -9,6 +9,8 @@ def test_kpca():
     X_weighted = [[1.079483540452395, 0.808478123348775], [-0.0, -0.0], [0.015436285850211205, -0.13015521900151383], [2.8024450976474777, -1.9422411099521695], [-0.1315704411634408, 0.4687685435317057]]
     Y = [35.441907931514024, 455.983619954143, 288.22967496622755, 26.86758082381718, 30.021247428418974]
     kpca = MyKernelPCA(0.001, X, kernel_config={'kernel_name': 'rbf', 'kernel_parameters': {'gamma': 0.01}}, dimensions=2)
+    space = RealSpace([-5, 5]) * 2
+    kpca.enable_inverse_transform(space.bounds)
     kpca.fit(X_weighted)
     points = [[0.1, 4.3], [2.3, 3.2], [-1.2, 4.1], [0.97627008, 4.30378733]]
     ys = kpca.transform(points)
@@ -29,14 +31,14 @@ transformed = [[-0.27653772073687344], [-0.03318296054571879], [0.06191568966851
 
 
 def test_kernel_transform():
-    kernel_transform = KernelTransform(2, minimize=True, kernel_fit_strategy=KernelFitStrategy.FIXED_KERNEL, kernel_config={'kernel_name': 'rbf', 'kernel_parameters': {'gamma': 0.002754228703338166}}, epsilon=0.1, X_initial_space=X)
+    kernel_transform = KernelTransform(2, minimize=True, kernel_fit_strategy=KernelFitStrategy.FIXED_KERNEL, kernel_config={'kernel_name': 'rbf', 'kernel_parameters': {'gamma': 0.002754228703338166}}, epsilon=0.2, X_initial_space=X)
     my_transformed = kernel_transform.fit_transform(X, y)
     for (my, right) in zip(my_transformed, transformed):
         assert my == pytest.approx(right, 0.001)
 
 
 def test_kernel_parameter_fit():
-    kernel_transform = KernelTransform(2, minimize=True, kernel_fit_strategy=KernelFitStrategy.LIST_OF_KERNEL, kernel_config={'kernel_names': ['rbf']}, epsilon=0.1, X_initial_space=X)
+    kernel_transform = KernelTransform(2, minimize=True, kernel_fit_strategy=KernelFitStrategy.LIST_OF_KERNEL, kernel_config={'kernel_names': ['rbf']}, epsilon=0.2, X_initial_space=X)
     best_gamma = 0.002754228703338166
     kernel_transform.fit_transform(X, y)
     my_gamma = kernel_transform.kernel_config['kernel_parameters']['gamma']
