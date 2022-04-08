@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import sys
+import shutil
 import os
 
 
@@ -24,7 +25,7 @@ def cat(from_file, to_file):
                 outfile.write(line)
 
 
-def process_file(dat_file):
+def process_dat_file(dat_file):
     tmp_file_path = os.path.join(os.path.dirname(dat_file), 'tmp')
     remove_kernel_info(dat_file, tmp_file_path)
     cat(tmp_file_path, dat_file)
@@ -48,10 +49,12 @@ def main(argv):
     for results_folder in resuls_folders:
         for root, d_names, f_names in os.walk(results_folder):
             for file in f_names:
+                file_path = os.path.join(root, file)
                 if file.startswith('IOH') and file.endswith('.info'):
-                    process_info_file(os.path.join(root, file))
+                    process_info_file(file_path)
+                if file.startswith('IOH') and file.endswith('.dat'):
+                    process_dat_file(file_path)
 
-    import shutil
 
     for d in incomplete_results:
         print(d)
