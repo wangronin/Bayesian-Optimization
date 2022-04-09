@@ -13,7 +13,7 @@ from bayes_optim.utils.logger import dump_logger, load_logger
 
 from ._base import BaseOptimizer
 from .acquisition import acquisition_fun as AcquisitionFunction
-from .acquisition.optim import argmax_restart, default_AQ_max_FEs, default_AQ_n_restart, default_AQ_wait_iter
+from .acquisition.optim import argmax_restart, default_AQ_max_FEs, default_AQ_n_restart, default_AQ_wait_iter, OptimizationListener
 from .search_space import RealSpace
 from .solution import Solution
 from .utils import (
@@ -243,7 +243,7 @@ class BaseBO(BaseOptimizer):
     def _get_acq_function_var_names(self):
         return self._search_space.var_name
 
-    def __set_argmax(self, fixed: Dict = None):
+    def __set_argmax(self, fixed: Dict = None, listener: OptimizationListener = None):
         """Set ``self._argmax_restart`` for optimizing the acquisition function"""
         fixed = {} if fixed is None else fixed
         self.acq_function_search_space = self._get_acq_function_search_space(fixed)
@@ -256,6 +256,7 @@ class BaseBO(BaseOptimizer):
             n_restart=self.AQ_n_restart,
             wait_iter=self.AQ_wait_iter,
             optimizer=self._optimizer,
+            listener=listener
         )
 
     def _check_params(self):
@@ -274,7 +275,7 @@ class BaseBO(BaseOptimizer):
 
     @timeit
     def ask(
-        self, n_point: int = None, fixed: Dict[str, Union[float, int, str]] = None
+        self, n_point: int = None, fixed: Dict[str, Union[float, int, str]] = None, listener: OptimizationListener = None
     ) -> Union[List[list], List[dict]]:
         """suggest a list of candidate solutions
 
@@ -285,6 +286,8 @@ class BaseBO(BaseOptimizer):
         fixed : Dict[str, Union[float, int, str]], optional
             a dictionary specifies the decision variables fixed and the value to which those
             are fixed, by default None
+        listener : OptimizationListener listener of the events that happen
+            while the acquisition function is been optimized
 
         Returns
         -------
@@ -294,7 +297,7 @@ class BaseBO(BaseOptimizer):
         if self.model is not None and self.model.is_fitted:
             n_point = self.n_point if n_point is None else n_point
             msg = f"asking {n_point} points:"
-            X = self.arg_max_acquisition(n_point=n_point, fixed=fixed)
+            X = self.arg_max_acquisition(n_point=n_point, fixed=fixed, listener=listener)
             X = self.pre_eval_check(X)  # validate the new candidate solutions
             if len(X) < n_point:
                 self.logger.warning(
@@ -466,7 +469,7 @@ class BaseBO(BaseOptimizer):
 
     @timeit
     def arg_max_acquisition(
-        self, n_point: int = None, return_value: bool = False, fixed: Dict = None
+        self, n_point: int = None, return_value: bool = False, fixed: Dict = None, listener: OptimizationListener = None
     ) -> List[list]:
         """Global Optimization of the acquisition function / Infill criterion
 
@@ -480,7 +483,7 @@ class BaseBO(BaseOptimizer):
         self.logger.debug("acquisition optimziation...")
         n_point = self.n_point if n_point is None else int(n_point)
         return_dx = self._optimizer == "BFGS"
-        self.__set_argmax(fixed)
+        self.__set_argmax(fixed, listener)
 
         if n_point > 1:  # multi-point/batch sequential strategy
             candidates, values = self._batch_arg_max_acquisition(

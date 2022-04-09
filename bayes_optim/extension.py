@@ -13,6 +13,7 @@ from sklearn.metrics import mean_absolute_percentage_error, r2_score
 from abc import ABC, abstractmethod
 
 from .acquisition import acquisition_fun as AcquisitionFunction
+from .acquisition.optim import OptimizationListener
 from .bayes_opt import BO, ParallelBO
 from .search_space import RealSpace, SearchSpace
 from .solution import Solution
@@ -742,12 +743,29 @@ class KernelPCABO(BO):
         self._xopt = self.data[np.where(self.data.fitness == fopt)[0][0]]
         return self._xopt
 
+    class MyAcqOptimizationListener(OptimizationListener):
+        def __init__(self):
+            self.fopts = []
+            self.xopts = []
+
+        def on_optimum_found(self, fopt, xopt):
+            self.fopts.append(fopt)
+            self.xopts.append(xopt)
+
     def ask(self, n_point: int = None) -> List[List[float]]:
         eprintf("Beginning of acq optimization")
-        new_points = self._pca.inverse_transform(super().ask(n_point))
-        is_out = False
+        listener = KernelPCABO.MyAcqOptimizationListener()
+        X = super().ask(n_point, listener=listener)
+        if len(X) > 1:
+            return X
+        inds = np.argsort(listener.fopts)[::-1]
+        first_point = None
         bounds = self.__search_space.bounds
-        for new_point in new_points:
+        for point_number, ind in enumerate(inds):
+            new_point = self._pca.inverse_transform(listener.xopts[ind])[0]
+            if point_number == 0:
+                first_point = new_point
+            is_out = False
             for i in range(len(bounds)):
                 if new_point[i] < bounds[i][0]:
                     new_point[i] = bounds[i][0]
@@ -755,9 +773,10 @@ class KernelPCABO(BO):
                 if new_point[i] > bounds[i][1]:
                     new_point[i] = bounds[i][1]
                     is_out = True
-            if is_out:
-                self.out_solutions += 1
-        return new_points
+            if not is_out:
+                return [new_point]
+        self.out_solutions += 1
+        return [first_point]
 
     def _run_experiment(self, bounds):
         eprintf('==================== Experiment =========================')

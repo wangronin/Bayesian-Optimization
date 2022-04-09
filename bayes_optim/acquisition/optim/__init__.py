@@ -10,6 +10,7 @@ from ...utils import dynamic_penalty
 from .mies import MIES
 from .one_plus_one_cma_es import OnePlusOne_Cholesky_CMA, OnePlusOne_CMA
 from .option import default_AQ_max_FEs, default_AQ_n_restart, default_AQ_wait_iter
+from abc import ABC, abstractmethod
 
 __all__: List[str] = [
     "argmax_restart",
@@ -19,6 +20,7 @@ __all__: List[str] = [
     "default_AQ_max_FEs",
     "default_AQ_n_restart",
     "default_AQ_wait_iter",
+    "OptimizationListener"
 ]
 
 
@@ -52,6 +54,12 @@ class Penalized:
         return f, fg
 
 
+class OptimizationListener(ABC):
+    @abstractmethod
+    def on_optimum_found(self, fopt, xopt):
+        pass
+
+
 def argmax_restart(
     obj_func: Callable,
     search_space,
@@ -62,6 +70,7 @@ def argmax_restart(
     wait_iter: int = 3,
     optimizer: str = "BFGS",
     logger: logging.Logger = None,
+    listener: OptimizationListener = None
 ):
     # lists of the best solutions and acquisition values from each restart
     xopt, fopt = [], []
@@ -142,6 +151,8 @@ def argmax_restart(
             eval_budget -= stop_dict["funcalls"]
             xopt.append(xopt_)
             fopt.append(fopt_)
+
+            if listener is not None: listener.on_optimum_found(fopt_, xopt_)
 
         if eval_budget <= 0 or wait_count >= wait_iter:
             break
