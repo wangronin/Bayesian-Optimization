@@ -166,12 +166,9 @@ class MyKernelPCA:
         G_centered = self.__center_G(G)
         self.too_compressed = self.__is_too_compressed(G_centered)
         eignValues, eignVectors = self.__sorted_eig(G_centered)
-        eignValues[eignValues < 0] = 0
-        for e in eignValues:
-            if e < 0:
-                breakpoint()
         eignValues = eignValues.view(np.float64)
         eignVectors = eignVectors.view(np.float64)
+        eignValues[eignValues < 0] = 0
         eignValuesSum = sum(t for t in eignValues)
         s = 0
         self.k = 0
