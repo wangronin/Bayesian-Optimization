@@ -94,7 +94,7 @@ def test_homogenous(var_type):
 
     if var_type == "r":
         lb, ub = -1, 5
-        space = RealSpace([lb, ub]) * dim
+        space = RealSpace([lb, ub], random_seed=0) * dim
         mean = trend.constant_trend(dim, beta=None)
         thetaL = 1e-10 * (ub - lb) * np.ones(dim)
         thetaU = 10 * (ub - lb) * np.ones(dim)
