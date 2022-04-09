@@ -184,6 +184,7 @@ class OnePlusOne_CMA(object):
             self._random_seed = int(seed)
             if self._random_seed:
                 np.random.seed(self._random_seed)
+                random.seed(self._random_seed)
 
     @property
     def C(self):
