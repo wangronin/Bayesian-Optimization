@@ -24,6 +24,7 @@ from .utils import partial_argument
 
 from .mylogging import *
 import time
+import bisect
 
 
 GLOBAL_CHARTS_SAVER = None
@@ -86,6 +87,7 @@ class KernelTransform(MyKernelPCA):
         self.kernel_config = kernel_config
         self.N_same_kernel = 1
         self.__count_same_kernel = self.N_same_kernel
+        self.__is_kernel_refit_needed = True
 
     @staticmethod
     def _check_input(X):
@@ -106,7 +108,8 @@ class KernelTransform(MyKernelPCA):
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> KernelTransform:
         X_scaled = self._weighting_scheme(X, y)
-        self._fit_kernel_parameters(X_scaled)
+        if self.__is_kernel_refit_needed:
+            self.__fit_kernel_parameters(X_scaled)
         return super().fit(X_scaled)
 
     def transform(self, X: np.ndarray) -> np.ndarray:
@@ -116,6 +119,9 @@ class KernelTransform(MyKernelPCA):
     def inverse_transform(self, Y: np.ndarray) -> np.ndarray:
         Y = self._check_input(Y)
         return super().inverse_transform(Y)
+
+    def set_kernel_refit_needed(self, is_needed):
+        self.__is_kernel_refit_needed = is_needed
 
     def get_kernel_parameters(self):
         return self.kernel_config
@@ -132,11 +138,8 @@ class KernelTransform(MyKernelPCA):
         X_scaled = X_centered * w.reshape(-1, 1)
         return X_scaled
 
-    def _fit_kernel_parameters(self, X):
-        if self.__count_same_kernel < self.N_same_kernel:
-            self.__count_same_kernel += 1
-            return
-        self.__count_same_kernel = 0
+    def __fit_kernel_parameters(self, X):
+        self.__is_kernel_refit_needed = False
         if self.kernel_fit_strategy is KernelFitStrategy.FIXED_KERNEL:
             pass
         elif self.kernel_fit_strategy is KernelFitStrategy.AUTO:
@@ -146,7 +149,7 @@ class KernelTransform(MyKernelPCA):
             kernel_name, kernel_parameters, result = KernelParamsGridSearch(self.X_initial_space, X, self.epsilon).find_best_kernel(self.kernel_config['kernel_names'])
             self.kernel_config = {'kernel_name': kernel_name, 'kernel_parameters': kernel_parameters}
         else:
-            raise ValueError(f'Kernel fit strategy str(KernelFitStrategy) is not known')
+            raise ValueError(f'Kernel fit strategy {str(KernelFitStrategy)} is not known')
 
 
 class KernelParamsSearchStrategy(ABC):
@@ -686,6 +689,8 @@ class KernelPCABO(BO):
         self._pca = KernelTransform(dimensions=self.search_space.dim, minimize=self.minimize, X_initial_space=[], epsilon=max_information_loss, kernel_fit_strategy=kernel_fit_strategy, kernel_config=kernel_config, NN=NN)
         self._pca.enable_inverse_transform(self.__search_space.bounds)
         self.out_solutions = 0
+        self.ordered_container = KernelPCABO.MyOrderedContainer(self.minimize)
+        self.ratio_of_best_for_kernel_refit = 0.2
 
     @staticmethod
     def _compute_bounds(kpca: MyKernelPCA, search_space: SearchSpace) -> List[float]:
@@ -797,6 +802,36 @@ class KernelPCABO(BO):
     def get_extracted_information(self):
         return self._pca.extracted_information
 
+    class MyOrderedContainer:
+        def __init__(self, minimize=True):
+            self.data = []
+            self.minimize = minimize
+
+        def __len__(self):
+            return len(self.data)
+
+        def add_element(self, element):
+            if self.minimize:
+                bisect.insort_right(self.data, element)
+            else:
+                bisect.insort_left(self.data, element)
+
+        def kth(self, k):
+            if not self.minimize:
+                return self.data(len(self.data) - k)
+            return self.data[k]
+
+        def find_pos(self, element):
+            if not self.minimize:
+                return bisect.bisect_left(self.data, element)
+            return bisect.bisect_right(self.data, element)
+
+
+    def __is_promising_y(self, y):
+        pos = self.ordered_container.find_pos(y)
+        n = len(self.ordered_container)
+        return pos / n <= self.ratio_of_best_for_kernel_refit if n != 0 else True
+
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
         for i, x in enumerate(new_X):
@@ -813,6 +848,10 @@ class KernelPCABO(BO):
 
         new_X = self.post_eval_check(new_X)  # remove NaN's
         self.data = self.data + new_X if hasattr(self, "data") else new_X
+        for y in new_y:
+            if self.__is_promising_y(y):
+                self._pca.set_kernel_refit_needed(True)
+            self.ordered_container.add_element(y)
         # re-fit the PCA transformation
         self._pca.set_initial_space_points(self.data)
         X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
