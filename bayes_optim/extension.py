@@ -25,6 +25,7 @@ from .utils import partial_argument
 from .mylogging import *
 import time
 import bisect
+import scipy
 
 
 GLOBAL_CHARTS_SAVER = None
@@ -109,7 +110,7 @@ class KernelTransform(MyKernelPCA):
     def fit(self, X: np.ndarray, y: np.ndarray) -> KernelTransform:
         X_scaled = self._weighting_scheme(X, y)
         if self.__is_kernel_refit_needed:
-            self.__fit_kernel_parameters(X_scaled)
+            self.__fit_kernel_parameters(X_scaled, KernelParamsOptimizerSearch)
         return super().fit(X_scaled)
 
     def transform(self, X: np.ndarray) -> np.ndarray:
@@ -138,15 +139,15 @@ class KernelTransform(MyKernelPCA):
         X_scaled = X_centered * w.reshape(-1, 1)
         return X_scaled
 
-    def __fit_kernel_parameters(self, X):
+    def __fit_kernel_parameters(self, X, SearchStrategy):
         self.__is_kernel_refit_needed = False
         if self.kernel_fit_strategy is KernelFitStrategy.FIXED_KERNEL:
             pass
         elif self.kernel_fit_strategy is KernelFitStrategy.AUTO:
-            kernel_name, kernel_parameters, result = KernelParamsGridSearch(self.X_initial_space, X, self.epsilon).find_best_kernel(['rbf'])
+            kernel_name, kernel_parameters, result = SearchStrategy(self.X_initial_space, X, self.epsilon).find_best_kernel(['rbf'])
             self.kernel_config = {'kernel_name': kernel_name, 'kernel_parameters': kernel_parameters}
         elif self.kernel_fit_strategy is KernelFitStrategy.LIST_OF_KERNEL:
-            kernel_name, kernel_parameters, result = KernelParamsGridSearch(self.X_initial_space, X, self.epsilon).find_best_kernel(self.kernel_config['kernel_names'])
+            kernel_name, kernel_parameters, result = SearchStrategy(self.X_initial_space, X, self.epsilon).find_best_kernel(self.kernel_config['kernel_names'])
             self.kernel_config = {'kernel_name': kernel_name, 'kernel_parameters': kernel_parameters}
         else:
             raise ValueError(f'Kernel fit strategy {str(KernelFitStrategy)} is not known')
@@ -178,20 +179,33 @@ class KernelParamsSearchStrategy(ABC):
         return kernel_name, params, result
 
     @staticmethod
-    def _try_kernel(parameters, epsilon, X_initial_space, X_weighted, kernel_name):
+    def __try_kernel(parameters, epsilon, X_initial_space, X_weighted, kernel_name):
         kpca = MyKernelPCA(epsilon, X_initial_space, {'kernel_name': kernel_name, 'kernel_parameters': parameters})
         kpca.fit(X_weighted)
         if kpca.too_compressed:
             return int(1e9), 0
         return kpca.k, kpca.extracted_information
 
-    @abstractmethod
-    def find_best_for_rbf(self):
-        pass
+    @staticmethod
+    def __try_rbf_kernel(parameters, epsilon, X_initial_space, X_weighted, kernel_name, l2_norm_matrix):
+        kpca = MyKernelPCA(epsilon, X_initial_space, {'kernel_name': kernel_name, 'kernel_parameters': parameters})
+        kpca._set_reuse_rbf_data(l2_norm_matrix)
+        kpca.fit(X_weighted)
+        if kpca.too_compressed:
+            return int(1e9), 0
+        return kpca.k, kpca.extracted_information
 
     @abstractmethod
-    def find_best_for_poly(self):
+    def _optimize_rbf_gamma(f):
         pass
+
+    def find_best_for_rbf(self):
+        self.__l2_norm_matrix = [[np.sum((np.array(a) - np.array(b)) ** 2) for a in self._X_weighted] for b in self._X_weighted]
+        f = functools.partial(KernelParamsSearchStrategy.__try_rbf_kernel, epsilon=self._epsilon, X_initial_space=self._X, X_weighted=self._X_weighted, kernel_name='rbf', l2_norm_matrix=self.__l2_norm_matrix)
+        return self._optimize_rbf_gamma(f)
+
+    def find_best_for_poly(self):
+        raise NotImplementedError
 
 
 class KernelParamsGridSearch(KernelParamsSearchStrategy):
@@ -235,22 +249,61 @@ class KernelParamsGridSearch(KernelParamsSearchStrategy):
         eprintf(f"Min dimensionality is {mi}, with max extracted information {max_second_value} and parameters {optimal_parameter}")
         return {'gamma': optimal_parameter}, mi
 
+    def _optimize_rbf_gamma(self, f):
+        return KernelParamsGridSearch.__gamma_sequential_grid_minimizer(f, 1e-4, 1, 100)
+
+
+class KernelParamsOptimizerSearch(KernelParamsSearchStrategy):
     @staticmethod
-    def __try_kernel(parameters, epsilon, X_initial_space, X_weighted, kernel_name, l2_norm_matrix):
-        kpca = MyKernelPCA(epsilon, X_initial_space, {'kernel_name': kernel_name, 'kernel_parameters': parameters})
-        kpca._set_reuse_rbf_data(l2_norm_matrix)
-        kpca.fit(X_weighted)
-        if kpca.too_compressed:
-            return int(1e9), 0
-        return kpca.k, kpca.extracted_information
+    def __f_wrapper(f, x):
+        a, b = f({'gamma': x[0]})
+        return float(a - b)
 
-    def find_best_for_rbf(self):
-        self.__l2_norm_matrix = [[np.sum((np.array(a) - np.array(b)) ** 2) for a in self._X_weighted] for b in self._X_weighted]
-        f = functools.partial(KernelParamsGridSearch.__try_kernel, epsilon=self._epsilon, X_initial_space=self._X, X_weighted=self._X_weighted, kernel_name='rbf', l2_norm_matrix=self.__l2_norm_matrix)
-        return KernelParamsGridSearch.__gamma_sequential_grid_minimizer(f, 1e-4, 1., 100)
+    def _get_componenets_and_info(self, fvalue):
+        min_components = int(math.floor(fvalue)) + 1
+        info = min_components - fvalue
+        return min_components, info
 
-    def find_best_for_poly(self):
-        raise NotImplementedError
+    def __opt(self, f):
+        res = scipy.optimize.minimize(f, method='L-BFGS-B', x0=[0.05], bounds=[(1e-4, 2.)], options={'maxiter':200})
+        gamma = res.x[0]
+        fopt, info = self._get_componenets_and_info(res.fun)
+        eprintf(f"Min dimensionality is {fopt}, with extracted information {info} and parameters gamma={gamma}")
+        return {'gamma': gamma}, fopt
+
+    def _optimize_rbf_gamma(self, f):
+        return self.__opt(functools.partial(KernelParamsOptimizerSearch.__f_wrapper, f))
+
+
+class KernelParamsCombinedSearch(KernelParamsOptimizerSearch):
+    @staticmethod
+    def __f_wrapper(f, x):
+        a, b = f({'gamma': x[0]})
+        return float(a - b)
+
+    def __opt(self, f, initial, lb, ub):
+        res = scipy.optimize.minimize(f, method='L-BFGS-B', x0=[initial], bounds=[(lb, ub)], options={'maxiter':100})
+        gamma = res.x[0]
+        fopt, info = self._get_componenets_and_info(res.fun)
+        eprintf(f"Min dimensionality is {fopt}, with extracted information {info} and parameters gamma={gamma}")
+        return {'gamma': gamma}, fopt
+
+    def __grid_search(self, f, begin, step_size, evals):
+        mi = float('inf')
+        arg_mi = 0.
+        for i in range(evals):
+            gamma = begin + i * step_size
+            cur = f([gamma])
+            if cur < mi:
+                mi = cur
+                arg_mi = gamma
+        return arg_mi
+
+    def _optimize_rbf_gamma(self, f):
+        f = functools.partial(KernelParamsCombinedSearch.__f_wrapper, f)
+        begin, step_size, evals = 0.01, 0.009, 100
+        x0 = self.__grid_search(f, begin, step_size, evals)
+        return self.__opt(f, x0, x0 - step_size, x0 + step_size)
 
 
 def penalized_acquisition(x, acquisition_func, bounds, pca, return_dx):
