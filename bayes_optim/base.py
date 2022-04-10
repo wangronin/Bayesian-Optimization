@@ -26,6 +26,7 @@ from .utils import (
 )
 from .utils.exception import AskEmptyError, FlatFitnessError
 from .mylogging import *
+import time
 
 __authors__ = ["Hao Wang"]
 
@@ -125,6 +126,9 @@ class BaseBO(BaseOptimizer):
         self._init_flatfitness_trial = 2
         self._set_aux_vars()
         self.warm_data = warm_data
+
+        self.acq_opt_time = 0
+        self.mode_fit_time = 0
 
         # global GLOBAL_CHARTS_SAVER1
         # GLOBAL_CHARTS_SAVER1 = MyChartSaver('BO', 'BO', self._search_space.bounds, self.obj_fun) 
@@ -294,6 +298,7 @@ class BaseBO(BaseOptimizer):
         Union[List[list], List[dict]]
             the suggested candidates
         """
+        start = time.time()
         if self.model is not None and self.model.is_fitted:
             n_point = self.n_point if n_point is None else n_point
             msg = f"asking {n_point} points:"
@@ -323,6 +328,8 @@ class BaseBO(BaseOptimizer):
         self.logger.info(msg)
         for i, _ in enumerate(X):
             self.logger.info(f"#{i + 1} - {self._to_pheno(X[i])}")
+
+        self.acq_opt_time = time.time() - start
 
         return self._to_pheno(X)
 
@@ -445,6 +452,7 @@ class BaseBO(BaseOptimizer):
     def update_model(self):
         # TODO: implement a proper model selection here
         # TODO: in case r2 is really poor, re-fit the model or log-transform `fitness`?
+        start = time.time()
         data = self.data
         fitness = data.fitness
 
@@ -466,6 +474,7 @@ class BaseBO(BaseOptimizer):
         r2 = r2_score(fitness_, fitness_hat)
         MAPE = mean_absolute_percentage_error(fitness_, fitness_hat)
         self.logger.info(f"model r2: {r2}, MAPE: {MAPE}")
+        self.mode_fit_time = time.time() - start
 
     @timeit
     def arg_max_acquisition(

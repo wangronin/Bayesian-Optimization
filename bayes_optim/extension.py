@@ -361,6 +361,8 @@ class PCABO(BO):
         self._pca = LinearTransform(n_components=n_components, svd_solver="full", minimize=self.minimize)
         global GLOBAL_CHARTS_SAVER
         GLOBAL_CHARTS_SAVER = MyChartSaver('PCABO-1', 'PCABO', self._search_space.bounds, self.obj_fun)
+        self.acq_opt_time = 0
+        self.mode_fit_time = 0
 
     @staticmethod
     def _compute_bounds(pca: PCA, search_space: SearchSpace) -> List[float]:
@@ -409,7 +411,9 @@ class PCABO(BO):
         return self._xopt
 
     def ask(self, n_point: int = None) -> List[List[float]]:
+        start = time.time()
         new_x1 = self._pca.inverse_transform(super().ask(n_point))
+        self.acq_opt_time = time.time() - start
         new_x = new_x1[0]
         is_inside = sum(1 for i in range(len(new_x)) if self.__search_space.bounds[i][0]<= new_x[i] <= self.__search_space.bounds[i][1])==len(new_x)
         eprintf("Is inside?", is_inside)
@@ -468,7 +472,9 @@ class PCABO(BO):
         self.fmin, self.fmax = np.min(y_), np.max(y_)
         self.frange = self.fmax - self.fmin
 
+        start = time.time()
         self.model.fit(X, y_)
+        self.mode_fit_time = time.time() - start
         GLOBAL_CHARTS_SAVER.save_model(self.model, X, y_)
         y_hat = self.model.predict(X)
 
@@ -493,6 +499,8 @@ class KernelPCABO1(BO):
         assert isinstance(self._search_space, RealSpace)
         self.__search_space = deepcopy(self._search_space)  # the original search space
         self._pca = KernelTransform(dimensions=self.search_space.dim, minimize=self.minimize, X_initial_space=[], epsilon=max_information_loss, kernel_fit_strategy=kernel_fit_strategy, kernel_config=kernel_config, NN=NN)
+        self.acq_opt_time = 0
+        self.mode_fit_time = 0
 
     @staticmethod
     def my_acquisition_function(x, lower_dimensional_acquisition_function, kpca):
@@ -744,6 +752,8 @@ class KernelPCABO(BO):
         self.out_solutions = 0
         self.ordered_container = KernelPCABO.MyOrderedContainer(self.minimize)
         self.ratio_of_best_for_kernel_refit = 0.2
+        self.acq_opt_time = 0
+        self.mode_fit_time = 0
 
     @staticmethod
     def _compute_bounds(kpca: MyKernelPCA, search_space: SearchSpace) -> List[float]:
@@ -813,7 +823,9 @@ class KernelPCABO(BO):
     def ask(self, n_point: int = None) -> List[List[float]]:
         eprintf("Beginning of acq optimization")
         listener = KernelPCABO.MyAcqOptimizationListener()
+        start = time.time()
         X = super().ask(n_point, listener=listener)
+        self.acq_opt_time = time.time() - start
         if len(X) > 1:
             return X
         inds = np.argsort(listener.fopts)[::-1]
@@ -944,7 +956,9 @@ class KernelPCABO(BO):
         self.fmin, self.fmax = np.min(y_), np.max(y_)
         self.frange = self.fmax - self.fmin
 
+        start = time.time()
         self.model.fit(X, y_)
+        self.mode_fit_time = time.time() - start
         GLOBAL_CHARTS_SAVER.save_model(self.model, X, y_)
         y_hat = self.model.predict(X)
 

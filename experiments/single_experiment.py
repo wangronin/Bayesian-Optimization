@@ -152,12 +152,20 @@ class AlgorithmWrapper:
         return self.opt.get_extracted_information()
 
     @property
-    def kernel_config(self) -> float:
+    def kernel_config(self) -> str:
         return self.opt._pca.get_kernel_parameters()
 
     @property
     def out_of_the_box_solutions(self) -> int:
         return self.opt.out_solutions
+
+    @property
+    def acq_opt_time(self) -> float:
+        return self.opt.acq_opt_time
+
+    @property
+    def model_fit_time(self) -> float:
+        return self.opt.mode_fit_time
 
 
 def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep):
@@ -169,7 +177,7 @@ def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep):
     print(f'    Logging to the folder {l.folder_name}')
     sys.stdout.flush()
     l.watch(algorithm, ['lower_space_dim', 'extracted_information',
-            'out_of_the_box_solutions', 'kernel_config'])
+            'out_of_the_box_solutions', 'kernel_config', 'acq_opt_time', 'model_fit_time'])
     p = MyObjectiveFunctionWrapper(fid, iid, dim)
     p.attach_logger(l)
     algorithm(my_optimizer_name, p, fid, iid, dim)
