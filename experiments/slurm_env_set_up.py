@@ -55,7 +55,7 @@ python ../single_experiment.py configs/${FILE_ID}.json
         if whose_server == 'Hao':
             self.__max_array_size = 1000
         else:
-            self.__max_array_size = 10000
+            self.__max_array_size = 100
         self.__number_of_slurm_scripts = 0
         self.whose_server = whose_server
 
