@@ -1,6 +1,6 @@
 from functools import partial
 import random
-from maria_laura.wrapper import marialaura as create_saasbo
+from maria_laura.wrapper import marialaura as create_marialaura_alg
 from my_logger import MyIOHFormatOnEveryEvaluationLogger, MyObjectiveFunctionWrapper
 from bayes_optim.surrogate import GaussianProcess, trend
 from bayes_optim.extension import RealSpace, KernelPCABO1, KernelPCABO, KernelFitStrategy, PCABO, BO
@@ -100,6 +100,15 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
     elif optimizer_name == 'SAASBO':
         return create_saasbo(
             optimizer_name='saasbo',
+            func=func,
+            ml_dim=dim,
+            ml_total_budget=total_budget,
+            ml_DoE_size=doe_size,
+            random_seed=seed
+        )
+    elif optimizer_name == 'SKlearnBO':
+        return create_marialaura_alg(
+            optimizer_name='BO_sklearn',
             func=func,
             ml_dim=dim,
             ml_total_budget=total_budget,
