@@ -6,7 +6,7 @@ from single_experiment import validate_optimizers
 
 
 class ExperimentEnvironment:
-    SLURM_SCRIPT_TEMPLATE = '''#!/bin/env bash
+    HAO_SLURM_SCRIPT_TEMPLATE = '''#!/bin/env bash
 
 #SBATCH --job-name=##folder##
 #SBATCH --array=##from_number##-##to_number##
@@ -23,15 +23,40 @@ class ExperimentEnvironment:
 python ../single_experiment.py configs/${SLURM_ARRAY_TASK_ID}.json
 '''
 
-    def __init__(self):
+    ELENA_SLURM_SCRIPT_TEMPLATE = '''
+#!/bin/bash
+
+#SBATCH --job-name=##folder##
+#SBATCH --array=0-##jobs_count##
+#SBATCH --clusters=serial
+#SBATCH --partition=serial_long
+#SBATCH --mem=512MB
+#SBATCH --time=7-00:00:00
+#SBATCH --mail-user=kirant9797@gmail.com
+#SBATCH --mail-type=END,FAIL
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --output=##logs_out##
+#SBATCH --error=##logs_err##
+
+num=##from_number##
+FILE_ID=$((${SLURM_ARRAY_TASK_ID}+$num))
+python ../single_experiment.py configs/${FILE_ID}.json
+'''
+
+    def __init__(self, whose_server):
         now = datetime.datetime.now()
         suffix = now.strftime('%d-%m-%Y_%Hh%Mm%Ss')
         folder_name = 'run_' + suffix
         os.makedirs(folder_name, exist_ok=False)
         print(f'Experiment root is: {folder_name}')
         self.experiment_root = os.path.abspath(folder_name)
-        self.__max_array_size = 1000
+        if whose_server == 'Hao':
+            self.__max_array_size = 1000
+        else:
+            self.__max_array_size = 10000
         self.__number_of_slurm_scripts = 0
+        self.whose_server = whose_server
 
     def set_up_by_experiment_config_file(self, experiment_config_file_name):
         self.__generate_configs(experiment_config_file_name)
@@ -46,7 +71,11 @@ python ../single_experiment.py configs/${SLURM_ARRAY_TASK_ID}.json
         self.__number_of_slurm_scripts = 0
         logs_out = os.path.join(self.logs_folder, '%A_%a.out')
         logs_err = os.path.join(self.logs_folder, '%A_%a.err')
-        script = ExperimentEnvironment.SLURM_SCRIPT_TEMPLATE\
+        if self.whose_server == 'Hao':
+            script = ExperimentEnvironment.HAO_SLURM_SCRIPT_TEMPLATE
+        else:
+            script = ExperimentEnvironment.ELENA_SLURM_SCRIPT_TEMPLATE
+        script = script\
                 .replace('##folder##', self.result_folder_prefix)\
                 .replace('##logs_out##', logs_out)\
                 .replace('##logs_err##', logs_err)
@@ -114,7 +143,7 @@ python ../single_experiment.py configs/${SLURM_ARRAY_TASK_ID}.json
 
 
 def main(argv):
-    env = ExperimentEnvironment()
+    env = ExperimentEnvironment(argv[2])
     env.set_up_by_experiment_config_file(argv[1])
     env.print_helper()
 

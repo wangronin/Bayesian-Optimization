@@ -23,7 +23,9 @@ lb, ub = -5, 5
 
 
 def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
+    seed = random.randint(1, 1e9)
     space = RealSpace([lb, ub], random_seed=seed) * dim
+    print(f'seed={seed}')
     if optimizer_name == 'KernelPCABOCheat':
         return KernelPCABO1(
             search_space=space,
