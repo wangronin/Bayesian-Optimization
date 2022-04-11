@@ -23,8 +23,7 @@ class ExperimentEnvironment:
 python ../single_experiment.py configs/${SLURM_ARRAY_TASK_ID}.json
 '''
 
-    ELENA_SLURM_SCRIPT_TEMPLATE = '''
-#!/bin/bash
+    ELENA_SLURM_SCRIPT_TEMPLATE = '''#!/bin/bash
 
 #SBATCH --job-name=##folder##
 #SBATCH --array=0-##jobs_count##
