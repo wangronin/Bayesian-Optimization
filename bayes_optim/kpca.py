@@ -72,13 +72,13 @@ class MyKernelPCA:
     def set_initial_space_points(self, X):
         self.X_initial_space = X
 
-    def __center_G(self, G):
+    def __center_G(self, G, w):
         ns = len(G)
         line = [0.] * len(G)
         for i in range(len(G)):
             line[i] = sum(G[i])
         all_sum = sum(line)
-        return [[G[i][j] - line[i]/ns - line[j]/ns + all_sum/ns**2 for j in range(len(G[i]))] for i in range(len(G))]
+        return [[w[i]*w[j]*G[i][j] - w[i]*line[i]/ns - w[j]*line[j]/ns + w[i]*w[j]*all_sum/ns**2 for j in range(len(G[i]))] for i in range(len(G))]
 
     @staticmethod
     def __center_gram_line(g):
@@ -161,9 +161,9 @@ class MyKernelPCA:
     def fit(self, X_weighted: np.ndarray):
         self.NN = len(X_weighted[0]) + 1
         self.kernel = create_kernel(self.kernel_config['kernel_name'], self.kernel_config['kernel_parameters'])
-        self.X_weighted = X_weighted
-        G = self.__compute_G(X_weighted)
-        G_centered = self.__center_G(G)
+        self.X, self.w = X_weighted
+        G = self.__compute_G(self.X)
+        G_centered = self.__center_G(G, self.w)
         self.too_compressed = self.__is_too_compressed(G_centered)
         eignValues, eignVectors = self.__sorted_eig(G_centered)
         eignValues = eignValues.view(np.float64)

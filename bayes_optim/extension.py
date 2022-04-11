@@ -136,8 +136,9 @@ class KernelTransform(MyKernelPCA):
         N = len(y_)
         w = np.log(N) - np.log(r)
         w /= np.sum(w)
-        X_scaled = X_centered * w.reshape(-1, 1)
-        return X_scaled
+        w = w.reshape(-1, 1)
+        X_scaled = X_centered * w
+        return X, [wi[0] for wi in w]
 
     def __fit_kernel_parameters(self, X, SearchStrategy):
         self.__is_kernel_refit_needed = False
@@ -200,7 +201,7 @@ class KernelParamsSearchStrategy(ABC):
         pass
 
     def find_best_for_rbf(self):
-        self.__l2_norm_matrix = [[np.sum((np.array(a) - np.array(b)) ** 2) for a in self._X_weighted] for b in self._X_weighted]
+        self.__l2_norm_matrix = [[np.sum((np.array(a) - np.array(b)) ** 2) for a in self._X_weighted[0]] for b in self._X_weighted[0]]
         f = functools.partial(KernelParamsSearchStrategy.__try_rbf_kernel, epsilon=self._epsilon, X_initial_space=self._X, X_weighted=self._X_weighted, kernel_name='rbf', l2_norm_matrix=self.__l2_norm_matrix)
         return self._optimize_rbf_gamma(f)
 
