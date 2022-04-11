@@ -23,7 +23,6 @@ lb, ub = -5, 5
 
 
 def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
-    seed = random.randint(1, 1e9)
     space = RealSpace([lb, ub], random_seed=seed) * dim
     print(f'seed={seed}')
     if optimizer_name == 'KernelPCABOCheat':
@@ -60,7 +59,7 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
             max_FEs=total_budget,
             verbose=False,
             n_point=1,
-            n_components=0.95,
+            n_components=0.90,
             acquisition_optimization={"optimizer": "BFGS"},
         )
     elif optimizer_name == 'BO':
