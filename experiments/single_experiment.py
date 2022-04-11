@@ -69,7 +69,7 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
             obj_fun=func,
             DoE_size=doe_size,
             max_FEs=total_budget,
-            verbose=False,
+            verbose=True,
             n_point=1,
             random_seed=seed,
             model=GaussianProcess(
