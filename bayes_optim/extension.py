@@ -389,11 +389,17 @@ class PCABO(BO):
         # wrap the penalized acquisition function for handling the box constraints
         return functools.partial(
             penalized_acquisition,
-            acquisition_func=acquisition_func,
+            acquisition_func=acquisition_func[0],
             bounds=self.__search_space.bounds,  # hyperbox in the original space
             pca=self._pca,
             return_dx=return_dx,
-        )
+            ), functools.partial(
+                penalized_acquisition,
+                acquisition_func=acquisition_func[1],
+                bounds=self.__search_space.bounds,  # hyperbox in the original space
+                pca=self._pca,
+                return_dx=False,
+            )
 
     def pre_eval_check(self, X: List) -> List:
         """Note that we do not check against duplicated point in PCA-BO since those points are
