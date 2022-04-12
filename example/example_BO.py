@@ -45,4 +45,3 @@ for i in range(10):
     opt.run()
     res += [opt.xopt.fitness]
 
-breakpoint()
