@@ -81,7 +81,7 @@ def argmax_restart(
         optimizer = "MIES"
         logger.warning("L-BFGS-B can only be applied on continuous search space")
 
-    X = search_space.sample(int(1e2 * search_space.dim), method="uniform")
+    X = search_space.sample(int(2e2 * search_space.dim), method="uniform")
     if obj_func_ is not None:
         af_value = [obj_func_(x) for x in X]
     else:
@@ -98,8 +98,7 @@ def argmax_restart(
             xopt_, fopt_, stop_dict = fmin_l_bfgs_b(
                 Penalized(obj_func, h, g),
                 x0,
-                # pgtol=1e-8,
-                # factr=1e6,
+                factr=1e5,
                 approx_grad=False,
                 bounds=bounds,
                 maxfun=eval_budget,
@@ -165,7 +164,8 @@ def argmax_restart(
             if listener is not None:
                 listener.on_optimum_found(fopt_, xopt_)
 
-        if eval_budget <= 0 or wait_count >= wait_iter:
+        if eval_budget <= 0:
+            # or wait_count >= wait_iter:
             break
 
     if len(xopt) == 0:
