@@ -139,15 +139,15 @@ class BaseBO(BaseOptimizer):
 
         if self._model is None:
             lb, ub = np.array(self.search_space.bounds).T
-            cov_amplitude = ConstantKernel(1.0, (0.01, 1000.0))
+            cov_amplitude = ConstantKernel(1.0, (0.001, 100.0))
             other_kernel = Matern(
-                length_scale=np.ones(self.dim), length_scale_bounds=[(0.01, 100)] * self.dim, nu=2.5
+                length_scale=np.ones(self.dim), length_scale_bounds=[(0.001, 100)] * self.dim, nu=2.5
             )
             self._model = GaussianProcess(
                 kernel=cov_amplitude * other_kernel,
                 normalize_y=True,
                 noise="gaussian",
-                n_restarts_optimizer=2,
+                n_restarts_optimizer=max(5, self.search_space.dim),
                 lb=lb,
                 ub=ub,
             )
@@ -527,8 +527,8 @@ class BaseBO(BaseOptimizer):
                 n_point=n_point, return_dx=return_dx, fixed=fixed
             )
         else:  # single-point strategy
-            criteria = self._create_acquisition(par={}, return_dx=return_dx, fixed=fixed)
-            candidates, values = self._argmax_restart(criteria, logger=self.logger)
+            criteria, criteria_ = self._create_acquisition(par={}, return_dx=return_dx, fixed=fixed)
+            candidates, values = self._argmax_restart(criteria, obj_func_=criteria_, logger=self.logger)
             candidates, values = [candidates], [values]
 
         candidates = [c for c in candidates if len(c) != 0]
@@ -550,7 +550,7 @@ class BaseBO(BaseOptimizer):
             var_name=self.search_space.var_name,
             fixed=fixed,
             reduce_output=return_dx,
-        )
+        ), functools.partial(criterion, return_dx=False)
 
     def _batch_arg_max_acquisition(self, n_point: int, return_dx: int, fixed: Dict):
         raise NotImplementedError
