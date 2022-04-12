@@ -11,6 +11,7 @@ from scipy.stats import rankdata
 from sklearn.decomposition import PCA
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 from abc import ABC, abstractmethod
+from sklearn.base import clone, is_regressor
 
 from .acquisition import acquisition_fun as AcquisitionFunction
 from .acquisition.optim import OptimizationListener
@@ -452,7 +453,7 @@ class PCABO(BO):
         self._search_space = RealSpace(bounds)
         bounds = np.asarray(bounds)
         dim = self._search_space.dim
-        self.model = self.create_default_model()
+        self.model = self.create_default_model(self.search_space, self.my_seed)
         _std = np.std(y)
         y_ = y
         self.fmin, self.fmax = np.min(y_), np.max(y_)
@@ -922,7 +923,9 @@ class KernelPCABO(BO):
         # is dynamic)
         dim = self._search_space.dim
         bounds = np.asarray(self._search_space.bounds)
-        self.model = self.create_default_model()
+        self._model = self.create_default_model(self._search_space, self.my_seed)
+        self.model = clone(self._model)
+
         _std = np.std(y)
         y_ = y
 
