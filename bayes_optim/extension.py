@@ -452,23 +452,9 @@ class PCABO(BO):
         self._search_space = RealSpace(bounds)
         bounds = np.asarray(bounds)
         dim = self._search_space.dim
-        self.model = GaussianProcess(
-            mean=trend.constant_trend(dim),
-            corr="matern",
-            thetaL=1e-3 * (bounds[:, 1] - bounds[:, 0]),
-            thetaU=1e3 * (bounds[:, 1] - bounds[:, 0]),
-            nugget=1e-6,
-            noise_estim=False,
-            optimizer="BFGS",
-            wait_iter=3,
-            random_start=max(10, dim),
-            likelihood="concentrated",
-            eval_budget=100 * dim,
-        )
-
+        self.model = self.create_default_model()
         _std = np.std(y)
-        y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
-
+        y_ = y
         self.fmin, self.fmax = np.min(y_), np.max(y_)
         self.frange = self.fmax - self.fmin
 
@@ -936,22 +922,9 @@ class KernelPCABO(BO):
         # is dynamic)
         dim = self._search_space.dim
         bounds = np.asarray(self._search_space.bounds)
-        self.model = GaussianProcess(
-            mean=trend.constant_trend(dim),
-            corr="matern",
-            thetaL=1e-3 * (bounds[:, 1] - bounds[:, 0]),
-            thetaU=1e3 * (bounds[:, 1] - bounds[:, 0]),
-            nugget=1e-6,
-            noise_estim=False,
-            optimizer="BFGS",
-            wait_iter=3,
-            random_start=max(10, dim),
-            likelihood="concentrated",
-            eval_budget=100 * dim,
-        )
-
+        self.model = self.create_default_model()
         _std = np.std(y)
-        y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
+        y_ = y
 
         self.fmin, self.fmax = np.min(y_), np.max(y_)
         self.frange = self.fmax - self.fmin
