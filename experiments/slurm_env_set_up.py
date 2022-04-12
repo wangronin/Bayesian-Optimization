@@ -2,7 +2,7 @@ import sys
 import os
 import json
 import datetime
-from single_experiment import validate_optimizers
+from experiment_helpers import validate_optimizers
 
 
 class ExperimentEnvironment:
