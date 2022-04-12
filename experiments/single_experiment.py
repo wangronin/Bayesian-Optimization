@@ -68,7 +68,7 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
     elif optimizer_name == 'BO':
         return BO(
             search_space=space,
-            obj_fun=fitness,
+            obj_fun=func,
             DoE_size=doe_size,
             n_point=1,
             random_seed=seed,
