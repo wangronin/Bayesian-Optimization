@@ -11,12 +11,13 @@ from sklearn.metrics.pairwise import manhattan_distances
 from sklearn.utils import check_array, check_random_state, check_X_y
 
 from .cma_es import cma_es
-from .kernel import absolute_exponential, cubic, generalized_exponential, matern, squared_exponential
+from .kernel_old import (absolute_exponential, cubic, generalized_exponential,
+                         matern, squared_exponential)
 from .trend import BasisExpansionTrend, NonparametricTrend, constant_trend
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
-warnings.filterwarnings("error")
+# warnings.filterwarnings("error")
 
 
 def l1_cross_distances(X):
@@ -524,7 +525,9 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             for k in range(max(1, n_eval // batch_size)):
                 batch_from = k * batch_size
                 batch_to = min([(k + 1) * batch_size + 1, n_eval + 1])
-                y[batch_from:batch_to] = self.predict(X[batch_from:batch_to], eval_MSE=eval_MSE, batch_size=None)[:,0]
+                y[batch_from:batch_to] = self.predict(
+                    X[batch_from:batch_to], eval_MSE=eval_MSE, batch_size=None
+                )[:, 0]
             return y
 
     def gradient(self, x):
