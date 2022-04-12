@@ -63,6 +63,7 @@ class OptimizationListener(ABC):
 def argmax_restart(
     obj_func: Callable,
     search_space,
+    obj_func_: Callable = None,
     h: Callable = None,
     g: Callable = None,
     eval_budget: int = 100,
@@ -80,13 +81,16 @@ def argmax_restart(
         optimizer = "MIES"
         logger.warning("L-BFGS-B can only be applied on continuous search space")
 
-    X = search_space.sample(int(1e3), method="uniform")
-    af_value = [obj_func(x)[0] for x in X]
+    X = search_space.sample(int(1e2 * search_space.dim), method="uniform")
+    if obj_func_ is not None:
+        af_value = [obj_func_(x) for x in X]
+    else:
+        af_value = [obj_func(x)[0] for x in X]
+
     idx = np.argsort(af_value)[::-1]
     X = X[idx, :]
 
     for iteration in range(n_restart):
-        # x0 = search_space.sample(N=1, method="uniform")[0]
         x0 = X[iteration]
         if optimizer == "BFGS":
             bounds = np.array(search_space.bounds)
@@ -149,8 +153,7 @@ def argmax_restart(
 
                 if logger is not None:
                     logger.info(
-                        "restart : %d - funcalls : %d - Fopt : %f"
-                        % (iteration + 1, stop_dict["funcalls"], fopt_)
+                        f"restart : {iteration + 1} - funcalls : {stop_dict['funcalls']} - Fopt : {fopt_:.8e}"
                     )
             else:
                 wait_count += 1
