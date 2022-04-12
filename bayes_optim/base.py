@@ -138,21 +138,25 @@ class BaseBO(BaseOptimizer):
         self.mode_fit_time = 0
 
         if self._model is None:
-            lb, ub = np.array(self.search_space.bounds).T
-            cov_amplitude = ConstantKernel(1.0, (0.001, 100.0))
-            other_kernel = Matern(
-                length_scale=np.ones(self.dim), length_scale_bounds=[(0.001, 100)] * self.dim, nu=2.5
-            )
-            self._model = GaussianProcess(
-                kernel=cov_amplitude * other_kernel,
-                normalize_y=True,
-                noise="gaussian",
-                n_restarts_optimizer=5,
-                lb=lb,
-                ub=ub,
-            )
-            self._model.set_params(noise=0.1**2, random_state=kwargs["random_seed"])
+            self._model = self.create_default_model()
         self.model = clone(self._model)
+
+    def create_default_model(self):
+        lb, ub = np.array(self.search_space.bounds).T
+        cov_amplitude = ConstantKernel(1.0, (0.001, 100.0))
+        other_kernel = Matern(
+            length_scale=np.ones(self.dim), length_scale_bounds=[(0.001, 100)] * self.dim, nu=2.5
+        )
+        model = GaussianProcess(
+            kernel=cov_amplitude * other_kernel,
+            normalize_y=True,
+            noise="gaussian",
+            n_restarts_optimizer=5,
+            lb=lb,
+            ub=ub,
+        )
+        model.set_params(noise=0.1**2, random_state=kwargs["random_seed"])
+        return model
 
     @property
     def acquisition_fun(self):
