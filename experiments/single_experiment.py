@@ -20,11 +20,14 @@ sys.path.insert(0, "./")
 MY_EXPEREMENT_FOLDER = "TMP"
 seed = 0
 lb, ub = -5, 5
+cnt = -1
 
 
 def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
     space = RealSpace([lb, ub], random_seed=seed) * dim
     print(f'seed={seed}')
+    global cnt
+    cnt += 1
     if optimizer_name == 'KernelPCABOCheat':
         return KernelPCABO1(
             search_space=space,
@@ -63,28 +66,16 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
             acquisition_optimization={"optimizer": "BFGS"},
         )
     elif optimizer_name == 'BO':
-        bounds = np.asarray([(lb, ub)]*dim)
         return BO(
             search_space=space,
-            obj_fun=func,
+            obj_fun=fitness,
             DoE_size=doe_size,
-            max_FEs=total_budget,
-            verbose=True,
             n_point=1,
             random_seed=seed,
-            model=GaussianProcess(
-                mean=trend.constant_trend(dim),
-                corr="squared_exponential",
-                theta0=[0.1]*dim,
-                thetaL=[1e-3]*dim,
-                thetaU=[1e3]*dim,
-                optimizer="BFGS",
-                nugget=1e-10,
-                random_start=max(10, dim),
-                likelihood="concentrated",
-                eval_budget=100 * dim,
-            ),
+            data_file=f"test-{cnt}.csv",
             acquisition_optimization={"optimizer": "BFGS"},
+            max_FEs=total_budget,
+            verbose=True,
         )
     elif optimizer_name == 'CMA_ES':
         return OnePlusOne_Cholesky_CMA(
