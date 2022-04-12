@@ -147,7 +147,7 @@ class BaseBO(BaseOptimizer):
                 kernel=cov_amplitude * other_kernel,
                 normalize_y=True,
                 noise="gaussian",
-                n_restarts_optimizer=max(5, int(self.search_space.dim / 2)),
+                n_restarts_optimizer=5,
                 lb=lb,
                 ub=ub,
             )
