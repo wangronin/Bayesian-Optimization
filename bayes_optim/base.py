@@ -1,21 +1,30 @@
 import functools
 import os
+import time
 from abc import abstractmethod
-from copy import copy
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from copy import copy, deepcopy
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import dill
 import numpy as np
+from sklearn.base import clone, is_regressor
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
 from bayes_optim.utils.logger import dump_logger, load_logger
 
 from ._base import BaseOptimizer
 from .acquisition import acquisition_fun as AcquisitionFunction
-from .acquisition.optim import argmax_restart, default_AQ_max_FEs, default_AQ_n_restart, default_AQ_wait_iter, OptimizationListener
+from .acquisition.optim import (
+    OptimizationListener,
+    argmax_restart,
+    default_AQ_max_FEs,
+    default_AQ_n_restart,
+    default_AQ_wait_iter,
+)
+from .mylogging import *
 from .search_space import RealSpace
 from .solution import Solution
+from .surrogate.gaussian_process import ConstantKernel, GaussianProcess, Matern
 from .utils import (
     arg_to_int,
     dynamic_penalty,
@@ -25,8 +34,6 @@ from .utils import (
     timeit,
 )
 from .utils.exception import AskEmptyError, FlatFitnessError
-from .mylogging import *
-import time
 
 __authors__ = ["Hao Wang"]
 
@@ -119,7 +126,7 @@ class BaseBO(BaseOptimizer):
         self._acquisition_par = acquisition_par if acquisition_par else {}
         # the callback functions executed after every call of `arg_max_acquisition`
         self._acquisition_callbacks = []
-        self.model = model
+        self._model = model
 
         self._eval_type = eval_type
         self._set_internal_optimization(acquisition_optimization)
@@ -130,8 +137,22 @@ class BaseBO(BaseOptimizer):
         self.acq_opt_time = 0
         self.mode_fit_time = 0
 
-        # global GLOBAL_CHARTS_SAVER1
-        # GLOBAL_CHARTS_SAVER1 = MyChartSaver('BO', 'BO', self._search_space.bounds, self.obj_fun) 
+        if self._model is None:
+            lb, ub = np.array(self.search_space.bounds).T
+            cov_amplitude = ConstantKernel(1.0, (0.01, 1000.0))
+            other_kernel = Matern(
+                length_scale=np.ones(self.dim), length_scale_bounds=[(0.01, 100)] * self.dim, nu=2.5
+            )
+            self._model = GaussianProcess(
+                kernel=cov_amplitude * other_kernel,
+                normalize_y=True,
+                noise="gaussian",
+                n_restarts_optimizer=2,
+                lb=lb,
+                ub=ub,
+            )
+            self._model.set_params(noise=0.1**2, random_state=kwargs["random_seed"])
+        self.model = clone(self._model)
 
     @property
     def acquisition_fun(self):
@@ -260,7 +281,7 @@ class BaseBO(BaseOptimizer):
             n_restart=self.AQ_n_restart,
             wait_iter=self.AQ_wait_iter,
             optimizer=self._optimizer,
-            listener=listener
+            listener=listener,
         )
 
     def _check_params(self):
@@ -279,7 +300,10 @@ class BaseBO(BaseOptimizer):
 
     @timeit
     def ask(
-        self, n_point: int = None, fixed: Dict[str, Union[float, int, str]] = None, listener: OptimizationListener = None
+        self,
+        n_point: int = None,
+        fixed: Dict[str, Union[float, int, str]] = None,
+        listener: OptimizationListener = None,
     ) -> Union[List[list], List[dict]]:
         """suggest a list of candidate solutions
 
@@ -330,7 +354,6 @@ class BaseBO(BaseOptimizer):
             self.logger.info(f"#{i + 1} - {self._to_pheno(X[i])}")
 
         self.acq_opt_time = time.time() - start
-
         return self._to_pheno(X)
 
     @timeit
@@ -386,8 +409,6 @@ class BaseBO(BaseOptimizer):
             self.iter_count += 1
             self.hist_f.append(xopt.fitness)
 
-        # GLOBAL_CHARTS_SAVER1.save(self.iter_count, self.data)
-
     def create_DoE(self, n_point: int, fixed: Dict = None) -> List:
         """get the initial sample points using Design of Experiemnt (DoE) methods
 
@@ -409,9 +430,10 @@ class BaseBO(BaseOptimizer):
         while n_point:
             # NOTE: random sampling could generate duplicated points again
             # keep sampling until getting enough points
+            search_space.random_seed = np.random.randint(1000)
             X = search_space.sample(
                 n_point,
-                method="LHS" if n_point > 1 else "uniform",
+                method="uniform" if n_point > 1 else "uniform",
                 h=partial_argument(self._h, self.search_space.var_name, fixed) if self._h else None,
                 g=partial_argument(self._g, self.search_space.var_name, fixed) if self._g else None,
             ).tolist()
@@ -464,11 +486,13 @@ class BaseBO(BaseOptimizer):
         if len(fitness) > 5 and np.isclose(_std, 0):
             raise FlatFitnessError()
 
-        fitness_ = fitness if np.isclose(_std, 0) else (fitness - np.mean(fitness)) / np.std(fitness)
+        # fitness_ = fitness if np.isclose(_std, 0) else (fitness - np.mean(fitness)) / np.std(fitness)
+        fitness_ = fitness
         self.fmin, self.fmax = np.min(fitness_), np.max(fitness_)
         self.frange = self.fmax - self.fmin
 
-        self.model.fit(data, fitness_.reshape(-1, 1))
+        self.model = clone(self._model)
+        self.model.fit(np.array(data.tolist()), fitness_)
         fitness_hat = self.model.predict(data)
 
         r2 = r2_score(fitness_, fitness_hat)
@@ -478,7 +502,11 @@ class BaseBO(BaseOptimizer):
 
     @timeit
     def arg_max_acquisition(
-        self, n_point: int = None, return_value: bool = False, fixed: Dict = None, listener: OptimizationListener = None
+        self,
+        n_point: int = None,
+        return_value: bool = False,
+        fixed: Dict = None,
+        listener: OptimizationListener = None,
     ) -> List[list]:
         """Global Optimization of the acquisition function / Infill criterion
 

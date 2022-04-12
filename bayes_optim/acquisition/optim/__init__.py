@@ -1,5 +1,6 @@
 import logging
 import time
+from abc import ABC, abstractmethod
 from typing import Callable, List, Tuple
 
 import numpy as np
@@ -10,7 +11,6 @@ from ...utils import dynamic_penalty
 from .mies import MIES
 from .one_plus_one_cma_es import OnePlusOne_Cholesky_CMA, OnePlusOne_CMA
 from .option import default_AQ_max_FEs, default_AQ_n_restart, default_AQ_wait_iter
-from abc import ABC, abstractmethod
 
 __all__: List[str] = [
     "argmax_restart",
@@ -20,7 +20,7 @@ __all__: List[str] = [
     "default_AQ_max_FEs",
     "default_AQ_n_restart",
     "default_AQ_wait_iter",
-    "OptimizationListener"
+    "OptimizationListener",
 ]
 
 
@@ -70,7 +70,7 @@ def argmax_restart(
     wait_iter: int = 3,
     optimizer: str = "BFGS",
     logger: logging.Logger = None,
-    listener: OptimizationListener = None
+    listener: OptimizationListener = None,
 ):
     # lists of the best solutions and acquisition values from each restart
     xopt, fopt = [], []
@@ -80,16 +80,23 @@ def argmax_restart(
         optimizer = "MIES"
         logger.warning("L-BFGS-B can only be applied on continuous search space")
 
+    X = search_space.sample(int(1e3), method="uniform")
+    af_value = [obj_func(x)[0] for x in X]
+    idx = np.argsort(af_value)[::-1]
+    X = X[idx, :]
+
     for iteration in range(n_restart):
-        x0 = search_space.sample(N=1, method="uniform")[0]
+        # x0 = search_space.sample(N=1, method="uniform")[0]
+        x0 = X[iteration]
         if optimizer == "BFGS":
             bounds = np.array(search_space.bounds)
             # TODO: this is still subject to testing
             xopt_, fopt_, stop_dict = fmin_l_bfgs_b(
                 Penalized(obj_func, h, g),
                 x0,
-                pgtol=1e-8,
-                factr=1e6,
+                # pgtol=1e-8,
+                # factr=1e6,
+                approx_grad=False,
                 bounds=bounds,
                 maxfun=eval_budget,
             )
@@ -99,7 +106,7 @@ def argmax_restart(
             fopt_ = -fopt_
 
             if logger is not None and stop_dict["warnflag"] != 0:
-                logger.debug("L-BFGS-B terminated abnormally with the state: %s" % stop_dict)
+                logger.info("L-BFGS-B terminated abnormally with the state: %s" % stop_dict)
 
         elif optimizer == "OnePlusOne_Cholesky_CMA":
             opt = OnePlusOne_Cholesky_CMA(
@@ -141,7 +148,7 @@ def argmax_restart(
                 wait_count = 0
 
                 if logger is not None:
-                    logger.debug(
+                    logger.info(
                         "restart : %d - funcalls : %d - Fopt : %f"
                         % (iteration + 1, stop_dict["funcalls"], fopt_)
                     )
@@ -152,7 +159,8 @@ def argmax_restart(
             xopt.append(xopt_)
             fopt.append(fopt_)
 
-            if listener is not None: listener.on_optimum_found(fopt_, xopt_)
+            if listener is not None:
+                listener.on_optimum_found(fopt_, xopt_)
 
         if eval_budget <= 0 or wait_count >= wait_iter:
             break

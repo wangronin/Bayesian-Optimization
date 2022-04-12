@@ -4,9 +4,9 @@ from multiprocessing.sharedctypes import Value
 from typing import Tuple, Union
 
 import numpy as np
+from bayes_optim.mylogging import eprintf
 from numpy import exp, sqrt
 from scipy.stats import norm
-from bayes_optim.mylogging import eprintf
 
 from ..surrogate import GaussianProcess, RandomForest
 
@@ -156,23 +156,29 @@ class EI(ImprovementBased):
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
         X = self.check_X(X)
         n_sample = X.shape[0]
-        y_hat, sd = self._predict(X)
+        xi = 0.0
 
+        if return_dx:
+            mu, std, mu_grad, std_grad = self._model.predict(
+                X, return_std=True, return_mean_grad=True, return_std_grad=True
+            )
+        else:
+            mu, std = self._model.predict(X, return_std=True)
         # if the Kriging variance is to small
         # TODO: check the rationale of 1e-6 and why the ratio if intended
         if hasattr(self._model, "sigma2"):
-            if sd / np.sqrt(self._model.sigma2) < 1e-6:
+            if std / np.sqrt(self._model.sigma2) < 1e-6:
                 return (0, np.zeros((len(X[0]), 1))) if return_dx else 0
         else:
             # TODO: implement a counterpart of 'sigma2' for randomforest
             # or simply put a try...except around the code below
-            if sd < 1e-10:
+            if std < 1e-10:
                 return (0, np.zeros((len(X[0]), 1))) if return_dx else 0
         try:
-            xcr_ = self.plugin - y_hat
-            xcr = xcr_ / sd
-            xcr_prob, xcr_dens = norm.cdf(xcr), norm.pdf(xcr)
-            value = xcr_ * xcr_prob + sd * xcr_dens
+            impr = self.plugin - xi - mu
+            xcr = impr / std
+            cdf, pdf = norm.cdf(xcr), norm.pdf(xcr)
+            value = impr * cdf + std * pdf
             if n_sample == 1:
                 value = sum(value)
         except Exception:  # in case of numerical errors
@@ -180,10 +186,14 @@ class EI(ImprovementBased):
             value = 0
 
         if return_dx:
-            y_dx, sd2_dx = self._gradient(X)
-            sd_dx = sd2_dx / (2.0 * sd)
             try:
-                dx = -y_dx * xcr_prob + sd_dx * xcr_dens
+                improve_grad = -mu_grad * std - std_grad * impr
+                improve_grad /= std**2
+                cdf_grad = improve_grad * pdf
+                pdf_grad = -impr * cdf_grad
+                exploit_grad = -mu_grad * cdf - pdf_grad
+                explore_grad = std_grad * pdf + pdf_grad
+                dx = exploit_grad + explore_grad
             except Exception:
                 dx = np.zeros((len(X[0]), 1))
             return value, dx

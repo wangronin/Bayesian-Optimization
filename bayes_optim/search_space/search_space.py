@@ -189,9 +189,7 @@ class SearchSpace:
             key = var.conditions["vars"][0]
             if key not in var.conditions["vars"]:
                 raise ValueError(f"variable {var} not in {self}")
-            _structure.setdefault(key, []).append(
-                {"name": var.name, "condition": var.conditions["string"]}
-            )
+            _structure.setdefault(key, []).append({"name": var.name, "condition": var.conditions["string"]})
         self.structure = [t.remove(self.var_name, invert=True) for t in Node.from_dict(_structure)]
         self.structure = [t for t in self.structure if t]
 
@@ -223,9 +221,7 @@ class SearchSpace:
                 self.__dict__[attr_mask] = mask
                 self.__dict__[attr_id] = np.nonzero(mask)[0]
 
-            self.categorical_id = np.r_[
-                self.discrete_id, self.ordinal_id, self.bool_id, self.subset_id
-            ]
+            self.categorical_id = np.r_[self.discrete_id, self.ordinal_id, self.bool_id, self.subset_id]
             self.categorical_mask = np.bitwise_or(
                 self.bool_mask,
                 np.bitwise_or(self.discrete_mask, self.ordinal_mask, self.subset_mask),
@@ -236,9 +232,7 @@ class SearchSpace:
         """Set categorical levels for all nominal variables"""
         if self.dim > 0:
             self.levels = (
-                {i: self._bounds[i] for i in self.categorical_id}
-                if len(self.categorical_id) > 0
-                else {}
+                {i: self._bounds[i] for i in self.categorical_id} if len(self.categorical_id) > 0 else {}
             )
 
     def __getitem__(self, index) -> Union[SearchSpace, Variable]:
@@ -321,9 +315,7 @@ class SearchSpace:
         random_seed = self.random_seed if self.random_seed else space.random_seed
         data = deepcopy(self.data) + space.data
         if hasattr(self, "structure"):
-            structure = [t.deepcopy() for t in self.structure] + [
-                t.deepcopy() for t in space.structure
-            ]
+            structure = [t.deepcopy() for t in self.structure] + [t.deepcopy() for t in space.structure]
         else:
             structure = {}
         return SearchSpace(data, random_seed, structure)
@@ -397,9 +389,7 @@ class SearchSpace:
         SearchSpace
             `self`
         """
-        self._set_data(
-            self.data + [deepcopy(var) for _ in range(max(1, int(N - 1))) for var in self.data]
-        )
+        self._set_data(self.data + [deepcopy(var) for _ in range(max(1, int(N - 1))) for var in self.data])
         return self
 
     def __repr__(self):
@@ -536,14 +526,12 @@ class SearchSpace:
         try:
             # NOTE: equality constraints are converted to an epsilon-tude around the
             # corresponding manifold
-            idx_h = (
-                list(map(lambda x: all(np.isclose(np.abs(h(x)), 0, atol=tol)), S))
-                if h
-                else [True] * n
-            )
-            idx_g = list(map(lambda x: np.all(np.asarray(g(x)) <= 0), S)) if g else [True] * n
-            idx = np.bitwise_and(idx_h, idx_g)
-            S = S[idx, :]
+            if h:
+                idx = list(map(lambda x: all(np.isclose(np.abs(h(x)), 0, atol=tol)), S))
+                S = S[idx, :]
+            if g:
+                idx = list(map(lambda x: np.all(np.asarray(g(x)) <= 0), S))
+                S = S[idx, :]
         except Exception as e:
             raise ConstraintEvaluationError(S, str(e)) from None
 
@@ -662,8 +650,7 @@ class SearchSpace:
                     ]
                 elif v["type"] in ["i", "int", "integer"]:  # integer-valued parameter
                     _vars = [
-                        Integer(bounds, name=k, default_value=default_value, step=v.pop("step", 1))
-                        for _ in N
+                        Integer(bounds, name=k, default_value=default_value, step=v.pop("step", 1)) for _ in N
                     ]
                 elif v["type"] in ["o", "ordinal"]:  # ordinal parameter
                     _vars = [Ordinal(bounds, name=k, default_value=default_value) for _ in N]

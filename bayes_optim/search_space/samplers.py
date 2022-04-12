@@ -10,7 +10,7 @@ from ..utils.exception import ConstraintEvaluationError
 
 __author__ = "Hao Wang"
 
-warnings.filterwarnings("error")
+# warnings.filterwarnings("error")
 
 
 class SCMC:
