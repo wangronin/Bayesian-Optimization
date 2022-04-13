@@ -27,6 +27,7 @@ from .mylogging import *
 import time
 import bisect
 import scipy
+from collections import deque
 
 
 GLOBAL_CHARTS_SAVER = None
@@ -747,6 +748,7 @@ class KernelPCABO(BO):
         self.ratio_of_best_for_kernel_refit = 0.2
         self.acq_opt_time = 0
         self.mode_fit_time = 0
+        self.archive = KernelPCABO.Archive(self.dim, 3 * self.dim)
 
     @staticmethod
     def _compute_bounds(kpca: MyKernelPCA, search_space: SearchSpace) -> List[float]:
@@ -890,6 +892,61 @@ class KernelPCABO(BO):
         n = len(self.ordered_container)
         return pos / n <= self.ratio_of_best_for_kernel_refit if n != 0 else True
 
+
+    class Archive:
+        def __init__(self, old_threshold, bad_threshold, minimize=True):
+            self.old_threshold = old_threshold
+            self.bad_threshold = bad_threshold
+            self.points = []
+            self.__minimize = minimize
+            if not minimize:
+                raise NotImplementedError
+
+        class Point:
+            def __init__(self, coordinates, value):
+                self.coordinates = coordinates
+                self.obj_value = value
+                self.old_count = 0
+
+        def __update_after_insert(self, pos_insert):
+            if pos_insert >= self.bad_threshold:
+                return
+            to_delete = []
+            for i in range(pos_insert):
+                self.points[i].old_count += 1
+                if self.points[i].old_count >= self.old_threshold:
+                    to_delete.append(i)
+            for i in range(pos_insert, min(len(self.points), self.bad_threshold)):
+                self.points[i].old_count = 0
+            for ind in to_delete[::-1]:
+                print(f'good point {ind} is thrown away')
+                self.points.pop(ind)
+            if len(to_delete)>0:
+                for i in range(min(len(self.points), self.bad_threshold)):
+                    self.points[i].old_count = 0
+            print('point is good')
+            [print(p.old_count, p.obj_value) for p in self.points]
+
+        def add_point(self, coordinates, value):
+            to_delete_positions = []
+            for i in range(min(len(self.points), self.bad_threshold)):
+                if self.points[i].obj_value > value:
+                    self.points.insert(i, KernelPCABO.Archive.Point(coordinates, value))
+                    self.__update_after_insert(i)
+                    return
+
+        def get_points_for_manifold_learning(self):
+            return np.array([p.coordinates for p in self.points]), np.array([p.obj_value for p in self.points])
+
+        def add_doe(self, coordinates, values):
+            ids = np.argsort(values)
+            self.points = [KernelPCABO.Archive.Point([], 0)] * len(values)
+            pos = 0
+            for ind in ids:
+                self.points[pos] = KernelPCABO.Archive.Point(coordinates[ind], values[ind])
+                pos += 1
+
+
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
         for i, x in enumerate(new_X):
@@ -905,14 +962,20 @@ class KernelPCABO(BO):
         GLOBAL_CHARTS_SAVER.set_iter_number(self.iter_count)
 
         new_X = self.post_eval_check(new_X)  # remove NaN's
+        if len(new_X) > 1:
+            self.archive.add_doe(new_X, new_y)
+        else:
+            self.archive.add_point(new_X[0], new_y[0])
         self.data = self.data + new_X if hasattr(self, "data") else new_X
         for y in new_y:
             if self.__is_promising_y(y):
                 self._pca.set_kernel_refit_needed(True)
             self.ordered_container.add_element(y)
         # re-fit the PCA transformation
-        self._pca.set_initial_space_points(self.data)
-        X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
+        good_points, good_points_values = self.archive.get_points_for_manifold_learning()
+        self._pca.set_initial_space_points(good_points)
+        self._pca.fit(good_points, good_points_values)
+        X = self._pca.transform(self.data)
         eprintf("Feature space points", X)
         bounds = self._compute_bounds(self._pca, self.__search_space)
         eprintf("Bounds in the feature space", bounds)
