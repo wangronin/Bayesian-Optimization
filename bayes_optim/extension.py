@@ -502,20 +502,24 @@ class KernelPCABO1(BO):
         eprintf('acq lower dim x =', kpca.transform(x))
         return lower_dimensional_acquisition_function(kpca.transform(x)[0])
 
-    def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
+    def _create_acquisition(self, fun=None, par=None, return_dx=False, fixed=None) -> Callable:
         fun = fun if fun is not None else self._acquisition_fun
-        par = copy(self._acquisition_par)
+        par = par if par is not None else copy(self._acquisition_par)
         par.update({"model": self.model, "minimize": self.minimize})
         criterion = getattr(AcquisitionFunction, fun)(**par)
         lower_dim_acq_function = partial_argument(
             func=functools.partial(criterion, return_dx=return_dx),
             var_name=self.lower_dim_search_space.var_name,
-            fixed=None,
+            fixed=fixed,
             reduce_output=return_dx,
-        )
+        ), functools.partial(criterion, return_dx=False)
         return functools.partial(
             KernelPCABO1.my_acquisition_function,
-            lower_dimensional_acquisition_function=lower_dim_acq_function,
+            lower_dimensional_acquisition_function=lower_dim_acq_function[0],
+            kpca=self._pca,
+        ), functools.partial(
+            KernelPCABO1.my_acquisition_function,
+            lower_dimensional_acquisition_function=lower_dim_acq_function[1],
             kpca=self._pca,
         )
 
@@ -599,29 +603,16 @@ class KernelPCABO1(BO):
         bounds = np.asarray(self._compute_bounds(self._pca, self.__search_space))
         self.lower_dim_search_space = RealSpace(bounds)
         dim = self.lower_dim_search_space.dim
-        self.model = GaussianProcess(
-            mean=trend.constant_trend(dim),
-            corr="matern",
-            thetaL=1e-3 * (bounds[:, 1] - bounds[:, 0]),
-            thetaU=1e3 * (bounds[:, 1] - bounds[:, 0]),
-            nugget=1e-6,
-            noise_estim=False,
-            optimizer="BFGS",
-            wait_iter=3,
-            random_start=max(10, dim),
-            likelihood="concentrated",
-            eval_budget=100 * dim,
-        )
-
+        self.model = self.create_default_model(self.lower_dim_search_space, self.my_seed)
         _std = np.std(y)
-        y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
+        y_ = y
 
         self.fmin, self.fmax = np.min(y_), np.max(y_)
         self.frange = self.fmax - self.fmin
 
         self.model.fit(X, y_)
         GLOBAL_CHARTS_SAVER.save_model(self.model, X, y_)
-        y_hat = self.model.predict(X, batch_size=None)
+        y_hat = self.model.predict(X)
 
         r2 = r2_score(y_, y_hat)
         MAPE = mean_absolute_percentage_error(y_, y_hat)
