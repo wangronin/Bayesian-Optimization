@@ -1,18 +1,20 @@
-from functools import partial
-import random
-from maria_laura.wrapper import marialaura as create_marialaura_alg
-from my_logger import MyIOHFormatOnEveryEvaluationLogger, MyObjectiveFunctionWrapper
-from bayes_optim.surrogate import GaussianProcess, trend
-from bayes_optim.extension import RealSpace, KernelPCABO1, KernelPCABO, KernelFitStrategy, PCABO, BO
-import sys
-import os
-import json
-from ioh import Experiment, get_problem, logger, problem, OptimizationType
-from bayes_optim.acquisition import OnePlusOne_Cholesky_CMA
-import numpy as np
 import copy
+import json
+import os
+import random
+import sys
 import time
 from datetime import timedelta
+from functools import partial
+
+import numpy as np
+from bayes_optim.acquisition import OnePlusOne_Cholesky_CMA
+from bayes_optim.extension import BO, PCABO, KernelFitStrategy, KernelPCABO, KernelPCABO1, RealSpace
+from bayes_optim.surrogate import GaussianProcess, trend
+from ioh import Experiment, OptimizationType, get_problem, logger, problem
+from maria_laura.wrapper import marialaura as create_marialaura_alg
+
+from my_logger import MyIOHFormatOnEveryEvaluationLogger, MyObjectiveFunctionWrapper
 
 sys.path.insert(0, "./")
 
@@ -26,8 +28,8 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
     global seed
     seed = random.randint(1, 1e9)
     space = RealSpace([lb, ub], random_seed=seed) * dim
-    print(f'seed={seed}')
-    if optimizer_name == 'KernelPCABOCheat':
+    print(f"seed={seed}")
+    if optimizer_name == "KernelPCABOCheat":
         return KernelPCABO1(
             search_space=space,
             obj_fun=func,
@@ -38,9 +40,9 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
             acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
             max_information_loss=0.1,
             kernel_fit_strategy=KernelFitStrategy.AUTO,
-            NN=dim
+            NN=dim,
         )
-    elif optimizer_name == 'KernelPCABOInverse':
+    elif optimizer_name == "KernelPCABOInverse":
         return KernelPCABO(
             search_space=space,
             obj_fun=func,
@@ -51,9 +53,9 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
             acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
             max_information_loss=0.1,
             kernel_fit_strategy=KernelFitStrategy.AUTO,
-            NN=dim
+            NN=dim,
         )
-    elif optimizer_name == 'LinearPCABO':
+    elif optimizer_name == "LinearPCABO":
         return PCABO(
             search_space=space,
             obj_fun=func,
@@ -64,8 +66,8 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
             n_components=0.90,
             acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
         )
-    elif optimizer_name == 'BO':
-        bounds = np.asarray([(lb, ub)]*dim)
+    elif optimizer_name == "BO":
+        bounds = np.asarray([(lb, ub)] * dim)
         return BO(
             search_space=space,
             obj_fun=func,
@@ -77,9 +79,9 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
             model=GaussianProcess(
                 mean=trend.constant_trend(dim),
                 corr="squared_exponential",
-                theta0=[0.1]*dim,
-                thetaL=[1e-3]*dim,
-                thetaU=[1e3]*dim,
+                theta0=[0.1] * dim,
+                thetaL=[1e-3] * dim,
+                thetaU=[1e3] * dim,
                 optimizer="BFGS",
                 nugget=1e-10,
                 random_start=max(10, dim),
@@ -88,7 +90,7 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
             ),
             acquisition_optimization={"optimizer": "OnePlusOne_Cholesky_CMA"},
         )
-    elif optimizer_name == 'CMA_ES':
+    elif optimizer_name == "CMA_ES":
         return OnePlusOne_Cholesky_CMA(
             search_space=space,
             obj_fun=func,
@@ -97,25 +99,25 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size):
             sigma0=40,
             max_FEs=total_budget,
             verbose=False,
-            random_seed=seed
+            random_seed=seed,
         )
-    elif optimizer_name == 'SAASBO':
+    elif optimizer_name == "SAASBO":
         return create_saasbo(
-            optimizer_name='saasbo',
+            optimizer_name="saasbo",
             func=func,
             ml_dim=dim,
             ml_total_budget=total_budget,
             ml_DoE_size=doe_size,
-            random_seed=seed
+            random_seed=seed,
         )
-    elif optimizer_name == 'SKlearnBO':
+    elif optimizer_name == "SKlearnBO":
         return create_marialaura_alg(
-            optimizer_name='BO_sklearn',
+            optimizer_name="BO_sklearn",
             func=func,
             ml_dim=dim,
             ml_total_budget=total_budget,
             ml_DoE_size=doe_size,
-            random_seed=seed
+            random_seed=seed,
         )
     else:
         raise NotImplementedError
@@ -146,19 +148,18 @@ class AlgorithmWrapper:
         func = partial(AlgorithmWrapper.__fitness_function_wrapper, f=f)
         total_budget = 50 + 10 * self.dim
         doe_size = 3 * self.dim
-        self.opt = create_algorithm(
-            optimizer_name, func, self.dim, total_budget, doe_size)
+        self.opt = create_algorithm(optimizer_name, func, self.dim, total_budget, doe_size)
         self.opt.run()
 
     @property
     def lower_space_dim(self) -> int:
-        if self.optimizer_name == 'BO':
+        if self.optimizer_name == "BO":
             return self.dim
         return self.opt.get_lower_space_dimensionality()
 
     @property
     def extracted_information(self) -> float:
-        if self.optimizer_name == 'BO':
+        if self.optimizer_name == "BO":
             return 1.0
         return self.opt.get_extracted_information()
 
@@ -183,12 +184,20 @@ def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep):
     global seed
     seed = rep
     algorithm = AlgorithmWrapper()
-    l = MyIOHFormatOnEveryEvaluationLogger(
-        folder_name=MY_EXPEREMENT_FOLDER, algorithm_name=my_optimizer_name)
-    print(f'    Logging to the folder {l.folder_name}')
+    l = MyIOHFormatOnEveryEvaluationLogger(folder_name=MY_EXPEREMENT_FOLDER, algorithm_name=my_optimizer_name)
+    print(f"    Logging to the folder {l.folder_name}")
     sys.stdout.flush()
-    l.watch(algorithm, ['lower_space_dim', 'extracted_information',
-            'out_of_the_box_solutions', 'kernel_config', 'acq_opt_time', 'model_fit_time'])
+    l.watch(
+        algorithm,
+        [
+            "lower_space_dim",
+            "extracted_information",
+            "out_of_the_box_solutions",
+            "kernel_config",
+            "acq_opt_time",
+            "model_fit_time",
+        ],
+    )
     p = MyObjectiveFunctionWrapper(fid, iid, dim)
     p.attach_logger(l)
     algorithm(my_optimizer_name, p, fid, iid, dim)
@@ -197,24 +206,18 @@ def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep):
 
 def run_experiment():
     if len(sys.argv) == 1:
-        print('No configs given')
+        print("No configs given")
         return
     with open(sys.argv[1]) as f:
         m = json.load(f)
-    print(f'Running with config {m} ...')
-    global MY_EXPEREMENT_FOLDER, lb, ub
-    MY_EXPEREMENT_FOLDER = m['folder']
-    lb = m['lb']
-    ub = m['ub']
+    print(f"Running with config {m} ...")
     start = time.time()
-    run_particular_experiment(
-        m['opt'], m['fid'], m['iid'], m['dim'], m['seed'])
+    run_particular_experiment(m["opt"], m["fid"], m["iid"], m["dim"], m["seed"], m["folder"])
     end = time.time()
     sec = int(round(end - start))
-    x = str(timedelta(seconds=sec)).split(':')
-    print(
-        f'    Done in {sec} seconds. Which is {x[0]} hours, {x[1]} minutes and {x[2]} seconds')
+    x = str(timedelta(seconds=sec)).split(":")
+    print(f"    Done in {sec} seconds. Which is {x[0]} hours, {x[1]} minutes and {x[2]} seconds")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     run_experiment()

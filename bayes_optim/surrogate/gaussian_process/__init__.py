@@ -1,230 +1,390 @@
 from __future__ import annotations
 
 import warnings
-from functools import partial
-from typing import List, Tuple, Union
 
 import numpy as np
-from scipy.linalg import solve_triangular
-from scipy.spatial.distance import cdist
+import scipy
+import sklearn
+from scipy.linalg import cho_solve, solve_triangular
 from sklearn.gaussian_process import GaussianProcessRegressor as sk_gpr
-from sklearn.gaussian_process.kernels import RBF, Matern, WhiteKernel
+from sklearn.utils import check_array
 
-from ...search_space import RealSpace, SearchSpace
-from ...utils import safe_divide
 from . import trend
-from .gpr import GaussianProcess
+from .kernels import RBF, ConstantKernel, Matern, Sum, WhiteKernel
 from .utils import MSLL, SMSE
-
-# from sklearn.model_selection import cross_val_score
-
 
 warnings.filterwarnings("ignore")
 
 __author__ = "Hao Wang"
-__all__ = ["SMSE", "MSLL", "GaussianProcess", "trend"]
+__all__ = ["SMSE", "MSLL", "GaussianProcess", "trend", "RBF", "ConstantKernel", "Matern"]
 
 
-class GaussianProcessSklearn:
-    """Wrapper for sklearn's GPR model"""
+def _param_for_white_kernel_in_Sum(kernel, kernel_str=""):
+    """
+    Check if a WhiteKernel exists in a Sum Kernel
+    and if it does return the corresponding key in
+    `kernel.get_params()`
+    """
+    if kernel_str != "":
+        kernel_str = kernel_str + "__"
+
+    if isinstance(kernel, Sum):
+        for param, child in kernel.get_params(deep=False).items():
+            if isinstance(child, WhiteKernel):
+                return True, kernel_str + param
+            else:
+                present, child_str = _param_for_white_kernel_in_Sum(child, kernel_str + param)
+                if present:
+                    return True, child_str
+
+    return False, "_"
+
+
+class GaussianProcess(sk_gpr):
+    """
+    GaussianProcessRegressor that allows noise tunability.
+
+    The implementation is based on Algorithm 2.1 of Gaussian Processes
+    for Machine Learning (GPML) by Rasmussen and Williams.
+
+    In addition to standard scikit-learn estimator API,
+    GaussianProcessRegressor:
+
+       * allows prediction without prior fitting (based on the GP prior);
+       * provides an additional method sample_y(X), which evaluates samples
+         drawn from the GPR (prior or posterior) at given inputs;
+       * exposes a method log_marginal_likelihood(theta), which can be used
+         externally for other ways of selecting hyperparameters, e.g., via
+         Markov chain Monte Carlo.
+
+    Parameters
+    ----------
+    kernel : kernel object
+        The kernel specifying the covariance function of the GP. If None is
+        passed, the kernel "1.0 * RBF(1.0)" is used as default. Note that
+        the kernel's hyperparameters are optimized during fitting.
+
+    alpha : float or array-like, optional (default: 1e-10)
+        Value added to the diagonal of the kernel matrix during fitting.
+        Larger values correspond to increased noise level in the observations
+        and reduce potential numerical issue during fitting. If an array is
+        passed, it must have the same number of entries as the data used for
+        fitting and is used as datapoint-dependent noise level. Note that this
+        is equivalent to adding a WhiteKernel with c=alpha. Allowing to specify
+        the noise level directly as a parameter is mainly for convenience and
+        for consistency with Ridge.
+
+    optimizer : string or callable, optional (default: "fmin_l_bfgs_b")
+        Can either be one of the internally supported optimizers for optimizing
+        the kernel's parameters, specified by a string, or an externally
+        defined optimizer passed as a callable. If a callable is passed, it
+        must have the signature::
+
+            def optimizer(obj_func, initial_theta, bounds):
+                # * 'obj_func' is the objective function to be maximized, which
+                #   takes the hyperparameters theta as parameter and an
+                #   optional flag eval_gradient, which determines if the
+                #   gradient is returned additionally to the function value
+                # * 'initial_theta': the initial value for theta, which can be
+                #   used by local optimizers
+                # * 'bounds': the bounds on the values of theta
+                ....
+                # Returned are the best found hyperparameters theta and
+                # the corresponding value of the target function.
+                return theta_opt, func_min
+
+        Per default, the 'fmin_l_bfgs_b' algorithm from scipy.optimize
+        is used. If None is passed, the kernel's parameters are kept fixed.
+        Available internal optimizers are::
+
+            'fmin_l_bfgs_b'
+
+    n_restarts_optimizer : int, optional (default: 0)
+        The number of restarts of the optimizer for finding the kernel's
+        parameters which maximize the log-marginal likelihood. The first run
+        of the optimizer is performed from the kernel's initial parameters,
+        the remaining ones (if any) from thetas sampled log-uniform randomly
+        from the space of allowed theta-values. If greater than 0, all bounds
+        must be finite. Note that n_restarts_optimizer == 0 implies that one
+        run is performed.
+
+    normalize_y : boolean, optional (default: False)
+        Whether the target values y are normalized, i.e., the mean of the
+        observed target values become zero. This parameter should be set to
+        True if the target values' mean is expected to differ considerable from
+        zero. When enabled, the normalization effectively modifies the GP's
+        prior based on the data, which contradicts the likelihood principle;
+        normalization is thus disabled per default.
+
+    copy_X_train : bool, optional (default: True)
+        If True, a persistent copy of the training data is stored in the
+        object. Otherwise, just a reference to the training data is stored,
+        which might cause predictions to change if the data is modified
+        externally.
+
+    random_state : integer or numpy.RandomState, optional
+        The generator used to initialize the centers. If an integer is
+        given, it fixes the seed. Defaults to the global numpy random
+        number generator.
+
+    noise : string, "gaussian", optional
+        If set to "gaussian", then it is assumed that `y` is a noisy
+        estimate of `f(x)` where the noise is gaussian.
+
+    Attributes
+    ----------
+    X_train_ : array-like, shape = (n_samples, n_features)
+        Feature values in training data (also required for prediction)
+
+    y_train_ : array-like, shape = (n_samples, [n_output_dims])
+        Target values in training data (also required for prediction)
+
+    kernel_ kernel object
+        The kernel used for prediction. The structure of the kernel is the
+        same as the one passed as parameter but with optimized hyperparameters
+
+    L_ : array-like, shape = (n_samples, n_samples)
+        Lower-triangular Cholesky decomposition of the kernel in ``X_train_``
+
+    alpha_ : array-like, shape = (n_samples,)
+        Dual coefficients of training data points in kernel space
+
+    log_marginal_likelihood_value_ : float
+        The log-marginal-likelihood of ``self.kernel_.theta``
+
+    noise_ : float
+        Estimate of the gaussian noise. Useful only when noise is set to
+        "gaussian".
+    """
 
     def __init__(
         self,
-        domain: SearchSpace,
-        codomain: SearchSpace = None,
-        n_obj: int = 1,
-        optimizer: str = "fmin_l_bfgs_b",
-        n_restarts_optimizer: int = 0,
-        normalize_y: bool = True,
-        length_scale_bounds: Union[Tuple[float, float], List[Tuple[float, float]]] = (1e-10, 1e10),
+        kernel=None,
+        alpha=1e-10,
+        optimizer="fmin_l_bfgs_b",
+        n_restarts_optimizer=0,
+        normalize_y=False,
+        copy_X_train=True,
+        random_state=None,
+        noise=None,
+        lb=None,
+        ub=None,
     ):
-        assert isinstance(domain, RealSpace)
-        assert codomain is None or isinstance(codomain, RealSpace)
-        self.domain = domain
-        # TODO: this is not used for now, which should implement restriction on the co-domain
-        self.codomain = codomain
-        self.dim = self.domain.dim
-        self.n_obj = n_obj
+        self.noise = noise
         self.is_fitted = False
-
-        self._set_length_scale_bounds(length_scale_bounds, np.atleast_2d(self.domain.bounds))
-        self._set_kernels()
-
-        if n_restarts_optimizer == 0:
-            n_restarts_optimizer = int(3 * self.dim)
-
-        self._gpr_cls = partial(
-            sk_gpr,
-            normalize_y=normalize_y,
-            alpha=1e-8,
+        self.lb = lb
+        self.ub = ub
+        super().__init__(
+            kernel=kernel,
+            alpha=alpha,
             optimizer=optimizer,
             n_restarts_optimizer=n_restarts_optimizer,
+            normalize_y=normalize_y,
+            copy_X_train=copy_X_train,
+            random_state=random_state,
         )
 
-    def _set_length_scale_bounds(self, length_scale_bounds, bounds) -> np.ndarray:
-        length_scale_bounds = np.atleast_2d(length_scale_bounds)
-        if len(length_scale_bounds) == 1:
-            length_scale_bounds = np.repeat(length_scale_bounds, self.dim, axis=0)
-        self.length_scale_bounds = length_scale_bounds * (bounds[:, [1]] - bounds[:, [0]])
-
-    def _set_kernels(self):
-        kernel = [
-            Matern(
-                length_scale=np.ones(self.dim),
-                length_scale_bounds=self.length_scale_bounds,
-                nu=1.5,
-            ),
-            Matern(
-                length_scale=np.ones(self.dim),
-                length_scale_bounds=self.length_scale_bounds,
-                nu=2.5,
-            ),
-            RBF(
-                length_scale=np.ones(self.dim),
-                length_scale_bounds=self.length_scale_bounds,
-            ),
-        ]
-        self._kernel = [
-            1.0 * k + WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-15, 1e15)) for k in kernel
-        ]
-
-    def _check_dims(self, X: np.ndarray, y: np.ndarray):
-        """check if the input/output dimensions are consistent with dimensions of the domain/co-domain"""
-        if self.dim != X.shape[1]:
-            raise ValueError(
-                f"X has {X.shape[1]} variables, which does not match the dimension of the domain {self.dim}"
-            )
-        if len(y.shape) == 1:
-            if self.n_obj != 1:
-                raise ValueError(
-                    f"y has one variable, which does not match "
-                    f"the dimension of the co-domain {self.n_obj}"
-                )
-        else:
-            if self.n_obj != y.shape[1]:
-                raise ValueError(
-                    f"y has {y.shape[1]} variables, which does not match "
-                    f"the dimension of the co-domain {self.n_obj}"
-                )
-
-    def fit(self, X: np.ndarray, y: np.ndarray) -> GaussianProcess:
+    def fit(self, X, y):
         """Fit Gaussian process regression model.
 
         Parameters
         ----------
-        X : array-like of shape (n_samples, n_features) or list of object
-            Feature vectors or other representations of training data.
-        y : array-like of shape (n_samples,) or (n_samples, n_targets)
-            Target values.
+        X : array-like, shape = (n_samples, n_features)
+            Training data
+
+        y : array-like, shape = (n_samples, [n_output_dims])
+            Target values
 
         Returns
         -------
-        self : object
-            `GaussianProcess` class instance.
+        self
+            Returns an instance of self.
         """
-        X = np.array(X.tolist())
-        self._check_dims(X, y)
-        self._gprs = list()
-        # cv = min(len(X), 3)
+        if isinstance(self.noise, str) and self.noise != "gaussian":
+            raise ValueError("expected noise to be 'gaussian', got %s" % self.noise)
 
-        for i in range(self.n_obj):
-            # TODO: to verify this cross-validation procedure
-            # score = -np.inf
-            # kernel = None
-            # for k in self._kernel:
-            #     scores = cross_val_score(self._gpr_cls(kernel=k), X, y[:, i], cv=cv, scoring="r2", n_jobs=cv)
-            #     score_ = np.nanmean(scores)
-            #     if score_ > score:
-            #         score = score_
-            #         kernel = k
+        if self.kernel is None:
+            self.kernel = ConstantKernel(1.0, constant_value_bounds="fixed") * RBF(
+                1.0, length_scale_bounds="fixed"
+            )
+        if self.noise == "gaussian":
+            self.kernel = self.kernel + WhiteKernel()
+        elif self.noise:
+            self.kernel = self.kernel + WhiteKernel(noise_level=self.noise, noise_level_bounds="fixed")
 
-            gpr = self._gpr_cls(kernel=self._kernel[0]).fit(X, y if y.ndim == 1 else y[:, i])
-            setattr(gpr, "_K_inv", None)
-            self._gprs.append(gpr)
+        X = np.atleast_2d(X.tolist())
+        if self.lb is not None and self.ub is not None:
+            X = (X - self.lb) / (self.ub - self.lb)
+
+        super().fit(X, y.ravel())
+        self.noise_ = None
+
+        if self.noise:
+            # The noise component of this kernel should be set to zero
+            # while estimating K(X_test, X_test)
+            # Note that the term K(X, X) should include the noise but
+            # this (K(X, X))^-1y is precomputed as the attribute `alpha_`.
+            # (Notice the underscore).
+            # This has been described in Eq 2.24 of
+            # http://www.gaussianprocess.org/gpml/chapters/RW2.pdf
+            # Hence this hack
+            if isinstance(self.kernel_, WhiteKernel):
+                self.kernel_.set_params(noise_level=0.0)
+
+            else:
+                white_present, white_param = _param_for_white_kernel_in_Sum(self.kernel_)
+
+                # This should always be true. Just in case.
+                if white_present:
+                    noise_kernel = self.kernel_.get_params()[white_param]
+                    self.noise_ = noise_kernel.noise_level
+                    self.kernel_.set_params(**{white_param: WhiteKernel(noise_level=0.0)})
+
+        # Precompute arrays needed at prediction
+        L_inv = solve_triangular(self.L_.T, np.eye(self.L_.shape[0]))
+        self.K_inv_ = L_inv.dot(L_inv.T)
+
+        # Fix deprecation warning #462
+        if sklearn.__version__ >= "0.23":
+            self.y_train_std_ = self._y_train_std
+            self.y_train_mean_ = self._y_train_mean
+        elif sklearn.__version__ >= "0.19":
+            self.y_train_mean_ = self._y_train_mean
+            self.y_train_std_ = 1
+        else:
+            self.y_train_mean_ = self.y_train_mean
+            self.y_train_std_ = 1
 
         self.is_fitted = True
         return self
 
-    def predict(self, X: np.ndarray, eval_MSE: bool = False) -> np.ndarray:
-        n_samples = X.shape[0]
-        y_hat = np.zeros((n_samples, self.n_obj))
-        if eval_MSE:
-            std_hat = np.zeros((n_samples, self.n_obj))
+    def predict(self, X, return_std=False, return_cov=False, return_mean_grad=False, return_std_grad=False):
+        """
+        Predict output for X.
 
-        for i, gp in enumerate(self._gprs):
-            out = gp.predict(X, return_std=eval_MSE)
-            if eval_MSE:
-                y_hat[:, i], std_hat[:, i] = out[0], out[1] ** 2
+        In addition to the mean of the predictive distribution, also its
+        standard deviation (return_std=True) or covariance (return_cov=True),
+        the gradient of the mean and the standard-deviation with respect to X
+        can be optionally provided.
+
+        Parameters
+        ----------
+        X : array-like, shape = (n_samples, n_features)
+            Query points where the GP is evaluated.
+
+        return_std : bool, default: False
+            If True, the standard-deviation of the predictive distribution at
+            the query points is returned along with the mean.
+
+        return_cov : bool, default: False
+            If True, the covariance of the joint predictive distribution at
+            the query points is returned along with the mean.
+
+        return_mean_grad : bool, default: False
+            Whether or not to return the gradient of the mean.
+            Only valid when X is a single point.
+
+        return_std_grad : bool, default: False
+            Whether or not to return the gradient of the std.
+            Only valid when X is a single point.
+
+        Returns
+        -------
+        y_mean : array, shape = (n_samples, [n_output_dims])
+            Mean of predictive distribution a query points
+
+        y_std : array, shape = (n_samples,), optional
+            Standard deviation of predictive distribution at query points.
+            Only returned when return_std is True.
+
+        y_cov : array, shape = (n_samples, n_samples), optional
+            Covariance of joint predictive distribution a query points.
+            Only returned when return_cov is True.
+
+        y_mean_grad : shape = (n_samples, n_features)
+            The gradient of the predicted mean
+
+        y_std_grad : shape = (n_samples, n_features)
+            The gradient of the predicted std.
+        """
+        if return_std and return_cov:
+            raise RuntimeError(
+                "Not returning standard deviation of predictions when " "returning full covariance."
+            )
+
+        if return_std_grad and not return_std:
+            raise ValueError("Not returning std_gradient without returning " "the std.")
+
+        X = np.atleast_2d(X.tolist())
+        range_ = self.ub - self.lb
+        if self.lb is not None and self.ub is not None:
+            X = (X - self.lb) / range_
+
+        X = check_array(X)
+        if X.shape[0] != 1 and (return_mean_grad or return_std_grad):
+            raise ValueError("Not implemented for n_samples > 1")
+
+        if not hasattr(self, "X_train_"):  # Not fit; predict based on GP prior
+            y_mean = np.zeros(X.shape[0])
+            if return_cov:
+                y_cov = self.kernel(X)
+                return y_mean, y_cov
+            elif return_std:
+                y_var = self.kernel.diag(X)
+                return y_mean, np.sqrt(y_var)
             else:
-                y_hat[:, i] = out
+                return y_mean
 
-        return (y_hat, std_hat) if eval_MSE else y_hat
+        else:  # Predict based on GP posterior
+            K_trans = self.kernel_(X, self.X_train_)
+            y_mean = K_trans.dot(self.alpha_)  # Line 4 (y_mean = f_star)
+            # undo normalisation
+            y_mean = self.y_train_std_ * y_mean + self.y_train_mean_
 
-    def gradient(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """compute the gradient of GPR's mean and variance w.r.t. the input points
+            if return_cov:
+                v = cho_solve((self.L_, True), K_trans.T)  # Line 5
+                y_cov = self.kernel_(X) - K_trans.dot(v)  # Line 6
+                # undo normalisation
+                y_cov = y_cov * self.y_train_std_**2
+                return y_mean, y_cov
 
-        Parameters
-        ----------
-        X : np.ndarray
-            the point at which gradients should be computed
+            elif return_std:
+                K_inv = self.K_inv_
 
-        Returns
-        -------
-        Tuple[np.ndarray, np.ndarray]
-            (grad of mean, grad of variance)
-        """
-        n_samples = X.shape[0]
-        mean_dx = np.zeros((self.n_obj, n_samples, self.dim))
-        var_dx = np.zeros((self.n_obj, n_samples, self.dim))
+                # Compute variance of predictive distribution
+                y_var = self.kernel_.diag(X)
+                y_var -= np.einsum("ki,kj,ij->k", K_trans, K_trans, K_inv)
 
-        for i, gp in enumerate(self._gprs):
-            scale = getattr(gp, "_y_train_std")
-            k = np.expand_dims(gp.kernel_(X, gp.X_train_), 2)  # shape (n_samples, N_train, 1)
-            k_dx = self.kernel_dx(gp, X)  # shape (n_samples, dim, N_train)
+                # Check if any of the variances is negative because of
+                # numerical issues. If yes: set the variance to 0.
+                y_var_negative = y_var < 0
+                if np.any(y_var_negative):
+                    warnings.warn("Predicted variances smaller than 0. " "Setting those variances to 0.")
+                    y_var[y_var_negative] = 0.0
+                # undo normalisation
+                y_var = y_var * self.y_train_std_**2
+                y_std = np.sqrt(y_var)
 
-            if getattr(gp, "_K_inv") is None:
-                L_inv = solve_triangular(gp.L_.T, np.eye(gp.L_.shape[0]))
-                setattr(gp, "_K_inv", L_inv.dot(L_inv.T))
+            if return_mean_grad:
+                grad = self.kernel_.gradient_x(X[0], self.X_train_)
+                grad_mean = np.dot(grad.T, self.alpha_)
+                # undo normalisation
+                grad_mean = grad_mean * self.y_train_std_
+                if return_std_grad:
+                    grad_std = np.zeros(X.shape[1])
+                    if not np.allclose(y_std, grad_std):
+                        grad_std = -np.dot(K_trans, np.dot(K_inv, grad))[0] / y_std
+                        # undo normalisation
+                        grad_std = grad_std * self.y_train_std_**2
+                    return y_mean, y_std, grad_mean * range_, grad_std * range_
 
-            mean_dx[i, ...] = scale * k_dx @ gp.alpha_
-            var_dx[i, ...] = -2.0 * scale**2 * np.squeeze(k_dx @ getattr(gp, "_K_inv") @ k)
-        return mean_dx, var_dx
+                if return_std:
+                    return y_mean, y_std, grad_mean * range_
+                else:
+                    return y_mean, grad_mean * range_
 
-    def kernel_dx(self, gp: sk_gpr, X: np.ndarray) -> np.ndarray:
-        """compute the gradient of the kernel function w.r.t. the input points
-
-        Parameters
-        ----------
-        gp : sk_gpr
-            a fitted `GaussianProcessRegressor` instance
-        X : np.ndarray
-            the location at which the gradient will be computed
-
-        Returns
-        -------
-        np.ndarray
-            the gradient of shape (n_samples, dim, n_train)
-        """
-        sigma2 = np.exp(gp.kernel_.k1.k1.theta)
-        length_scale = np.exp(gp.kernel_.k1.k2.theta)
-        kernel = gp.kernel_.k1.k2
-
-        d = np.expand_dims(
-            cdist(X / length_scale, gp.X_train_ / length_scale), 1
-        )  # shape (n_samples, 1, n_train)
-        X_ = np.expand_dims(X, 2)  # shape (n_samples, dim, 1)
-        X_train_ = np.expand_dims(gp.X_train_.T, 0)  # shape (1, dim, n_train)
-        # shape (n_samples, dim, n_train)
-        dd = safe_divide(X_ - X_train_, d * np.expand_dims(length_scale**2, 1))
-
-        if isinstance(kernel, Matern):
-            nu = kernel.nu
-            if nu == 0.5:
-                g = -sigma2 * np.exp(-d) * dd
-            elif nu == 1.5:
-                g = -3 * sigma2 * np.exp(-np.sqrt(3) * d) * d * dd
-            elif nu == 2.5:
-                g = -5.0 / 3 * sigma2 * np.exp(-np.sqrt(5) * d) * (1 + np.sqrt(5) * d) * d * dd
-        elif isinstance(kernel, RBF):
-            g = -sigma2 * np.exp(-0.5 * d**2) * dd
-        return g
+            else:
+                if return_std:
+                    return y_mean, y_std
+                else:
+                    return y_mean

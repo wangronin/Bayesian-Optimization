@@ -13,6 +13,7 @@ import scipy
 from joblib import Parallel, delayed
 from scipy.spatial.distance import cdist
 from scipy.stats import rankdata
+from sklearn.base import clone, is_regressor
 from sklearn.decomposition import PCA
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
@@ -440,10 +441,16 @@ class PCABO(BO):
         # wrap the penalized acquisition function for handling the box constraints
         return functools.partial(
             penalized_acquisition,
-            acquisition_func=acquisition_func,
+            acquisition_func=acquisition_func[0],
             bounds=self.__search_space.bounds,  # hyperbox in the original space
             pca=self._pca,
             return_dx=return_dx,
+        ), functools.partial(
+            penalized_acquisition,
+            acquisition_func=acquisition_func[1],
+            bounds=self.__search_space.bounds,  # hyperbox in the original space
+            pca=self._pca,
+            return_dx=False,
         )
 
     def pre_eval_check(self, X: List) -> List:
@@ -508,23 +515,9 @@ class PCABO(BO):
         self._search_space = RealSpace(bounds)
         bounds = np.asarray(bounds)
         dim = self._search_space.dim
-        self.model = GaussianProcess(
-            mean=trend.constant_trend(dim),
-            corr="matern",
-            thetaL=1e-3 * (bounds[:, 1] - bounds[:, 0]),
-            thetaU=1e3 * (bounds[:, 1] - bounds[:, 0]),
-            nugget=1e-6,
-            noise_estim=False,
-            optimizer="BFGS",
-            wait_iter=3,
-            random_start=max(10, dim),
-            likelihood="concentrated",
-            eval_budget=100 * dim,
-        )
-
+        self.model = self.create_default_model(self.search_space, self.my_seed)
         _std = np.std(y)
-        y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
-
+        y_ = y
         self.fmin, self.fmax = np.min(y_), np.max(y_)
         self.frange = self.fmax - self.fmin
 
@@ -1041,22 +1034,11 @@ class KernelPCABO(BO):
         # is dynamic)
         dim = self._search_space.dim
         bounds = np.asarray(self._search_space.bounds)
-        self.model = GaussianProcess(
-            mean=trend.constant_trend(dim),
-            corr="matern",
-            thetaL=1e-3 * (bounds[:, 1] - bounds[:, 0]),
-            thetaU=1e3 * (bounds[:, 1] - bounds[:, 0]),
-            nugget=1e-6,
-            noise_estim=False,
-            optimizer="BFGS",
-            wait_iter=3,
-            random_start=max(10, dim),
-            likelihood="concentrated",
-            eval_budget=100 * dim,
-        )
+        self._model = self.create_default_model(self._search_space, self.my_seed)
+        self.model = clone(self._model)
 
         _std = np.std(y)
-        y_ = y if np.isclose(_std, 0) else (y - np.mean(y)) / _std
+        y_ = y
 
         self.fmin, self.fmax = np.min(y_), np.max(y_)
         self.frange = self.fmax - self.fmin
