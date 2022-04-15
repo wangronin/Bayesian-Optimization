@@ -43,7 +43,7 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size, seed):
             obj_fun=func,
             DoE_size=doe_size,
             max_FEs=total_budget,
-            verbose=True,
+            verbose=False,
             n_point=1,
             acquisition_optimization={"optimizer": "BFGS"},
             max_information_loss=0.1,
@@ -73,7 +73,7 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size, seed):
             data_file=f"test-{cnt}.csv",
             acquisition_optimization={"optimizer": "BFGS"},
             max_FEs=total_budget,
-            verbose=True,
+            verbose=False,
         )
     elif optimizer_name == 'CMA_ES':
         return OnePlusOne_Cholesky_CMA(
