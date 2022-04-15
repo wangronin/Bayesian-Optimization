@@ -127,7 +127,15 @@ class AlgorithmWrapper:
         self.dim = dim
         self.optimizer_name = optimizer_name
         func = partial(AlgorithmWrapper.__fitness_function_wrapper, f=f)
-        total_budget = 50 + 10 * self.dim
+        if self.dim == 10:
+            total_budget = 250
+        if self.dim == 20:
+            total_budget = 150
+        if self.dim == 40:
+            total_budget = 300
+        if self.dim == 60:
+            total_budget = 300
+        # total_budget = 50 + 10 * self.dim
         doe_size = 3 * self.dim
         self.opt = create_algorithm(
             optimizer_name, func, self.dim, total_budget, doe_size, self.seed)
