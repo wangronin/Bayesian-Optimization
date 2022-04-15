@@ -83,7 +83,8 @@ class MyKernelPCA:
         n = len(g)
         g = g.reshape(-1, 1)
         t = G @ np.ones((n, 1))
-        return g - t / n - np.ones((n, n)) @ g / n + np.tile(np.sum(t) / n**2, (n, 1))
+        g = g - t / n - np.ones((n, n)) @ g / n + np.tile(np.sum(t) / n**2, (n, 1))
+        return [x[0] for x in g]
 
     def __sorted_eig(self, X):
         values, vectors = np.linalg.eig(X)
@@ -112,9 +113,9 @@ class MyKernelPCA:
         return ans
 
     @staticmethod
-    def f(X, good_subspace, k, V, z_star, bounds, w):
+    def f(X, good_subspace, k, V, z_star, bounds, G, w):
         x_ = MyKernelPCA.linear_combination(w, good_subspace)
-        g_star = MyKernelPCA.__center_gram_line([k(X[i], x_) for i in range(len(X))])
+        g_star = MyKernelPCA.__center_g(np.array([k(X[i], x_) for i in range(len(X))]), G)
         bounds_ = np.atleast_2d(bounds)
         idx_lower = np.where(x_ < bounds_[:, 0])[0]
         idx_upper = np.where(x_ > bounds_[:, 1])[0]
@@ -161,9 +162,9 @@ class MyKernelPCA:
         self.kernel = create_kernel(self.kernel_config['kernel_name'], self.kernel_config['kernel_parameters'])
         self.X_weighted = X_weighted
         G = self.__compute_G(X_weighted)
-        G_centered = self.__center_G(G)
-        self.too_compressed = self.__is_too_compressed(G_centered)
-        eignValues, eignVectors = self.__sorted_eig(G_centered)
+        self.G_centered = self.__center_G(G)
+        self.too_compressed = self.__is_too_compressed(self.G_centered)
+        eignValues, eignVectors = self.__sorted_eig(self.G_centered)
         eignValues = eignValues.view(np.float64)
         eignVectors = eignVectors.view(np.float64)
         eignValues[eignValues < 0] = 0
@@ -181,7 +182,7 @@ class MyKernelPCA:
         X_gram_lines = []
         for x in X:
             g = self.__get_gram_line(self.X_initial_space, x)
-            g = self.__center_gram_line(g)
+            g = self.__center_g(g, self.G_centered)
             X_gram_lines.append(g)
         M = np.transpose(X_gram_lines)
         return np.transpose((self.V @ M)[:self.k])
@@ -204,7 +205,7 @@ class MyKernelPCA:
                 raise ValueError(f"dimensionality of point is supposed to be {self.k}, but it is {len(y)}, the point {y}")
             good_subspace = self.get_good_subspace(y)
             # good_subspace, V1 = self.X_initial_space, self.V
-            partial_f = partial(MyKernelPCA.f, self.X_initial_space, good_subspace, self.kernel, self.V, y, self.bounds)
+            partial_f = partial(MyKernelPCA.f, self.X_initial_space, good_subspace, self.kernel, self.V, y, self.bounds, self.G_centered)
             initial_weights = np.zeros(len(good_subspace))
             w0, fopt, *rest = optimize.fmin_bfgs(partial_f, initial_weights, full_output=True, disp=False)
             inversed = MyKernelPCA.linear_combination(w0, good_subspace)
