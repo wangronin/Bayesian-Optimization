@@ -72,20 +72,18 @@ class MyKernelPCA:
     def set_initial_space_points(self, X):
         self.X_initial_space = X
 
-    def __center_G(self, G):
+    def __center_G(self, G: np.ndarray) -> np.ndarray:
         ns = len(G)
-        line = [0.] * len(G)
-        for i in range(len(G)):
-            line[i] = sum(G[i])
-        all_sum = sum(line)
-        return [[G[i][j] - line[i]/ns - line[j]/ns + all_sum/ns**2 for j in range(len(G[i]))] for i in range(len(G))]
+        O = np.ones((ns, ns))
+        M = G @ O
+        return G - M / ns - M.T / ns + M.T.dot(O) / ns**2
 
     @staticmethod
-    def __center_gram_line(g):
-        delta = sum(g) / len(g)
-        for i in range(len(g)):
-            g[i] -= delta
-        return g
+    def __center_g(g: np.ndarray, G: np.ndarray) -> np.ndarray:
+        n = len(g)
+        g = g.reshape(-1, 1)
+        t = G @ np.ones((n, 1))
+        return g - t / n - np.ones((n, n)) @ g / n + np.tile(np.sum(t) / n**2, (n, 1))
 
     def __sorted_eig(self, X):
         values, vectors = np.linalg.eig(X)
