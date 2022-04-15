@@ -137,7 +137,7 @@ class BaseBO(BaseOptimizer):
         self.acq_opt_time = 0
         self.mode_fit_time = 0
 
-        self.my_seed = kwargs['random_seed']
+        self.my_seed = kwargs["random_seed"]
 
         if self._model is None:
             self._model = self.create_default_model(self.search_space, self.my_seed)
@@ -145,11 +145,9 @@ class BaseBO(BaseOptimizer):
 
     def create_default_model(self, my_search_space, random_seed):
         lb, ub = np.array(my_search_space.bounds).T
-        cov_amplitude = ConstantKernel(1.0, (0.001, 100.0))
+        cov_amplitude = ConstantKernel(1.0, (0.001, 1000.0))
         dim = my_search_space.dim
-        other_kernel = Matern(
-            length_scale=np.ones(dim), length_scale_bounds=[(0.001, 100)] * dim, nu=2.5
-        )
+        other_kernel = Matern(length_scale=np.ones(dim), length_scale_bounds=[(0.001, 1000)] * dim, nu=2.5)
         model = GaussianProcess(
             kernel=cov_amplitude * other_kernel,
             normalize_y=True,

@@ -183,6 +183,7 @@ class EI(ImprovementBased):
                 value = sum(value)
         except Exception:  # in case of numerical errors
             # IMPORTANT: always keep the output in the same type
+            breakpoint()
             value = 0
 
         if return_dx:

@@ -81,11 +81,11 @@ def argmax_restart(
         optimizer = "MIES"
         logger.warning("L-BFGS-B can only be applied on continuous search space")
 
-    X = search_space.sample(int(2e2 * search_space.dim), method="uniform")
+    X = search_space.sample(int(5e2 * search_space.dim), method="uniform")
     if obj_func_ is not None:
         af_value = [obj_func_(x) for x in X]
     else:
-        af_value = [obj_func(x)[0] for x in X]
+        af_value = [obj_func(x) for x in X]
 
     idx = np.argsort(af_value)[::-1]
     X = X[idx, :]
@@ -117,9 +117,9 @@ def argmax_restart(
                 obj_fun=obj_func,
                 h=h,
                 g=g,
+                x0=x0,
                 max_FEs=eval_budget,
-                ftol=1e-4,
-                xtol=1e-4,
+                xtol=1e-5,
                 n_restart=0,
                 minimize=False,
                 verbose=False,

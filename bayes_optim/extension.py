@@ -6,6 +6,7 @@ import time
 from abc import ABC, abstractmethod
 from copy import copy, deepcopy
 from enum import Enum
+from sys import breakpointhook
 from typing import Callable, Dict, List, Union
 
 import numpy as np
@@ -17,6 +18,7 @@ from sklearn.base import clone, is_regressor
 from sklearn.decomposition import PCA
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
+from .acquisition import EI
 from .acquisition import acquisition_fun as AcquisitionFunction
 from .acquisition.optim import OptimizationListener
 from .bayes_opt import BO, ParallelBO
@@ -137,7 +139,8 @@ class KernelTransform(MyKernelPCA):
             pass
         elif self.kernel_fit_strategy is KernelFitStrategy.AUTO:
             kernel_name, kernel_parameters, _ = SearchStrategy(X, y, self.epsilon).find_best_kernel(["rbf"])
-            self.kernel_config = {"kernel_name": kernel_name, "kernel_parameters": kernel_parameters}
+            self.kernel_config = {"kernel_name": "rbf", "kernel_parameters": kernel_parameters}
+            print(kernel_parameters)
         elif self.kernel_fit_strategy is KernelFitStrategy.LIST_OF_KERNEL:
             kernel_name, kernel_parameters, _ = SearchStrategy(X, y, self.epsilon).find_best_kernel(
                 self.kernel_config["kernel_names"]
@@ -268,11 +271,11 @@ class KernelParamsOptimizerSearch(KernelParamsSearchStrategy):
         return min_components, info
 
     def __opt(self, f):
-        n_restart = 5
+        n_restart = 1
         bounds = [1e-3, 1e2]
         log10_bounds = np.log10(bounds)  # search in the log10-scale
         # get some good initial points for random restarts
-        X0 = np.random.rand(10) * (log10_bounds[1] - log10_bounds[0]) + log10_bounds[0]
+        X0 = np.random.rand(100) * (log10_bounds[1] - log10_bounds[0]) + log10_bounds[0]
         v = list(map(f, X0))
         idx = np.argsort(v)
         X0 = X0[idx][:n_restart]
@@ -827,11 +830,12 @@ class KernelPCABO(BO):
             max_features_space_distance_from_mean = 2.0 - 2.0 * kpca.kernel(corner, c)
             eprintf(f"max feature space distance from the mean is {max_features_space_distance_from_mean}")
             C = kpca.transform([c])[0]
-            eprintf(f"mean in the feature space is {C}")
-            return [
-                (_ - max_features_space_distance_from_mean, _ + max_features_space_distance_from_mean)
-                for _ in C
-            ]
+            return [(-kpca.radius * 1.3, kpca.radius * 1.3)] * kpca.k
+            # eprintf(f"mean in the feature space is {C}")
+            # return [
+            #     (_ - max_features_space_distance_from_mean, _ + max_features_space_distance_from_mean)
+            #     for _ in C
+            # ]
         elif kpca.kernel_config["kernel_name"] == "polynomial":
             # TODO implement for the case when the bound box is not centred
             c = [(lb + ub) / 2 for lb, ub in search_space.bounds]
@@ -849,19 +853,19 @@ class KernelPCABO(BO):
             raise NotImplementedError
 
     def _create_acquisition(self, fun=None, par=None, return_dx=False, **kwargs) -> Callable:
-        acquisition_func = super()._create_acquisition(
-            fun=fun, par={} if par is None else par, return_dx=return_dx, **kwargs
-        )
-        # TODO: make this more general for other acquisition functions
-        # wrap the penalized acquisition function for handling the box constraints
-        # return functools.partial(
-        # penalized_acquisition,
-        # acquisition_func=acquisition_func,
-        # bounds=self.__search_space.bounds,  # hyperbox in the original space
-        # pca=self._pca,
-        # return_dx=return_dx,
-        # )
-        return acquisition_func
+        fun = fun if fun is not None else self._acquisition_fun
+        par = copy(self._acquisition_par)
+        par.update({"model": self.model, "minimize": self.minimize})
+        acq_fun = EI(plugin=np.min(self.data.fitness), model=self.model)
+
+        def _acquisition_func(EI, pca):
+            def __fun__(x):
+                z, dist = pca.transform2(x)
+                return EI(z) - dist
+
+            return __fun__
+
+        return _acquisition_func(acq_fun, self._pca), _acquisition_func(acq_fun, self._pca)
 
     def pre_eval_check(self, X: List) -> List:
         """Note that we do not check against duplicated point in PCA-BO since those points are
@@ -887,34 +891,6 @@ class KernelPCABO(BO):
         def on_optimum_found(self, fopt, xopt):
             self.fopts.append(fopt)
             self.xopts.append(xopt)
-
-    def ask(self, n_point: int = None) -> List[List[float]]:
-        eprintf("Beginning of acq optimization")
-        listener = KernelPCABO.MyAcqOptimizationListener()
-        start = time.time()
-        X = super().ask(n_point, listener=listener)
-        self.acq_opt_time = time.time() - start
-        if len(X) > 1:
-            return X
-        inds = np.argsort(listener.fopts)[::-1]
-        first_point = None
-        bounds = self.__search_space.bounds
-        for point_number, ind in enumerate(inds):
-            new_point = self._pca.inverse_transform(listener.xopts[ind])[0]
-            if point_number == 0:
-                first_point = new_point
-            is_out = False
-            for i in range(len(bounds)):
-                if new_point[i] < bounds[i][0]:
-                    new_point[i] = bounds[i][0]
-                    is_out = True
-                if new_point[i] > bounds[i][1]:
-                    new_point[i] = bounds[i][1]
-                    is_out = True
-            if not is_out:
-                return [new_point]
-        self.out_solutions += 1
-        return [first_point]
 
     def _run_experiment(self, bounds):
         eprintf("==================== Experiment =========================")
@@ -959,11 +935,6 @@ class KernelPCABO(BO):
                 return bisect.bisect_left(self.data, element)
             return bisect.bisect_right(self.data, element)
 
-    def __is_promising_y(self, y):
-        pos = self.ordered_container.find_pos(y)
-        n = len(self.ordered_container)
-        return pos / n <= self.ratio_of_best_for_kernel_refit if n != 0 else True
-
     def tell(self, new_X, new_y):
         self.logger.info(f"observing {len(new_X)} points:")
         for i, x in enumerate(new_X):
@@ -980,32 +951,30 @@ class KernelPCABO(BO):
 
         new_X = self.post_eval_check(new_X)  # remove NaN's
         self.data = self.data + new_X if hasattr(self, "data") else new_X
-        # for y in new_y:
-        # if self.__is_promising_y(y):
+        if hasattr(self._pca, "V"):
+            z, dist = self._pca.transform2(np.array(new_X.tolist()))
+            self.logger.info(f"distance to the linear span: {dist}")
+
         self._pca.set_kernel_refit_needed(True)
-        # self.ordered_container.add_element(y)
         # re-fit the PCA transformation
         self._pca.set_initial_space_points(self.data)
         X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
+        print(f"{self._pca.k} components")
         eprintf("Feature space points", X)
-        bounds = self._compute_bounds(self._pca, self.__search_space)
-        eprintf("Bounds in the feature space", bounds)
-        # self._run_experiment(bounds)
+        bounds = self._compute_bounds(self._pca, self._search_space)
         # re-set the search space object for the reduced (feature) space
-        self._search_space = RealSpace(bounds)
-        GLOBAL_CHARTS_SAVER.save_with_manifold(
-            self.iter_count, self.data, X, bounds[0][0], bounds[0][1], self._pca
-        )
+        self._reduced_search_space = RealSpace(bounds)
         # update the surrogate model
         self.update_model(X, self.data.fitness)
+        #  criterion = getattr(AcquisitionFunction, fun)(**par)
         self.logger.info(f"xopt/fopt:\n{self.xopt}\n")
 
     def update_model(self, X: np.ndarray, y: np.ndarray):
         # NOTE: the GPR model will be created since the effective search space (the reduced space
         # is dynamic)
-        dim = self._search_space.dim
-        bounds = np.asarray(self._search_space.bounds)
-        self._model = self.create_default_model(self._search_space, self.my_seed)
+        dim = self._reduced_search_space.dim
+        bounds = np.asarray(self._reduced_search_space.bounds)
+        self._model = self.create_default_model(self._reduced_search_space, self.my_seed)
         self.model = clone(self._model)
 
         _std = np.std(y)
