@@ -16,7 +16,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 dim = 10
 lb, ub = -5, 5
-OBJECTIVE_FUNCTION = bn.F21()
+OBJECTIVE_FUNCTION = bn.F15()
 
 
 def fitness(x):
@@ -25,7 +25,7 @@ def fitness(x):
     # eprintf("Evaluated solution:", x, "type", type(x))
     if type(x) is np.ndarray:
         x = x.tolist()
-    return OBJECTIVE_FUNCTION(np.array(x))
+    return OBJECTIVE_FUNCTION(np.array(x)) - OBJECTIVE_FUNCTION.fopt
 
 
 space = RealSpace([lb, ub], random_seed=SEED) * dim
@@ -39,6 +39,7 @@ opt = KernelPCABO(
     verbose=True,
     n_point=1,
     # n_components=1,
+    random_seed=42,
     acquisition_optimization={"optimizer": "BFGS"},
 )
 
