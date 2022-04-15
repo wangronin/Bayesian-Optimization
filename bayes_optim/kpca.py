@@ -71,10 +71,9 @@ def create_kernel(kernel_name, parameters):
 
 class MyKernelPCA:
     # Implementation is based on paper García_González_et_al_2021_A_kernel_Principal_Component_Analysis
-    def __init__(self, epsilon, X_initial_space, kernel_config, dimensions: int = None, NN: int = None):
+    def __init__(self, epsilon, kernel_config, dimensions: int = None, NN: int = None):
         self.kernel_config = kernel_config
         self.epsilon = epsilon
-        self.X_initial_space = X_initial_space
         self.NN = dimensions if NN is None else NN
         self._reuse_rbf_data = False
 
@@ -82,14 +81,7 @@ class MyKernelPCA:
         self.bounds = bounds
 
     def set_initial_space_points(self, X):
-        self.X_initial_space = np.array(X.tolist())
-
-    @staticmethod
-    def __center_gram_line(g):
-        delta = sum(g) / len(g)
-        for i in range(len(g)):
-            g[i] -= delta
-        return g
+        self.X = np.array(X.tolist())
 
     @staticmethod
     def l2(x):
@@ -99,18 +91,18 @@ class MyKernelPCA:
         return ans
 
     @staticmethod
-    def f(conical_w, X, good_subspace, k, V, z_star, bounds, w, M):
+    def hparam_cost_func(conical_w, X, good_subspace, kernel, z_star, G, V, bounds):
         ns = len(X)
         x_ = MyKernelPCA.linear_combination(conical_w, good_subspace)
-        g_star = np.array([k(X[i], x_) for i in range(ns)])
-        z = MyKernelPCA.get_z_from_g(g_star, w, ns, V, M)
+        g_star = np.array([kernel(X[i], x_) for i in range(ns)])
+        z = V @ MyKernelPCA.__center_g(g_star, G)
         bounds_ = np.atleast_2d(bounds)
         idx_lower = np.where(x_ < bounds_[:, 0])[0]
         idx_upper = np.where(x_ > bounds_[:, 1])[0]
         penalty = np.sum([bounds_[i, 0] - x_[i] for i in idx_lower]) + np.sum(
             [x_[i] - bounds_[i, 1] for i in idx_upper]
         )
-        return np.log10(np.sum((z_star.ravel() - z) ** 2)) + penalty
+        return np.log10(np.sum((z_star.ravel() - z) ** 2)) * 5 + penalty
 
     @staticmethod
     def linear_combination(w, X):
@@ -119,20 +111,6 @@ class MyKernelPCA:
             for j in range(len(X[0])):
                 comb[j] += w[i] * X[i][j]
         return comb
-
-    def __is_too_compressed(self, G_centered):
-        EPS = 1e-4
-        too_compressed_points_cnt = 0
-        for i in range(len(G_centered)):
-            ok = False
-            for j in range(len(G_centered[i])):
-                if abs(G_centered[i][j]) > EPS:
-                    ok = True
-                    break
-            if not ok:
-                too_compressed_points_cnt += 1
-        res = too_compressed_points_cnt > int(len(G_centered) / 2)
-        return res
 
     def _set_reuse_rbf_data(self, l2_norm_matrix):
         kernel_name = self.kernel_config["kernel_name"]
@@ -147,107 +125,111 @@ class MyKernelPCA:
         vectors = vectors.view(np.float64)
         if any(~np.isclose(values[values < 0], 0)):  # NOTE: this should not happen
             breakpoint()
-        values[values < 0] = 0  # for numerical error
-        idx = np.argsort(values)[::-1]
-        return values[idx], vectors[:, idx]
+        values[values < 0] = 0
+        return values, vectors
 
-    def __compute_G(self, X_weighted) -> np.ndarray:
+    def __compute_G(self, X) -> np.ndarray:
         gamma = self.kernel_config["kernel_parameters"]["gamma"]
-        D = self._l2_norm_matrix if self._reuse_rbf_data else cdist(X_weighted, X_weighted) ** 2
+        D = self._l2_norm_matrix if self._reuse_rbf_data else cdist(X, X) ** 2
         return np.exp(-gamma * D)
 
-    def __center_G(self, G: np.ndarray, w: np.ndarray) -> np.ndarray:
+    def __center_G(self, G: np.ndarray) -> np.ndarray:
         ns = len(G)
-        W = np.outer(w, w)
         O = np.ones((ns, ns))
         M = G @ O
-        G_tilde = W * (G - M / ns - M.T / ns + M.T @ O / ns**2)
-        M_prime = G_tilde @ O
-        G_prime = G_tilde - M_prime / ns - M_prime.T / ns + M_prime.T @ O / ns**2
-        return G_prime
+        return G - M / ns - M.T / ns + M.T.dot(O) / ns**2
 
-    def fit(self, X_weighted: np.ndarray):
+    @staticmethod
+    def __center_g(g: np.ndarray, G: np.ndarray) -> np.ndarray:
+        n = len(g)
+        g = g.reshape(-1, 1)
+        t = G @ np.ones((n, 1))
+        return g - t / n - np.ones((n, n)) @ g / n + np.tile(np.sum(t) / n**2, (n, 1))
+
+    def fit(self, X: np.ndarray, y: np.ndarray):
         self.kernel = create_kernel(
             self.kernel_config["kernel_name"], self.kernel_config["kernel_parameters"]
         )
-        self.X, self.w = X_weighted
+        self.X = X
+        ns = len(X)
+        y_ = ((y - np.mean(y)) / np.std(y)).reshape(-1, 1)
         # compute the raw Gram matrix
         G = self.__compute_G(self.X)
         # center and weight the Gram matrix
-        G_centered = self.__center_G(G, self.w)
-        # self.too_compressed = self.__is_too_compressed(G_centered)
+        G_centered = self.__center_G(G)
+        self.G = G
         self.too_compressed = False
         # eigendecomposition
         eigen_values, eigen_vectors = self.__sorted_eig(G_centered)
-        # select components
-        total_variance = np.sum(eigen_values)
-        _cumsum = np.cumsum(eigen_values)
-        self.k = np.nonzero(_cumsum >= (1.0 - self.epsilon) * total_variance)[0][0] + 1
-        self.extracted_information = _cumsum[self.k] / total_variance
+        # project the data points to span{eigen_vectors}
+        Z = G_centered @ eigen_vectors
+        g_star = np.array([self.kernel(self.X[i], self.X[0]) for i in range(ns)])
+        z = eigen_vectors.T @ MyKernelPCA.__center_g(g_star, self.G)
+        if any(~np.isclose(z.ravel(), Z[0, :])):  # NOTE: This should not happen!
+            breakpoint()
+        Z_std = np.sqrt(eigen_values / ns)
+        # compute the absolute correlation between each eigenvector to the objective values
+        correlation = np.abs(np.mean(Z * y_, axis=0) / Z_std)
+        correlation[np.isinf(correlation)] = 0
+        total_correlation = np.sum(correlation)
+        # sort the eigen_vectors according to the absolute correlation
+        idx = np.argsort(correlation)[::-1]
+        correlation = correlation[idx]
+        eigen_vectors = eigen_vectors[:, idx]
+        # select components based on the explained correlation
+        _cumsum = np.cumsum(correlation)
+        self.k = np.nonzero(_cumsum >= (1.0 - self.epsilon) * total_correlation)[0][0] + 1
+        self.extracted_information = _cumsum[self.k] / total_correlation
         self.V = eigen_vectors[:, 0 : self.k].T
-
-        # compute the variables for `transform`
-        ns = len(self.X)
-        I = np.ones((ns, ns))
-        P = np.diag(self.w) @ (G - I @ G / ns)
-        Q = P - I @ P / ns
-        T = self.V @ Q
-        self.M = -np.sum(T, axis=1) / ns + np.sum(T, axis=1) / ns**2 - np.sum(T * self.w, axis=1) / ns
-
-    def get_z_from_g(g, w, ns, V, M):
-        g = w * (g - np.sum(g) / ns)
-        g = g - np.sum(g) / ns
-        return g @ V.T + M
 
     def transform(self, X: np.ndarray) -> np.ndarray:
         gamma = self.kernel_config["kernel_parameters"]["gamma"]
         n_point = len(X)
-        ns = len(self.X_initial_space)
         Z = np.zeros((n_point, self.k))
         for i, x in enumerate(X):
-            dist = cdist(x[np.newaxis, :], self.X_initial_space) ** 2
+            dist = cdist(self.X, x[np.newaxis, :]) ** 2
             g = np.exp(-gamma * dist)
-            Z[i, :] = MyKernelPCA.get_z_from_g(g, self.w, ns, self.V, self.M)
+            Z[i, :] = (self.V @ MyKernelPCA.__center_g(g, self.G)).ravel()
         return Z
 
-    def get_good_subspace(self, y):
-        p = [i for i in range(len(self.X_initial_space))]
+    def get_good_subspace(self):
+        p = [i for i in range(len(self.X))]
         for i in range(len(p)):
             ind = random.randint(0, i)
             p[ind], p[i] = p[i], p[ind]
-        return [self.X_initial_space[i] for i in p[: self.NN]]
+        return [self.X[i] for i in p[: self.NN]]
 
     def inverse_transform(self, Y: np.ndarray):
         if not hasattr(self, "k"):
             return Y
         if not len(Y.shape) == 2:
             raise ValueError("Y array should be at least 2d but got this instead", Y)
+
         Y_inversed = []
         for y in Y:
             if not len(y) == self.k:
                 raise ValueError(
                     f"dimensionality of point is supposed to be {self.k}, but it is {len(y)}, the point {y}"
                 )
-            good_subspace = self.get_good_subspace(y)
-            # good_subspace, V1 = self.X_initial_space, self.V
+            good_subspace = self.get_good_subspace()
             partial_f = partial(
-                MyKernelPCA.f,
-                X=self.X_initial_space,
+                MyKernelPCA.hparam_cost_func,
+                X=self.X,
                 good_subspace=good_subspace,
-                k=self.kernel,
-                V=self.V,
+                kernel=self.kernel,
                 z_star=y,
+                G=self.G,
+                V=self.V,
                 bounds=self.bounds,
-                w=self.w,
-                M=self.M,
             )
+
             fopt = np.inf
             initial_weights = np.random.randn(50, len(good_subspace))
             v = [partial_f(w) for w in initial_weights]
             idx = np.argsort(v)
             initial_weights = initial_weights[idx, :]
+
             for i in range(5):
-                # initial_weights = np.zeros(len(good_subspace))
                 w = initial_weights[i, :]
                 w0_, fopt_, *rest = optimize.fmin_bfgs(partial_f, w, full_output=True, disp=False)
                 if fopt_ < fopt:
@@ -255,9 +237,9 @@ class MyKernelPCA:
                     fopt = fopt_
 
             inversed = MyKernelPCA.linear_combination(w0, good_subspace)
-            ns = len(self.X_initial_space)
-            g_star = np.array([self.kernel(self.X_initial_space[i], inversed) for i in range(ns)])
-            z = MyKernelPCA.get_z_from_g(g_star, self.w, ns, self.V, self.M)
+            ns = len(self.X)
+            g_star = np.array([self.kernel(self.X[i], inversed) for i in range(ns)])
+            z = (self.V @ MyKernelPCA.__center_g(g_star, self.G)).ravel()
             Y_inversed.append(inversed)
             eprintf(f"Inverse of point {y} is {inversed}")
 

@@ -14,9 +14,9 @@ from sklearn.gaussian_process import GaussianProcessRegressor
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
-dim = 10
+dim = 20
 lb, ub = -5, 5
-OBJECTIVE_FUNCTION = bn.F16()
+OBJECTIVE_FUNCTION = bn.F21()
 
 
 def fitness(x):
@@ -34,7 +34,7 @@ opt = KernelPCABO(
     # opt = PCABO(
     search_space=space,
     obj_fun=fitness,
-    DoE_size=30,
+    DoE_size=5,
     max_FEs=100,
     verbose=True,
     n_point=1,

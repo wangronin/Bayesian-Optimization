@@ -114,10 +114,9 @@ class KernelTransform(MyKernelPCA):
         return transformed
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> KernelTransform:
-        X_scaled = self._weighting_scheme(X, y)
         if self.__is_kernel_refit_needed:
-            self.__fit_kernel_parameters(X_scaled, KernelParamsOptimizerSearch)
-        return super().fit(X_scaled)
+            self.__fit_kernel_parameters(X, y, KernelParamsOptimizerSearch)
+        return super().fit(X, y)
 
     def transform(self, X: np.ndarray) -> np.ndarray:
         X = self._check_input(X)
@@ -133,43 +132,27 @@ class KernelTransform(MyKernelPCA):
     def get_kernel_parameters(self):
         return self.kernel_config
 
-    def _weighting_scheme(self, X, y):
-        X = self._check_input(X)
-        self.center = X.mean(axis=0)
-        X_centered = X - self.center
-        y_ = -1 * y if not self.minimize else y
-        r = rankdata(y_)
-        N = len(y_)
-        w = np.log(N) - np.log(r)
-        w /= np.sum(w)
-        w = w.reshape(-1, 1)
-        X_scaled = X_centered * w
-        return X, [wi[0] for wi in w]
-
-    def __fit_kernel_parameters(self, X, SearchStrategy):
+    def __fit_kernel_parameters(self, X, y, SearchStrategy):
         if self.kernel_fit_strategy is KernelFitStrategy.FIXED_KERNEL:
             pass
         elif self.kernel_fit_strategy is KernelFitStrategy.AUTO:
-            kernel_name, kernel_parameters, result = SearchStrategy(
-                self.X_initial_space, X, self.epsilon
-            ).find_best_kernel(["rbf"])
+            kernel_name, kernel_parameters, _ = SearchStrategy(X, y, self.epsilon).find_best_kernel(["rbf"])
             self.kernel_config = {"kernel_name": kernel_name, "kernel_parameters": kernel_parameters}
         elif self.kernel_fit_strategy is KernelFitStrategy.LIST_OF_KERNEL:
-            kernel_name, kernel_parameters, result = SearchStrategy(
-                self.X_initial_space, X, self.epsilon
-            ).find_best_kernel(self.kernel_config["kernel_names"])
+            kernel_name, kernel_parameters, _ = SearchStrategy(X, y, self.epsilon).find_best_kernel(
+                self.kernel_config["kernel_names"]
+            )
             self.kernel_config = {"kernel_name": kernel_name, "kernel_parameters": kernel_parameters}
         else:
             raise ValueError(f"Kernel fit strategy {str(KernelFitStrategy)} is not known")
-
         self.__is_kernel_refit_needed = False
 
 
 class KernelParamsSearchStrategy(ABC):
-    def __init__(self, X: np.ndarray, X_weighted: np.ndarray, epsilon: float):
+    def __init__(self, X: np.ndarray, y: np.ndarray, epsilon: float):
         self._X = X
+        self._y = y
         self.n_point = X.shape[0]
-        self._X_weighted = X_weighted
         self._epsilon = epsilon
 
     def find_best_kernel(self, kernel_names: List):
@@ -192,23 +175,12 @@ class KernelParamsSearchStrategy(ABC):
         return kernel_name, params, result
 
     @staticmethod
-    def __try_kernel(parameters, epsilon, X_initial_space, X_weighted, kernel_name):
+    def __try_rbf_kernel(parameters, epsilon, X, y, kernel_name, l2_norm_matrix):
         kpca = MyKernelPCA(
-            epsilon, X_initial_space, {"kernel_name": kernel_name, "kernel_parameters": parameters}
-        )
-        kpca.fit(X_weighted)
-        if kpca.too_compressed:
-            return int(1e9), 0
-        return kpca.k, kpca.extracted_information
-
-    @staticmethod
-    def __try_rbf_kernel(parameters, epsilon, X_initial_space, X_weighted, kernel_name, l2_norm_matrix):
-        ns = len(X_initial_space)
-        kpca = MyKernelPCA(
-            epsilon, X_initial_space, {"kernel_name": kernel_name, "kernel_parameters": parameters}
+            epsilon=epsilon, kernel_config={"kernel_name": kernel_name, "kernel_parameters": parameters}
         )
         kpca._set_reuse_rbf_data(l2_norm_matrix)
-        kpca.fit(X_weighted)
+        kpca.fit(X, y)
         if kpca.too_compressed:
             return int(1e9), 0
         # TODO: `kpca.k` and `kpca.extracted_information * (ns - 1) + 1` are in the same range, i.e., [1, ns]
@@ -220,12 +192,12 @@ class KernelParamsSearchStrategy(ABC):
         pass
 
     def find_best_for_rbf(self):
-        self.__l2_norm_matrix = cdist(self._X_weighted[0], self._X_weighted[0]) ** 2
+        self.__l2_norm_matrix = cdist(self._X, self._X) ** 2
         f = functools.partial(
             KernelParamsSearchStrategy.__try_rbf_kernel,
             epsilon=self._epsilon,
-            X_initial_space=self._X,
-            X_weighted=self._X_weighted,
+            X=self._X,
+            y=self._y,
             kernel_name="rbf",
             l2_norm_matrix=self.__l2_norm_matrix,
         )
@@ -831,7 +803,6 @@ class KernelPCABO(BO):
         self._pca = KernelTransform(
             dimensions=self.search_space.dim,
             minimize=self.minimize,
-            X_initial_space=[],
             epsilon=max_information_loss,
             kernel_fit_strategy=kernel_fit_strategy,
             kernel_config=kernel_config,
@@ -1009,10 +980,10 @@ class KernelPCABO(BO):
 
         new_X = self.post_eval_check(new_X)  # remove NaN's
         self.data = self.data + new_X if hasattr(self, "data") else new_X
-        for y in new_y:
-            if self.__is_promising_y(y):
-                self._pca.set_kernel_refit_needed(True)
-            self.ordered_container.add_element(y)
+        # for y in new_y:
+        # if self.__is_promising_y(y):
+        self._pca.set_kernel_refit_needed(True)
+        # self.ordered_container.add_element(y)
         # re-fit the PCA transformation
         self._pca.set_initial_space_points(self.data)
         X = self._pca.fit_transform(np.array(self.data), self.data.fitness)
