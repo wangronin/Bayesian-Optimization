@@ -741,7 +741,7 @@ class KernelPCABO(BO):
         self.ratio_of_best_for_kernel_refit = 0.2
         self.acq_opt_time = 0
         self.mode_fit_time = 0
-        self.archive = KernelPCABO.Archive2(100, 5)
+        self.archive = KernelPCABO.Archive2(30, 5)
 
     @staticmethod
     def _compute_bounds(kpca: MyKernelPCA, search_space: SearchSpace) -> List[float]:
@@ -935,6 +935,9 @@ class KernelPCABO(BO):
             self.n_drop_points = drop_points
             self.points = []
             self.__minimize = minimize
+            self.curent_stagnation = 0
+            self.iter_count = 0
+            self.doe_size = 0
             if not minimize:
                 raise NotImplementedError
 
@@ -942,6 +945,7 @@ class KernelPCABO(BO):
             return np.array([p.coordinates for p in self.points]), np.array([p.obj_value for p in self.points])
 
         def add_doe(self, coordinates, values):
+            self.doe_size = len(values)
             ids = np.argsort(values)
             self.points = [KernelPCABO.Point([], 0)] * len(values)
             pos = 0
@@ -950,23 +954,30 @@ class KernelPCABO(BO):
                 pos += 1
 
         def add_point(self, coordinates, value):
+            self.iter_count += 1
+            if value < self.points[0].obj_value:
+                self.curent_stagnation = 0
+            else:
+                self.curent_stagnation += 1
+            if self.curent_stagnation >= self.w_iter:
+                self.drop_points()
+                self.curent_stagnation = 0
             for i in range(len(self.points)):
                 if self.points[i].obj_value > value:
                     self.points.insert(i, KernelPCABO.Point(coordinates, value))
                     return
 
         def drop_points(self):
+            eprintf(f'Iteration {self.iter_count}')
             for i in range(self.n_drop_points):
-                if len(self.points) > 0:
+                if len(self.points) > self.doe_size:
                     self.points.pop(0)
                     eprintf(f'Point {i} is dropped')
 
+        def update_dim(self, dim):
+            self.w_iter = 4 * dim
+
     def tell(self, new_X, new_y):
-        if self.switch_to_BO:
-            if new_y < min(self.data.fitness):
-                self.switch_to_BO = False
-            else:
-                super().tell(new_X, new_y)
         self.logger.info(f"observing {len(new_X)} points:")
         for i, x in enumerate(new_X):
             self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x}")
@@ -984,6 +995,7 @@ class KernelPCABO(BO):
         if len(new_X) > 1:
             self.archive.add_doe(new_X, new_y)
         else:
+            self.archive.update_dim(self._pca.k)
             self.archive.add_point(new_X[0], new_y[0])
         self.data = self.data + new_X if hasattr(self, "data") else new_X
         for y in new_y:
@@ -991,12 +1003,12 @@ class KernelPCABO(BO):
                 self._pca.set_kernel_refit_needed(True)
             self.ordered_container.add_element(y)
         # re-fit the PCA transformation
-        # good_points, good_points_values = self.archive.get_points_for_manifold_learning()
-        good_points, good_points_values = self.data, self.data.fitness
+        good_points, good_points_values = self.archive.get_points_for_manifold_learning()
+        # good_points, good_points_values = self.data, self.data.fitness
         self._pca.set_initial_space_points(good_points)
         self._pca.fit(good_points, good_points_values)
         X = self._pca.transform(self.data)
-        eprintf("Feature space points", X)
+        # eprintf("Feature space points", X)
         bounds = self._compute_bounds(self._pca, self.__search_space)
         eprintf("Bounds in the feature space", bounds)
         # self._run_experiment(bounds)
@@ -1025,8 +1037,6 @@ class KernelPCABO(BO):
 
 
     def update_model(self, X: np.ndarray, y: np.ndarray):
-        if self.switch_to_BO:
-            super.update_model(X, y)
         # NOTE: the GPR model will be created since the effective search space (the reduced space
         # is dynamic)
         dim = self._search_space.dim
@@ -1043,10 +1053,10 @@ class KernelPCABO(BO):
         start = time.time()
         self.model.fit(X, y_)
         self.mode_fit_time = time.time() - start
-        p_impr = self.__get_probability_of_improvement()
+        # p_impr = self.__get_probability_of_improvement()
 
-        if p_impr < 1e-35:
-            self.archive.drop_points()
+        # if p_impr < 1e-35:
+            # self.archive.drop_points()
         GLOBAL_CHARTS_SAVER.save_model(self.model, X, y_)
         y_hat = self.model.predict(X)
 

@@ -211,7 +211,7 @@ class MyKernelPCA:
             w0, fopt, *rest = optimize.fmin_bfgs(partial_f, initial_weights, full_output=True, disp=False)
             inversed = MyKernelPCA.linear_combination(w0, good_subspace)
             Y_inversed.append(inversed)
-            eprintf(f"Inverse of point {y} is {inversed}")
+            # eprintf(f"Inverse of point {y} is {inversed}")
 
         return np.array(Y_inversed)
 
