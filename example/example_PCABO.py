@@ -16,7 +16,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 dim = 10
 lb, ub = -5, 5
-OBJECTIVE_FUNCTION = bn.F15()
+OBJECTIVE_FUNCTION = bn.F16()
 
 
 def fitness(x):
