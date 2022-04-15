@@ -59,7 +59,7 @@ class AcquisitionFunction(ABC):
         Returns:
             Tuple[np.ndarray, np.ndarray]: the predicted value and its standard deviation
         """
-        y_hat, sd2 = self._model.predict(X, eval_MSE=True)
+        y_hat, sd2 = self._model.predict(X, return_std=True)
         if not self.minimize:
             y_hat = -1 * y_hat
         return y_hat, sqrt(sd2)

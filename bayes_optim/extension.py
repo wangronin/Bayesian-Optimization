@@ -14,7 +14,8 @@ from abc import ABC, abstractmethod
 from sklearn.base import clone, is_regressor
 
 from .acquisition import acquisition_fun as AcquisitionFunction
-from .acquisition.optim import OptimizationListener
+from .acquisition import EpsilonPI, EI
+from .acquisition.optim import OptimizationListener, argmax_restart, default_AQ_max_FEs
 from .bayes_opt import BO, ParallelBO
 from .search_space import RealSpace, SearchSpace
 from .solution import Solution
@@ -22,6 +23,7 @@ from .surrogate import GaussianProcess, RandomForest, trend
 from .utils import timeit
 from .kpca import MyKernelPCA, create_kernel
 from .utils import partial_argument
+from scipy.optimize import fmin_l_bfgs_b
 
 from .mylogging import *
 import time
@@ -739,7 +741,7 @@ class KernelPCABO(BO):
         self.ratio_of_best_for_kernel_refit = 0.2
         self.acq_opt_time = 0
         self.mode_fit_time = 0
-        self.archive = KernelPCABO.Archive(self.dim, 3 * self.dim)
+        self.archive = KernelPCABO.Archive2(100, 5)
 
     @staticmethod
     def _compute_bounds(kpca: MyKernelPCA, search_space: SearchSpace) -> List[float]:
@@ -884,6 +886,13 @@ class KernelPCABO(BO):
         return pos / n <= self.ratio_of_best_for_kernel_refit if n != 0 else True
 
 
+    class Point:
+        def __init__(self, coordinates, value):
+            self.coordinates = coordinates
+            self.obj_value = value
+            self.old_count = 0
+
+
     class Archive:
         def __init__(self, old_threshold, bad_threshold, minimize=True):
             self.old_threshold = old_threshold
@@ -892,12 +901,6 @@ class KernelPCABO(BO):
             self.__minimize = minimize
             if not minimize:
                 raise NotImplementedError
-
-        class Point:
-            def __init__(self, coordinates, value):
-                self.coordinates = coordinates
-                self.obj_value = value
-                self.old_count = 0
 
         def __update_after_insert(self, pos_insert):
             if pos_insert >= self.bad_threshold:
@@ -926,19 +929,44 @@ class KernelPCABO(BO):
                     self.__update_after_insert(i)
                     return
 
+    class Archive2:
+        def __init__(self, w_iter, drop_points, minimize=True):
+            self.w_iter = w_iter
+            self.n_drop_points = drop_points
+            self.points = []
+            self.__minimize = minimize
+            if not minimize:
+                raise NotImplementedError
+
         def get_points_for_manifold_learning(self):
             return np.array([p.coordinates for p in self.points]), np.array([p.obj_value for p in self.points])
 
         def add_doe(self, coordinates, values):
             ids = np.argsort(values)
-            self.points = [KernelPCABO.Archive.Point([], 0)] * len(values)
+            self.points = [KernelPCABO.Point([], 0)] * len(values)
             pos = 0
             for ind in ids:
-                self.points[pos] = KernelPCABO.Archive.Point(coordinates[ind], values[ind])
+                self.points[pos] = KernelPCABO.Point(coordinates[ind], values[ind])
                 pos += 1
 
+        def add_point(self, coordinates, value):
+            for i in range(len(self.points)):
+                if self.points[i].obj_value > value:
+                    self.points.insert(i, KernelPCABO.Point(coordinates, value))
+                    return
+
+        def drop_points(self):
+            for i in range(self.n_drop_points):
+                if len(self.points) > 0:
+                    self.points.pop(0)
+                    eprintf(f'Point {i} is dropped')
 
     def tell(self, new_X, new_y):
+        if self.switch_to_BO:
+            if new_y < min(self.data.fitness):
+                self.switch_to_BO = False
+            else:
+                super().tell(new_X, new_y)
         self.logger.info(f"observing {len(new_X)} points:")
         for i, x in enumerate(new_X):
             self.logger.info(f"#{i + 1} - fitness: {new_y[i]}, solution: {x}")
@@ -963,7 +991,8 @@ class KernelPCABO(BO):
                 self._pca.set_kernel_refit_needed(True)
             self.ordered_container.add_element(y)
         # re-fit the PCA transformation
-        good_points, good_points_values = self.archive.get_points_for_manifold_learning()
+        # good_points, good_points_values = self.archive.get_points_for_manifold_learning()
+        good_points, good_points_values = self.data, self.data.fitness
         self._pca.set_initial_space_points(good_points)
         self._pca.fit(good_points, good_points_values)
         X = self._pca.transform(self.data)
@@ -978,7 +1007,26 @@ class KernelPCABO(BO):
         self.update_model(X, self.data.fitness)
         self.logger.info(f"xopt/fopt:\n{self.xopt}\n")
 
+    def __get_probability_of_improvement(self):
+        pimpr_by_point = EpsilonPI(plugin=min(self.data.fitness), model=self.model, minimize=self.minimize)
+        best_prob = -1.
+        for i in range(20):
+            point, prob, _ = fmin_l_bfgs_b(
+                    pimpr_by_point,
+                    x0=self._search_space.sample(1)[0],
+                    factr=1e5,
+                    approx_grad=True,
+                    bounds=self._search_space.bounds,
+                    maxfun=default_AQ_max_FEs['BFGS'](self._search_space.dim)
+                )
+            best_prob = max(best_prob, prob)
+        eprintf(f'Iteration {self.iter_count}: max probability of improvement is {best_prob} and is reached in the point {point}')
+        return best_prob
+
+
     def update_model(self, X: np.ndarray, y: np.ndarray):
+        if self.switch_to_BO:
+            super.update_model(X, y)
         # NOTE: the GPR model will be created since the effective search space (the reduced space
         # is dynamic)
         dim = self._search_space.dim
@@ -995,6 +1043,10 @@ class KernelPCABO(BO):
         start = time.time()
         self.model.fit(X, y_)
         self.mode_fit_time = time.time() - start
+        p_impr = self.__get_probability_of_improvement()
+
+        if p_impr < 1e-35:
+            self.archive.drop_points()
         GLOBAL_CHARTS_SAVER.save_model(self.model, X, y_)
         y_hat = self.model.predict(X)
 
