@@ -133,7 +133,7 @@ class AlgorithmWrapper:
         elif self.dim == 20:
             total_budget = 120
         elif self.dim == 40:
-            total_budget = 250
+            total_budget = 200
         elif self.dim == 60:
             total_budget = 300
         else:
