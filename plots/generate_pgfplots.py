@@ -1,0 +1,81 @@
+#!/usr/bin/python3
+
+
+import sys
+import shutil
+import os
+import csv
+import math
+import json
+
+
+class PfgplotsChart:
+    beg = '''
+\\begin{tikzpicture}
+    \\begin{axis}[
+        width=0.5\\textwidth,
+        title = F##number##,
+        title style={yshift=-20},
+     ]
+'''
+    end = '''     \\end{axis}
+\\end{tikzpicture}
+'''
+
+    def __init__(self, fid):
+        self.files = []
+        self.fid = fid
+
+    def add_file(self, file_name, color):
+        self.files.append((file_name, color))
+
+    def generate_tex(self):
+        if not self.files:
+            return ''
+        code = [PfgplotsChart.beg.replace('##number##', str(self.fid))]
+        for file, color in self.files:
+            s = '        \\addplot+[color=' + color + \
+                ', mark=none, error bars/.cd, y dir=both, y explicit] table[x index=0,y index=1,y error index=2] {data/' + file + '};\n'
+            code.append(s)
+        code.append(PfgplotsChart.end)
+        return ''.join(code)
+
+
+def main(argv):
+    experiment_config_file_name = argv[1]
+    with open(experiment_config_file_name, 'r') as f:
+        config = json.load(f)
+    data = config['folder']
+    to = '/home/kirill/Projects/PhD/Files/Paper-PPSN-Kernel-PCABO/pgfplot_charts/'
+    fids = config['fids']
+    iids = config['iids']
+    dims = config['dims']
+    reps = config['reps']
+    optimizers = config['optimizers']
+    lb, ub = config['lb'], config['ub']
+    runs_number = len(optimizers) * len(fids) * len(iids) * len(dims) * reps
+    columns = 2
+    for dim in dims:
+        with open(os.path.join(to, f'dim{dim}.tex'), 'w') as f:
+            cur = 0
+            f.write('\\begin{tabular}{' + 'c' * columns + '}\n')
+            for fid in fids:
+                for iid in iids:
+                    dirs_to_process = []
+                    pgfchart = PfgplotsChart(fid)
+                    for my_optimizer_name, color in optimizers.items():
+                        file_name = f'{my_optimizer_name}-D{dim}-F{fid}.csv'
+                        if os.path.exists(os.path.join(data, file_name)):
+                            pgfchart.add_file(file_name, color)
+                    f.write(pgfchart.generate_tex())
+                    cur += 1
+                    if cur == columns:
+                        f.write('\\\\\n')
+                        cur = 0
+                    else:
+                        f.write('&')
+            f.write('\\end{tabular}\n')
+
+
+if __name__ == '__main__':
+    main(sys.argv)
