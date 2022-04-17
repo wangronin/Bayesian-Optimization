@@ -13,10 +13,23 @@ import numpy as np
 import copy
 import time
 from datetime import timedelta
+import cma
 
 
 lb, ub = -5, 5
 cnt = -1
+
+
+class Py_CMA_ES_Wrapper:
+    def __init__(self, func, dim, total_budget, seed):
+        self.func = func
+        self.dim = dim
+        self.total_budget = total_budget
+        self.seed = seed
+
+    def run(self):
+        cma.fmin(self.func, [0.] * self.dim, 1., options={'bounds': [
+                 [lb]*self.dim, [ub]*self.dim], 'maxfevals': self.total_budget, 'seed': self.seed})
 
 
 def create_algorithm(optimizer_name, func, dim, total_budget, doe_size, seed):
@@ -104,6 +117,8 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size, seed):
             ml_DoE_size=doe_size,
             random_seed=seed
         )
+    elif optimizer_name == 'pyCMA':
+        return Py_CMA_ES_Wrapper(func, dim, total_budget, seed)
     else:
         raise NotImplementedError
 
