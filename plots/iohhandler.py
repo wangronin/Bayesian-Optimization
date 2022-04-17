@@ -25,9 +25,10 @@ class Result:
 
 
 class ResultsGatherer:
-    def __init__(self, read_result_callback, ):
+    def __init__(self, read_result_callback=None, read_info_callback=None):
         self.processed = {}
-        self.read_result_callback = read_result_callback
+        self.dat_callback = read_result_callback
+        self.info_callback = read_info_callback
 
     def __find_name_in_dirname(self, dir_name, name):
         for p in dir_name.split('_'):
@@ -50,13 +51,10 @@ class ResultsGatherer:
         else:
             self.processed[result] = [result_data]
 
-    def __process_row_lines(self, r):
-        return self.read_result_callback(r)
-
     def add_zip(self, path_to_ioh_zip):
         with ZipFile(path_to_ioh_zip) as myzip:
             for name in myzip.namelist():
-                if name.endswith('.dat'):
+                if name.endswith('.dat') and self.dat_callback:
                     parts = name.split('/')
                     dir_name = parts[0]
                     opt = self.__get_optimizer(dir_name)
@@ -65,10 +63,22 @@ class ResultsGatherer:
                     with myzip.open(name, 'r') as dat_file:
                         f = io.TextIOWrapper(dat_file)
                         r = csv.reader(f, delimiter=' ')
-                        result_data = self.__process_row_lines(r)
-                        self.__add_result(Result(opt=opt, fid=fid, dim=dim), result_data)
+                        result_data = self.dat_callback(r)
+                        self.__add_result(
+                            Result(opt=opt, fid=fid, dim=dim), result_data)
+                elif name.endswith('.info') and self.info_callback:
+                    parts = name.split('/')
+                    dir_name = parts[0]
+                    opt = self.__get_optimizer(dir_name)
+                    fid = self.__get_fid(dir_name)
+                    dim = self.__get_dim(dir_name)
+                    with myzip.open(name, 'r') as dat_file:
+                        f = io.TextIOWrapper(dat_file)
+                        r = f.readlines()
+                        result_data = self.info_callback(r)
+                        self.__add_result(
+                            Result(opt=opt, fid=fid, dim=dim), result_data)
 
     def process_results(self, process_result_callback):
         for k, v in self.processed.items():
             process_result_callback(k, v)
-

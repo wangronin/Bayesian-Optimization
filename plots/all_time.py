@@ -13,11 +13,10 @@ import functools
 
 
 def process_dat_file(r):
-    best_so_far = []
-    next(r, None)
-    for row in r:
-        best_so_far.append(float(row[2]))
-    return best_so_far
+    for l in r:
+        if '|' in l:
+            d = l.split('|')
+            return [float(d[1])]
 
 
 def get_mean_sd(arrays):
@@ -41,13 +40,12 @@ def process_cur_results(result_data, arrays, extract):
     file_fqn = os.path.join(extract, f'{result_data.opt}_D{result_data.dim}_F{result_data.fid}')
     mean, sd = get_mean_sd(arrays)
     with open(file_fqn, 'w') as f:
-        f.write(f'runtime mean sd\n')
-        for i in range(3*result_data.dim, len(mean)+10, 10):
-            f.write(f'{i} {mean[i-1]} {sd[i-1]}\n')
+        f.write(f'mean_cpu_time sd\n')
+        f.write(f'{mean[0]} {sd[0]}\n')
 
 
 def main():
-    parser = argparse.ArgumentParser('Processor of best-so-far')
+    parser = argparse.ArgumentParser('Processor of cpu time')
     parser.add_argument('--zip_paths', nargs='+', required=True, help='Path to zip file with ioh data to process')
     parser.add_argument('--extract', nargs=1, required=True, help='Path to the folder where to extract all the data')
     args = parser.parse_args()
@@ -55,7 +53,7 @@ def main():
     if os.path.exists(extract_data_dir) and not os.path.isdir(extract_data_dir):
         print(f'File {extract_data_dir} is not a directory')
     os.makedirs(extract_data_dir, exist_ok=True)
-    gatherer = ResultsGatherer(read_result_callback=process_dat_file)
+    gatherer = ResultsGatherer(read_info_callback=process_dat_file)
     for zip_path in args.zip_paths:
         gatherer.add_zip(zip_path)
     gatherer.process_results(process_result_callback=functools.partial(process_cur_results, extract=extract_data_dir))

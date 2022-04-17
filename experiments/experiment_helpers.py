@@ -13,6 +13,7 @@ import numpy as np
 import copy
 import time
 from datetime import timedelta
+import cma
 
 
 lb, ub = -5, 5
