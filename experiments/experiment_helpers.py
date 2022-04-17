@@ -18,6 +18,7 @@ import cma
 
 lb, ub = -5, 5
 cnt = -1
+row_function = None
 
 
 class Py_CMA_ES_Wrapper:
@@ -28,7 +29,16 @@ class Py_CMA_ES_Wrapper:
         self.seed = seed
 
     def run(self):
-        cma.fmin(self.func, [0.] * self.dim, 1., options={'bounds': [
+        space = RealSpace([lb, ub], random_seed=self.seed) * self.dim
+        ma = float('-inf')
+        argmax = None
+        for i in range(10*self.dim):
+            x = space.sample(1)[0]
+            f = row_function(x)
+            if f > ma:
+                ma = f
+                argmax = x
+        cma.fmin(self.func, x, 1., options={'bounds': [
                  [lb]*self.dim, [ub]*self.dim], 'maxfevals': self.total_budget, 'seed': self.seed})
 
 
@@ -195,6 +205,8 @@ def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep, folder_name
     l.watch(algorithm, ['lower_space_dim', 'extracted_information',
             'out_of_the_box_solutions', 'kernel_config', 'acq_opt_time', 'model_fit_time'])
     p = MyObjectiveFunctionWrapper(fid, iid, dim)
+    global row_function
+    row_function = p.my_function
     p.attach_logger(l)
     algorithm(my_optimizer_name, p, fid, iid, dim)
     l.finish_logging()
