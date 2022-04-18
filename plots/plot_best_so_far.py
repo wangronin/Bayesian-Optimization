@@ -51,9 +51,9 @@ def main():
                     ax.tick_params(axis='both', which='major', labelsize=9, pad=0)
                     ax.grid(which='both', linestyle='--', linewidth='0.05')
                     ax.set_facecolor('lightgrey')
-                    ax.set_title(f'F{fid}', loc='center', fontdict={'fontsize': 12, 'fontweight': 'medium'}, y=0.9)
+                    ax.set_title(f'F{fid}', loc='center', fontdict={'fontsize': 12, 'fontweight': 'medium'}, y=0.96)
             cnt += 1
-        plt.subplots_adjust(wspace=0.18, hspace=0.05)
+        plt.subplots_adjust(wspace=0.18, hspace=0.15)
         # plt.margins(x=0, tight=True)
         if dim == 60:
             fig.supxlabel('iteration', fontsize=20)

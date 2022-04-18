@@ -16,7 +16,8 @@ def process_dat_file(r):
     best_so_far = []
     next(r, None)
     for row in r:
-        best_so_far.append([float(row[9]), float(row[10])])
+        if len(row) > 10 and row[9] != 'None' and row[10] != 'None':
+            best_so_far.append([float(row[9]), float(row[10])])
     return best_so_far
 
 
