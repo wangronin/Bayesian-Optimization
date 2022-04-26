@@ -44,7 +44,6 @@ class Py_CMA_ES_Wrapper:
 
 def create_algorithm(optimizer_name, func, dim, total_budget, doe_size, seed):
     space = RealSpace([lb, ub], random_seed=seed) * dim
-    print(f'seed={seed}')
     global cnt
     cnt += 1
     if optimizer_name == 'KernelPCABOCheat':
