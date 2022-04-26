@@ -50,19 +50,17 @@ def main():
                     ax.fill_between(x, y-err, y+err, facecolor=opt_to_color[opt], alpha=0.15)
                     ax.tick_params(axis='both', which='major', labelsize=9, pad=0)
                     ax.grid(which='both', linestyle='--', linewidth='0.05')
-                    ax.set_facecolor('lightgrey')
+                    ax.set_facecolor('#ececec')
                     ax.set_title(f'F{fid}', loc='center', fontdict={'fontsize': 12, 'fontweight': 'medium'}, y=0.96)
             cnt += 1
         plt.subplots_adjust(wspace=0.18, hspace=0.15)
         # plt.margins(x=0, tight=True)
-        if dim == 60:
-            fig.supxlabel('iteration', fontsize=20)
-        if dim == 20:
-            handles, labels = ax.get_legend_handles_labels()
-            leg = fig.legend(handles, labels, loc='upper center', ncol=4, prop={'size': 15})
-            for legobj in leg.legendHandles:
-                legobj.set_linewidth(1.5)
-            # plt.legend(bbox_to_anchor=(1.1, -1.1), bbox_transform=ax.transAxes)
+        fig.supxlabel('iteration', fontsize=20)
+        handles, labels = ax.get_legend_handles_labels()
+        leg = fig.legend(handles, labels, loc='upper center', ncol=4, prop={'size': 15})
+        for legobj in leg.legendHandles:
+            legobj.set_linewidth(1.5)
+        # plt.legend(bbox_to_anchor=(1.1, -1.1), bbox_transform=ax.transAxes)
         fig.savefig(f'convergence{dim}.pdf')
     # pdf = matplotlib.backends.backend_pdf.PdfPages("convergence.pdf")
     # for fig in figs:
