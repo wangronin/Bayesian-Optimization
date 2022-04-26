@@ -164,6 +164,9 @@ class AlgorithmWrapper:
             total_budget = 2 * doe_size
         self.opt = create_algorithm(
             optimizer_name, func, self.dim, total_budget, doe_size, self.seed)
+        print(f'    total_budget = {total_budget}')
+        print(f'    doe_size = {doe_size}')
+        sys.stdout.flush()
         self.opt.run()
 
     @property

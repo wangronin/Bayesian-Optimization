@@ -142,6 +142,7 @@ class BaseBO(BaseOptimizer):
         if self._model is None:
             self._model = self.create_default_model(self.search_space, self.my_seed)
         self.model = clone(self._model)
+        self.__have_doe = False
 
     def create_default_model(self, my_search_space, random_seed):
         lb, ub = np.array(my_search_space.bounds).T
@@ -298,11 +299,20 @@ class BaseBO(BaseOptimizer):
 
         assert hasattr(AcquisitionFunction, self._acquisition_fun)
 
+    def __log_doe(self, X, Y):
+        if not self.__have_doe:
+            self.__have_doe = True
+            print('    DoE_value DoE_point')
+            for x, y in zip(X, Y):
+                print('   ', y, x)
+            sys.stdout.flush()
+
     def step(self):
         self.logger.info(f"iteration {self.iter_count} starts...")
         X = self.ask()
         func_vals = self.evaluate(X)
         eprintf("candidate solution", X, "function values", func_vals)
+        self.__log_doe(X, func_vals)
         self.tell(X, func_vals)
 
     @timeit
