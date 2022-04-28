@@ -33,17 +33,19 @@ class ResultsGatherer:
     def __find_name_in_dirname(self, dir_name, name):
         for p in dir_name.split('_'):
             if name in p:
+                if len(p.split('-')) < 2:
+                    breakpoint()
                 return p.split('-')[1]
         return None
 
     def __get_optimizer(self, dir_name):
-        return self.__find_name_in_dirname(dir_name, 'Opt')
+        return self.__find_name_in_dirname(dir_name, 'Opt-')
 
     def __get_fid(self, dir_name):
-        return self.__find_name_in_dirname(dir_name, 'F')
+        return self.__find_name_in_dirname(dir_name, 'F-')
 
     def __get_dim(self, dir_name):
-        return int(self.__find_name_in_dirname(dir_name, 'Dim'))
+        return int(self.__find_name_in_dirname(dir_name, 'Dim-'))
 
     def __add_result(self, result, result_data):
         if result in self.processed.keys():

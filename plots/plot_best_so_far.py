@@ -26,7 +26,7 @@ def main():
         fig.supylabel(f'f - f* in {dim}D', x=0.07, fontsize=20)
         cnt = 0
         for fid in range(15, 25):
-            for opt in ['BO', 'LinearPCABO', 'KernelPCABOInverse', 'pyCMA']:
+            for opt in ['BO', 'LinearPCABO', 'KernelPCABOInverse']:
                 fname = f'{opt}_D{dim}_F{fid}'
                 with open(os.path.join(path, fname), 'r') as f:
                     r = csv.reader(f, delimiter=' ')
@@ -35,7 +35,7 @@ def main():
                     for row in r:
                         x.append(int(row[0]))
                         y.append(float(row[1]))
-                        err.append(float(row[2]) / 4)
+                        err.append(float(row[2]) / np.sqrt(float(row[3])))
                     x, y, err = np.array(x), np.array(y), np.array(err)
                     ax = axs[cnt // M, cnt % M]
                     if cnt // M == 0:
@@ -55,11 +55,13 @@ def main():
             cnt += 1
         plt.subplots_adjust(wspace=0.18, hspace=0.15)
         # plt.margins(x=0, tight=True)
-        fig.supxlabel('iteration', fontsize=20)
-        handles, labels = ax.get_legend_handles_labels()
-        leg = fig.legend(handles, labels, loc='upper center', ncol=4, prop={'size': 15})
-        for legobj in leg.legendHandles:
-            legobj.set_linewidth(1.5)
+        if dim == 60:
+            fig.supxlabel('iteration', fontsize=20)
+        if dim == 20:
+            handles, labels = ax.get_legend_handles_labels()
+            leg = fig.legend(handles, labels, loc='upper center', ncol=4, prop={'size': 15})
+            for legobj in leg.legendHandles:
+                legobj.set_linewidth(1.5)
         # plt.legend(bbox_to_anchor=(1.1, -1.1), bbox_transform=ax.transAxes)
         fig.savefig(f'convergence{dim}.pdf')
     # pdf = matplotlib.backends.backend_pdf.PdfPages("convergence.pdf")
