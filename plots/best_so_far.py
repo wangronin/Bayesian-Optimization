@@ -8,6 +8,7 @@ import os
 import csv
 import math
 import json
+import numpy as np
 from iohhandler import ResultsGatherer
 import functools
 
@@ -20,27 +21,45 @@ def process_dat_file(r):
     return best_so_far
 
 
-def get_mean_sd(arrays):
+def get_mean_sd(result_data, arrays):
     M = max(len(a) for a in arrays)
     N = len(arrays)
     mean = [0.] * M
     sd = [0.] * M
+    counts = [0.] * M
+    last = [0.] * N
     for j in range(M):
         cnt = 0
         for i in range(N):
             if j < len(arrays[i]):
                 mean[j] += arrays[i][j]
-                cnt += 1
+                last[i] = arrays[i][j]
+            else:
+                mean[j] += last[i]
+            cnt += 1
         mean[j] /= cnt
+        counts[j] = cnt
         sd[j] = math.sqrt(sum((arrays[i][j] - mean[j]) **
                           2 for i in range(len(arrays)) if j < len(arrays[i])) / cnt)
-    return mean, sd
+    return mean, sd, counts
+
+
+def debug_f23(arrays):
+    import matplotlib.pyplot as plt
+    for i in range(len(arrays)):
+        fig = plt.figure()
+        plt.plot([j for j in range(len(arrays[i]))], arrays[i])
+        fig.savefig(f'{i}.png')
 
 
 def process_cur_results(result_data, arrays, extract):
     file_fqn = os.path.join(
         extract, f'{result_data.opt}_D{result_data.dim}_F{result_data.fid}')
-    mean, sd = get_mean_sd(arrays)
+    if result_data.dim == 60 and result_data.fid == '23' and result_data.opt == 'BO':
+        # debug_f23(arrays)
+        # breakpoint()
+        pass
+    mean, sd, cnt = get_mean_sd(result_data, arrays)
     with open(file_fqn, 'w') as f:
         f.write(f'runtime mean sd count\n')
         beg = 3 * result_data.dim  # if result_data.opt != 'pyCMA' else 0
@@ -49,7 +68,7 @@ def process_cur_results(result_data, arrays, extract):
         for i in range(beg + step, end + step, step):
             if i-1 > len(mean):
                 break
-            f.write(f'{i} {mean[i-1]} {sd[i-1]} {len(arrays)}\n')
+            f.write(f'{i} {mean[i-1]} {sd[i-1]} {cnt[i-1]}\n')
 
 
 def main():
