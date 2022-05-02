@@ -57,10 +57,10 @@ def process_cur_results(result_data, arrays, extract):
     mean, sd, cnt = get_mean_sd(result_data, arrays)
     with open(file_fqn, 'w') as f:
         f.write(f'runtime mean sd count\n')
-        beg = 3 * result_data.dim if result_data.opt != 'pyCMA' else 0
+        beg = 3 * result_data.dim if result_data.opt != 'pyCMA' else 1
         end = 5 * result_data.dim if result_data.opt != 'pyCMA' else 2 * result_data.dim
         step = 1
-        for i in range(beg + step, end + step, step):
+        for i in range(beg, end + step, step):
             if i-1 > len(mean):
                 break
             f.write(f'{i} {mean[i-1]} {sd[i-1]} {cnt[i-1]}\n')
