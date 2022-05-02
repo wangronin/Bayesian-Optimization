@@ -26,14 +26,14 @@ def main():
         fig.supylabel(f'f - f* in {dim}D', x=0.07, fontsize=20)
         cnt = 0
         for fid in range(15, 25):
-            for opt in ['BO', 'LinearPCABO', 'KernelPCABOInverse']:
+            for opt in ['BO', 'LinearPCABO', 'KernelPCABOInverse', 'pyCMA']:
                 fname = f'{opt}_D{dim}_F{fid}'
                 with open(os.path.join(path, fname), 'r') as f:
                     r = csv.reader(f, delimiter=' ')
                     next(r, None)
                     x, y, err = [], [], []
                     for row in r:
-                        x.append(int(row[0]))
+                        x.append(int(row[0]) + (0 if opt != 'pyCMA' else 3 * dim))
                         y.append(float(row[1]))
                         err.append(float(row[2]) / np.sqrt(float(row[3])))
                     x, y, err = np.array(x), np.array(y), np.array(err)

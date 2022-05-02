@@ -8,7 +8,6 @@ import os
 import csv
 import math
 import json
-import numpy as np
 from iohhandler import ResultsGatherer
 import functools
 
@@ -55,15 +54,11 @@ def debug_f23(arrays):
 def process_cur_results(result_data, arrays, extract):
     file_fqn = os.path.join(
         extract, f'{result_data.opt}_D{result_data.dim}_F{result_data.fid}')
-    if result_data.dim == 60 and result_data.fid == '23' and result_data.opt == 'BO':
-        # debug_f23(arrays)
-        # breakpoint()
-        pass
     mean, sd, cnt = get_mean_sd(result_data, arrays)
     with open(file_fqn, 'w') as f:
         f.write(f'runtime mean sd count\n')
-        beg = 3 * result_data.dim  # if result_data.opt != 'pyCMA' else 0
-        end = 5 * result_data.dim
+        beg = 3 * result_data.dim if result_data.opt != 'pyCMA' else 0
+        end = 5 * result_data.dim if result_data.opt != 'pyCMA' else 2 * result_data.dim
         step = 1
         for i in range(beg + step, end + step, step):
             if i-1 > len(mean):
