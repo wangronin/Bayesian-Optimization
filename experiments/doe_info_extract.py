@@ -15,21 +15,22 @@ import io
 
 
 class Description:
-    def __init__(self, fid: int, dim: int, seed: int):
+    def __init__(self, fid: int, iid: int, dim: int, seed: int):
         self.fid = int(fid)
+        self.iid = int(iid)
         self.dim = int(dim)
         self.seed = int(seed)
 
     def __eq__(self, other):
         if (isinstance(other, Description)):
-            return self.fid == other.fid and self.dim == other.dim and self.seed == other.seed
+            return self.fid == other.fid and self.iid == other.iid and self.dim == other.dim and self.seed == other.seed
         return False
 
     def __hash__(self):
-        return hash((self.fid, self.dim, self.seed))
+        return hash((self.fid, self.iid, self.dim, self.seed))
 
     def __str__(self):
-        return f'F{self.fid}_D{self.dim}_Seed{self.seed}'
+        return f'F{self.fid}_I{self.iid}_D{self.dim}_Seed{self.seed}'
 
 
 def process_stdout(stdout_file):
@@ -38,7 +39,8 @@ def process_stdout(stdout_file):
         beg = lines[0].find('{')
         end = lines[0].rfind('}')
         m = json.loads(lines[0][beg:end+1].replace('\'', '\"'))
-        result = Description(fid=m['fid'], dim=m['dim'], seed=m['seed'])
+        result = Description(fid=m['fid'], iid=m['iid'],
+                             dim=m['dim'], seed=m['seed'])
         doe_size, beg, cnt = 0, 0, 0
         for line in lines:
             if 'doe_size = ' in line:

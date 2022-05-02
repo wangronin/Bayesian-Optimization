@@ -145,7 +145,7 @@ python ../single_experiment.py configs/${FILE_ID}.json
                             }
                             if my_optimizer_name == 'pyCMA':
                                 arg_best, best = my_doe[Description(
-                                    fid=fid, dim=dim, seed=rep)]
+                                    fid=fid, iid=iid, dim=dim, seed=rep)]
                                 experiment_config['doe_arg_best'] = arg_best
                                 experiment_config['doe_best'] = best
                             cur_config_file_name = f'{cur_config_number}.json'
