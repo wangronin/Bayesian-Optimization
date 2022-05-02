@@ -23,9 +23,13 @@ def run_experiment():
     with open(sys.argv[1]) as f:
         m = json.load(f)
     print(f'Running with config {m} ...')
+    arg_best, best = [], 0.
+    if 'doe_arg_best' in m.keys():
+        arg_best = m['doe_arg_best']
+        best = m['doe_best']
     start = time.time()
     run_particular_experiment(
-        m['opt'], m['fid'], m['iid'], m['dim'], m['seed'], m['folder'])
+        m['opt'], m['fid'], m['iid'], m['dim'], m['seed'], m['folder'], doe_arg_best=arg_best, doe_best=best)
     end = time.time()
     sec = int(round(end - start))
     x = str(timedelta(seconds=sec)).split(':')

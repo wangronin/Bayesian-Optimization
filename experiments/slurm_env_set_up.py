@@ -1,7 +1,9 @@
 import sys
+import argparse
 import os
 import json
 import datetime
+from doe_info_extract import Description, add_logs_folder
 from experiment_helpers import validate_optimizers
 
 
@@ -58,6 +60,10 @@ python ../single_experiment.py configs/${FILE_ID}.json
             self.__max_array_size = 100
         self.__number_of_slurm_scripts = 0
         self.whose_server = whose_server
+        self.logs_with_doe = None
+
+    def set_logs_with_doe(self, logs_with_doe):
+        self.logs_with_doe = logs_with_doe
 
     def set_up_by_experiment_config_file(self, experiment_config_file_name):
         self.__generate_configs(experiment_config_file_name)
@@ -77,22 +83,22 @@ python ../single_experiment.py configs/${FILE_ID}.json
         else:
             script = ExperimentEnvironment.ELENA_SLURM_SCRIPT_TEMPLATE
         script = script\
-                .replace('##folder##', self.result_folder_prefix)\
-                .replace('##logs_out##', logs_out)\
-                .replace('##logs_err##', logs_err)
+            .replace('##folder##', self.result_folder_prefix)\
+            .replace('##logs_out##', logs_out)\
+            .replace('##logs_err##', logs_err)
         offset = 0
         for i in range(self.generated_configs // self.__max_array_size):
             with open(os.path.join(self.experiment_root, f'slurm{self.__number_of_slurm_scripts}.sh'), 'w') as f:
-                f.write(script\
-                        .replace('##from_number##', str(offset))\
+                f.write(script
+                        .replace('##from_number##', str(offset))
                         .replace('##jobs_count##', str(self.__max_array_size - 1)))
             offset += self.__max_array_size
             self.__number_of_slurm_scripts += 1
         r = self.generated_configs % self.__max_array_size
         if r > 0:
             with open(os.path.join(self.experiment_root, f'slurm{self.__number_of_slurm_scripts}.sh'), 'w') as f:
-                f.write(script\
-                        .replace('##from_number##', str(offset))\
+                f.write(script
+                        .replace('##from_number##', str(offset))
                         .replace('##jobs_count##', str(r - 1)))
             offset += r
             self.__number_of_slurm_scripts += 1
@@ -108,9 +114,14 @@ python ../single_experiment.py configs/${FILE_ID}.json
         if 'extra' not in config.keys():
             config['extra'] = ''
         optimizers = config['optimizers']
+        if 'pyCMA' in optimizers:
+            if self.logs_with_doe is None:
+                raise ValueError(f'Logs with doe should be configured')
+            my_doe = add_logs_folder(self.logs_with_doe)
         lb, ub = config['lb'], config['ub']
         validate_optimizers(optimizers)
-        runs_number = len(optimizers) * len(fids) * len(iids) * len(dims) * reps
+        runs_number = len(optimizers) * len(fids) * \
+            len(iids) * len(dims) * reps
         cur_config_number = 0
         configs_dir = os.path.join(self.experiment_root, 'configs')
         os.makedirs(configs_dir, exist_ok=False)
@@ -123,15 +134,20 @@ python ../single_experiment.py configs/${FILE_ID}.json
                         # print(f'Ids for opt={my_optimizer_name}, fid={fid}, iid={iid}, dim={dim} are [{cur_config_number}, {cur_config_number+reps-1}]')
                         for rep in range(reps):
                             experiment_config = {
-                                    'folder': f'{self.result_folder_prefix}_Opt-{my_optimizer_name}_F-{fid}_Dim-{dim}_Rep-{rep}_Id-{cur_config_number}',
-                                    'opt': my_optimizer_name,
-                                    'fid': fid,
-                                    'iid': iid,
-                                    'dim': dim,
-                                    'seed': rep,
-                                    'lb': lb,
-                                    'ub': ub,
-                                    }
+                                'folder': f'{self.result_folder_prefix}_Opt-{my_optimizer_name}_F-{fid}_Dim-{dim}_Rep-{rep}_Id-{cur_config_number}',
+                                'opt': my_optimizer_name,
+                                'fid': fid,
+                                'iid': iid,
+                                'dim': dim,
+                                'seed': rep,
+                                'lb': lb,
+                                'ub': ub,
+                            }
+                            if my_optimizer_name == 'pyCMA':
+                                arg_best, best = my_doe[Description(
+                                    fid=fid, dim=dim, seed=rep)]
+                                experiment_config['doe_arg_best'] = arg_best
+                                experiment_config['doe_best'] = best
                             cur_config_file_name = f'{cur_config_number}.json'
                             with open(os.path.join(configs_dir, cur_config_file_name), 'w') as f:
                                 json.dump(experiment_config, f)
@@ -144,11 +160,21 @@ python ../single_experiment.py configs/${FILE_ID}.json
 
 
 def main(argv):
-    env = ExperimentEnvironment(argv[2])
-    env.set_up_by_experiment_config_file(argv[1])
+    parser = argparse.ArgumentParser(
+        'generate slurm environment with all the configurations')
+    parser.add_argument('config_file', type=str,
+                        help='fqn of the file with global configuration of the experiment')
+    parser.add_argument('whose', type=str,
+                        help='Whose cluster is it? Options: Elena, Hao')
+    parser.add_argument('--logs_with_doe', type=str,
+                        help='Path to the folder with logs that contain information about does. This information is required for pyCMA', default=None)
+    args = parser.parse_args()
+    env = ExperimentEnvironment(args.whose)
+    if args.logs_with_doe is not None:
+        env.set_logs_with_doe(args.logs_with_doe)
+    env.set_up_by_experiment_config_file(args.config_file)
     env.print_helper()
 
 
 if __name__ == '__main__':
     main(sys.argv)
-

@@ -22,27 +22,23 @@ row_function = None
 
 
 class Py_CMA_ES_Wrapper:
-    def __init__(self, func, dim, total_budget, seed):
+    def __init__(self, func, dim, total_budget, seed, doe_arg_best, doe_best):
         self.func = func
         self.dim = dim
         self.total_budget = total_budget
         self.seed = seed
+        self.doe_arg_best = doe_arg_best
+        self.doe_best = doe_best
 
     def run(self):
         space = RealSpace([lb, ub], random_seed=self.seed) * self.dim
-        ma = float('-inf')
-        argmax = None
-        for i in range(10*self.dim):
-            x = space.sample(1)[0]
-            f = row_function(x)
-            if f > ma:
-                ma = f
-                argmax = x
-        cma.fmin(self.func, x, 1., options={'bounds': [
+        assert abs(row_function(self.doe_arg_best) - self.doe_best) < 0.00001
+        print(f'    CMA starting point is {self.doe_arg_best}')
+        cma.fmin(self.func, self.doe_arg_best, 1., options={'bounds': [
                  [lb]*self.dim, [ub]*self.dim], 'maxfevals': self.total_budget, 'seed': self.seed})
 
 
-def create_algorithm(optimizer_name, func, dim, total_budget, doe_size, seed):
+def create_algorithm(optimizer_name, func, dim, total_budget, doe_size, seed, **kwargs):
     space = RealSpace([lb, ub], random_seed=seed) * dim
     global cnt
     cnt += 1
@@ -127,7 +123,7 @@ def create_algorithm(optimizer_name, func, dim, total_budget, doe_size, seed):
             random_seed=seed
         )
     elif optimizer_name == 'pyCMA':
-        return Py_CMA_ES_Wrapper(func, dim, total_budget, seed)
+        return Py_CMA_ES_Wrapper(func, dim, total_budget, seed, kwargs['doe_arg_best'], kwargs['doe_best'])
     else:
         raise NotImplementedError
 
@@ -147,7 +143,7 @@ class AlgorithmWrapper:
     def create_fitness(my_function):
         return partial(AlgorithmWrapper.__fitness_function_wrapper, f=my_function)
 
-    def __call__(self, optimizer_name, f, fid, iid, dim):
+    def __call__(self, optimizer_name, f, fid, iid, dim, **kwargs):
         self.dim = dim
         self.optimizer_name = optimizer_name
         func = partial(AlgorithmWrapper.__fitness_function_wrapper, f=f)
@@ -163,7 +159,7 @@ class AlgorithmWrapper:
         else:
             total_budget = 2 * doe_size
         self.opt = create_algorithm(
-            optimizer_name, func, self.dim, total_budget, doe_size, self.seed)
+            optimizer_name, func, self.dim, total_budget, doe_size, self.seed, **kwargs)
         print(f'    total_budget = {total_budget}')
         print(f'    doe_size = {doe_size}')
         sys.stdout.flush()
@@ -198,7 +194,7 @@ class AlgorithmWrapper:
         return self.opt.mode_fit_time
 
 
-def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep, folder_name):
+def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep, folder_name, **kwargs):
     algorithm = AlgorithmWrapper(rep)
     l = MyIOHFormatOnEveryEvaluationLogger(
         folder_name=folder_name, algorithm_name=my_optimizer_name)
@@ -210,10 +206,11 @@ def run_particular_experiment(my_optimizer_name, fid, iid, dim, rep, folder_name
     global row_function
     row_function = p.my_function
     p.attach_logger(l)
-    algorithm(my_optimizer_name, p, fid, iid, dim)
+    algorithm(my_optimizer_name, p, fid, iid, dim, **kwargs)
     l.finish_logging()
 
 
 def validate_optimizers(optimizers):
     for optimizer in optimizers:
-        create_algorithm(optimizer, lambda x: 1, 10, 10, 10, 0)
+        create_algorithm(optimizer, lambda x: 1, 10, 10, 10,
+                         0, doe_arg_best=[0]*10, doe_best=0)
