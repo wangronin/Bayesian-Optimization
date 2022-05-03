@@ -13,7 +13,7 @@ import numpy as np
 import copy
 import time
 from datetime import timedelta
-import cma
+from pycma.cma.evolution_strategy import fmin2 as pycmaes
 
 
 lb, ub = -5, 5
@@ -34,7 +34,7 @@ class Py_CMA_ES_Wrapper:
         space = RealSpace([lb, ub], random_seed=self.seed) * self.dim
         assert abs(row_function(self.doe_arg_best) - self.doe_best) < 0.00001
         print(f'    CMA starting point is {self.doe_arg_best}')
-        cma.fmin(self.func, self.doe_arg_best, 1., options={'bounds': [
+        pycmaes(self.func, self.doe_arg_best, (ub - lb) / 4, eval_initial_x=True, options={'bounds': [
                  [lb]*self.dim, [ub]*self.dim], 'maxfevals': self.total_budget, 'seed': self.seed})
 
 
