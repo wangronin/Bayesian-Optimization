@@ -33,7 +33,7 @@ def main():
                     next(r, None)
                     x, y, err = [], [], []
                     for row in r:
-                        x.append(int(row[0]) + (0 if opt != 'pyCMA' else 3 * dim))
+                        x.append(int(row[0]) )# + (0 if opt != 'pyCMA' else 3 * dim))
                         y.append(float(row[1]))
                         err.append(float(row[2]) / np.sqrt(float(row[3])))
                     x, y, err = np.array(x), np.array(y), np.array(err)

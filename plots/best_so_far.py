@@ -66,6 +66,21 @@ def process_cur_results(result_data, arrays, extract):
             f.write(f'{i} {mean[i-1]} {sd[i-1]} {cnt[i-1]}\n')
 
 
+def process_cur_results_1(result_data, arrays, extract):
+    file_fqn = os.path.join(
+        extract, f'{result_data.opt}_D{result_data.dim}_F{result_data.fid}')
+    mean, sd, cnt = get_mean_sd(result_data, arrays)
+    with open(file_fqn, 'w') as f:
+        f.write(f'runtime mean sd count\n')
+        beg = 1
+        end = 5 * result_data.dim
+        step = 1
+        for i in range(beg, end + step, step):
+            if i-1 > len(mean):
+                break
+            f.write(f'{i} {mean[i-1]} {sd[i-1]} {cnt[i-1]}\n')
+
+
 def main():
     parser = argparse.ArgumentParser('Processor of best-so-far')
     parser.add_argument('--zip_paths', nargs='+', required=True,
@@ -81,7 +96,7 @@ def main():
     for zip_path in args.zip_paths:
         gatherer.add_zip(zip_path)
     gatherer.process_results(process_result_callback=functools.partial(
-        process_cur_results, extract=extract_data_dir))
+        process_cur_results_1, extract=extract_data_dir))
 
 
 if __name__ == '__main__':
