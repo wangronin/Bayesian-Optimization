@@ -35,7 +35,7 @@ class Py_CMA_ES_Wrapper:
         assert abs(row_function(self.doe_arg_best) - self.doe_best) < 0.00001
         print(f'    CMA starting point is {self.doe_arg_best}')
         pycmaes(self.func, self.doe_arg_best, (ub - lb) / 4, eval_initial_x=True, options={'bounds': [
-                 [lb]*self.dim, [ub]*self.dim], 'maxfevals': self.total_budget, 'seed': self.seed})
+            [lb]*self.dim, [ub]*self.dim], 'maxfevals': self.total_budget, 'seed': self.seed})
 
 
 def create_algorithm(optimizer_name, func, dim, total_budget, doe_size, seed, **kwargs):
@@ -147,7 +147,7 @@ class AlgorithmWrapper:
         self.dim = dim
         self.optimizer_name = optimizer_name
         func = partial(AlgorithmWrapper.__fitness_function_wrapper, f=f)
-        doe_size = 3 * self.dim
+        doe_size = self.dim
         if self.dim == 10:
             total_budget = 250
         elif self.dim == 20:

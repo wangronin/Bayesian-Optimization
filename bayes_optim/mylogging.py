@@ -1,6 +1,6 @@
 import sys
-# import matplotlib as mpl
-# import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import os
 import math
 import statistics
@@ -19,7 +19,7 @@ class PictureSaver:
 
 
 MODE = Enum('EXECUTION MODE', 'DEBUG RELEASE DEBUG_CHARTS')
-MY_EXECUTION_MODE = MODE.RELEASE
+MY_EXECUTION_MODE = MODE.DEBUG_CHARTS
 
 
 def eprintf(*args, **kwargs):
@@ -107,7 +107,7 @@ class MyChartSaver:
         return var_col
 
     def set_iter_number(self, iter_number):
-        if MY_EXECUTION_MODE is not MODE.DEBUG:
+        if MY_EXECUTION_MODE is not MODE.DEBUG_CHARTS:
             return
         self.iter_number = iter_number
 
@@ -194,7 +194,7 @@ class MyChartSaver:
         X_ = np.concatenate((X_, np.array([x[0] for x in X])), axis=0)
         X_.sort()
         Y_predicted = model.predict(np.array([[x] for x in X_]))
-        Y_predicted = [y[0] for y in Y_predicted]
+        # Y_predicted = [y[0] for y in Y_predicted]
         plt.plot(X_, Y_predicted)
         plt.title(f'Model function after iteration {self.iter_number}')
         plt.scatter(X, y_, c='red')
