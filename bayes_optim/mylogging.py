@@ -19,7 +19,7 @@ class PictureSaver:
 
 
 MODE = Enum('EXECUTION MODE', 'DEBUG RELEASE DEBUG_CHARTS')
-MY_EXECUTION_MODE = MODE.DEBUG_CHARTS
+MY_EXECUTION_MODE = MODE.RELEASE
 
 
 def eprintf(*args, **kwargs):
