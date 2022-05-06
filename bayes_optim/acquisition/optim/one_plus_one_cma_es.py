@@ -7,6 +7,8 @@ from scipy.linalg import solve_triangular
 
 from ...search_space import RealSpace, SearchSpace
 from ...utils import dynamic_penalty, get_logger, handle_box_constraint, set_bounds
+from bayes_optim.mylogging import eprintf
+import random
 
 Vector = List[float]
 Matrix = List[Vector]
@@ -182,6 +184,7 @@ class OnePlusOne_CMA(object):
             self._random_seed = int(seed)
             if self._random_seed:
                 np.random.seed(self._random_seed)
+                random.seed(self._random_seed)
 
     @property
     def C(self):
@@ -213,7 +216,7 @@ class OnePlusOne_CMA(object):
         else:
             # sample `x` u.a.r. in `[lb, ub]`
             assert all(~np.isinf(self.lb)) & all(~np.isinf(self.ub))
-            x = (self.ub - self.lb) * np.random.rand(self.dim) + self.lb
+            x = np.array([random.uniform(self.lb[i], self.ub[i]) for i in range(self.dim)])
 
         self._x = x
         y = self.evaluate(x)

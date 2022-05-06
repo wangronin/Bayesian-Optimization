@@ -11,6 +11,7 @@ class MyIOHFormatOnEveryEvaluationLogger:
         self.algorithm_info = algorithm_info
         self.suite = suite
         self.create_time = time.time()
+        self.extra_info_getters = []
 
     @staticmethod
     def __generate_dir_name(name, x=0):
@@ -27,20 +28,28 @@ class MyIOHFormatOnEveryEvaluationLogger:
         self.algorithm = algorithm
         self.extra_info_getters = extra_data
 
+    def __log_to_meta_file(self, time_taken=None):
+        if time_taken is None:
+            time_taken = time.time() - self.create_time
+        with open(self.log_info_path, 'w') as f:
+            f.write(f'suite = \"{self.suite}\", funcId = {self.fid}, funcName = \"{self.func_name}\", DIM = {self.dim}, maximization = \"F\", algId = \"{self.algorithm_name}\", algInfo = \"{self.algorithm_info}\"\n')
+            f.write('%\n')
+            f.write(f'{self.log_file_path}, {self.first_line}:{self.last_line}|{time_taken}\n')
+
     def _set_up_logger(self, fid, iid, dim, func_name):
         self.log_info_path = f'{self.folder_name}/IOHprofiler_f{fid}_{func_name}.info'
-        with open(self.log_info_path, 'a') as f:
-            f.write(f'suite = \"{self.suite}\", funcId = {fid}, funcName = \"{func_name}\", DIM = {dim}, maximization = \"F\", algId = \"{self.algorithm_name}\", algInfo = \"{self.algorithm_info}\"\n')
+        self.fid, self.func_name, self.dim = fid, func_name, dim
         self.log_file_path = f'data_f{fid}_{func_name}/IOHprofiler_f{fid}_DIM{dim}.dat'
         self.log_file_full_path = f'{self.folder_name}/{self.log_file_path}'
         os.makedirs(os.path.dirname(self.log_file_full_path), exist_ok=True)
         self.first_line = 0
         self.last_line = 0
-        with open(self.log_file_full_path, 'a') as f:
+        with open(self.log_file_full_path, 'w') as f:
             f.write('\"function evaluation\" \"current f(x)\" \"best-so-far f(x)\" \"current af(x)+b\" \"best af(x)+b\"')
             for extra_info in self.extra_info_getters:
                 f.write(f' {extra_info}')
             f.write('\n')
+        self.__log_to_meta_file()
 
     def log(self, cur_evaluation, cur_fitness, best_so_far):
         with open(self.log_file_full_path, 'a') as f:
@@ -53,13 +62,10 @@ class MyIOHFormatOnEveryEvaluationLogger:
                 f.write(f' {extra_info}')
             f.write('\n')
             self.last_line += 1
+        self.__log_to_meta_file()
 
-    def finish_logging(self):
-        time_taken = time.time() - self.create_time
-        with open(self.log_info_path, 'a') as f:
-            f.write('%\n')
-            f.write(f'{self.log_file_path}, {self.first_line}:{self.last_line}|{time_taken}\n')
-
+    def finish_logging(self, time_taken=None):
+        self.__log_to_meta_file(time_taken)
 
 class MyObjectiveFunctionWrapper:
     def __init__(self, fid, iid, dim, directed_by='Hao'):
