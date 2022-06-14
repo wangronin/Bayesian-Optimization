@@ -46,3 +46,15 @@ def test_kernel_parameter_fit():
     my_gamma = kernel_transform.kernel_config['kernel_parameters']['gamma']
     assert my_gamma == pytest.approx(best_gamma, abs=0.01)
 
+def test_with_big_matrix():
+    X = []
+    import csv
+    with open('big_matrix_kpca.csv') as csvfile:
+        reader = csv.reader(csvfile, delimiter=',')
+        for row in reader:
+            X.append([float(row[i]) for i in range(6)])
+    kpca = MyKernelPCA(dimensions=len(X[0]), epsilon=0.1, X_initial_space=X, kernel_config={'kernel_name': 'poly', 'kernel_parameters': {'gamma': 1., 'd': 5, 'c0': 0}})
+    kpca.fit(X)
+    X_transformed = kpca.transform(X)
+    print(X_transformed)
+

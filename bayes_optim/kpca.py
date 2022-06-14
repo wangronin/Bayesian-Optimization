@@ -87,7 +87,7 @@ class MyKernelPCA:
         return [x[0] for x in g]
 
     def __sorted_eig(self, X):
-        values, vectors = np.linalg.eig(X)
+        values, vectors = np.linalg.eigh(X)
         values_ids = [(v,i) for i,v in enumerate(values)]
         values_ids.sort()
         values_ids = values_ids[::-1]
@@ -164,9 +164,11 @@ class MyKernelPCA:
         G = self.__compute_G(X_weighted)
         self.G_centered = self.__center_G(G)
         self.too_compressed = self.__is_too_compressed(self.G_centered)
+        if not np.array_equal(self.G_centered, self.G_centered.T):
+            for i in range(len(self.G_centered)):
+                for j in range(len(self.G_centered[i]) // 2):
+                    self.G_centered[i][j] = self.G_centered[j][i]
         eignValues, eignVectors = self.__sorted_eig(self.G_centered)
-        eignValues = eignValues.view(np.float64)
-        eignVectors = eignVectors.view(np.float64)
         eignValues[eignValues < 0] = 0
         eignValuesSum = sum(t for t in eignValues)
         s = 0
