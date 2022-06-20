@@ -152,7 +152,7 @@ class AlgorithmWrapper:
         self.dim = dim
         self.optimizer_name = optimizer_name
         func = partial(AlgorithmWrapper.__fitness_function_wrapper, f=f)
-        doe_size = 3 * self.dim
+        doe_size = self.dim
         if self.dim == 10:
             total_budget = 250
         elif self.dim == 20:
