@@ -23,9 +23,9 @@ setup(
     install_requires=[
         "dill>=0.3.3",
         "joblib>=1.0.0",
-        "numpy>=1.19.2",
+        "numpy>=1.24.0",
         "pyDOE>=0.3.8",
-        "scikit-learn>=0.23.2",
+        "scikit-learn>=1.2.2",
         "scipy>=1.5.4",
         "sklearn==0.0",
         "tabulate>=0.8.7",
@@ -34,7 +34,7 @@ setup(
         "requests-oauthlib>=1.3.0",
         "sobol-seq>=0.2.0",
         "py-expression-eval>=0.3.13",
-        "torch>=1.9.0",
-        "pytest>=6.2.5",
+        "torch>=2.0.1",
+        "pytest>=7.3.2",
     ],
 )
