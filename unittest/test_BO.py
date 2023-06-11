@@ -5,6 +5,7 @@ import sys
 sys.path.insert(0, "../")
 import numpy as np
 import pytest
+
 from bayes_optim import BO, ParallelBO
 from bayes_optim.search_space import (
     BoolSpace,
@@ -26,7 +27,7 @@ def test_pickling():
 
     def fitness(x):
         x = np.asarray(x)
-        return np.sum(x ** 2)
+        return np.sum(x**2)
 
     space = RealSpace([lb, ub]) * dim
 
@@ -251,7 +252,7 @@ def test_mix_space(eval_type):
             x_i = int(x["ordinal"])
             x_d = x["nominal"]
             _ = 0 if x_d == "OK" else 1
-            return np.sum(x_r ** 2) + abs(x_i - 10) / 123.0 + _ * 2
+            return np.sum(x_r**2) + abs(x_i - 10) / 123.0 + _ * 2
 
     elif eval_type == "list":
 
@@ -260,7 +261,7 @@ def test_mix_space(eval_type):
             x_i = x[dim_r]
             x_d = x[dim_r + 1]
             _ = 0 if x_d == "OK" else 1
-            return np.sum(x_r ** 2) + abs(x_i - 10) / 123.0 + _ * 2
+            return np.sum(x_r**2) + abs(x_i - 10) / 123.0 + _ * 2
 
     else:
         raise NotImplementedError

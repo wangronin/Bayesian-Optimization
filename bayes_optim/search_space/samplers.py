@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import warnings
+
 # from abc import ABC
 from typing import Callable
 
 import numpy as np
 
-# import torch
-# from gpytorch.distributions import MultivariateNormal
-
 # from scipy.optimize import root_scalar
 from scipy.stats import norm
 
 from ..utils.exception import ConstraintEvaluationError
+
+# import torch
+# from gpytorch.distributions import MultivariateNormal
+
 
 # from torch import Tensor
 # from torch.nn import Module
@@ -66,9 +69,7 @@ class SCMC:
         self.mh_steps = metropolis_hastings_step
         self.nu_target = tol / 8  # 8-sigma CI leads to ~1.24e-15 significance
         self.nu0 = 10
-        self.nu_schedule = np.logspace(
-            np.log10(self.nu0), np.log10(self.nu_target), base=10, num=20
-        )
+        self.nu_schedule = np.logspace(np.log10(self.nu0), np.log10(self.nu_target), base=10, num=20)
 
         # index of each type of variables in the dataframe
         self.id_r = self.sample_space.real_id  # index of continuous variable
@@ -141,7 +142,7 @@ class SCMC:
     def _ess(self, nu: float, nu_ref: float, X: np.ndarray) -> float:
         """effective sample size"""
         w = self.get_weights(nu, nu_ref, X)
-        v = 0 if np.any(np.isnan(w)) else 1 / np.sum(w ** 2)
+        v = 0 if np.any(np.isnan(w)) else 1 / np.sum(w**2)
         return v - len(X) / 2
 
     def get_weights(self, nu, nu_ref, X):
@@ -174,7 +175,12 @@ class SCMC:
                 X_dim = X.copy()
                 X_dim[:, i] = X_[:, i]
                 lp_ = np.array([self._log_posterior(x_, nu) for x_ in X_dim])
-                prob = np.clip(np.exp(lp_ - lp), 0, 1)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("error")
+                    try:
+                        prob = np.clip(np.exp(lp_ - lp), 0, 1)
+                    except:
+                        prob = 1
                 mask = np.random.rand(N) <= prob
                 X[mask, i] = X_[mask, i]
                 lp[mask] = lp_[mask]
