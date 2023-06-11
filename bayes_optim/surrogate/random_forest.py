@@ -99,7 +99,7 @@ class RandomForest(RandomForestRegressor):
             self._cat_idx = list(self._levels.keys())
             self._categories = list(self._levels.values())
             # encode categorical variables to binary values
-            self._enc = OneHotEncoder(categories=self._categories, sparse=False)
+            self._enc = OneHotEncoder(categories=self._categories, sparse_output=False)
 
     def _check_X(self, X: Union[Solution, List, np.ndarray]) -> Solution:
         X_ = array(X, dtype=object)

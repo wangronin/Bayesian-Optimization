@@ -7,7 +7,6 @@ from scipy import linalg
 from scipy.linalg import LinAlgError, cho_solve, cholesky, solve_triangular
 from scipy.optimize import fmin_l_bfgs_b
 from sklearn.base import BaseEstimator, RegressorMixin
-from sklearn.metrics.pairwise import manhattan_distances
 from sklearn.utils import check_array, check_random_state, check_X_y
 
 from .cma_es import cma_es
@@ -19,7 +18,7 @@ MACHINE_EPSILON = np.finfo(np.double).eps
 warnings.filterwarnings("error")
 
 
-def l1_cross_distances(X):
+def l1_cross_distances(X, Y=None):
     """
     Computes the nonzero componentwise L1 cross-distances between the vectors
     in X.
@@ -40,20 +39,26 @@ def l1_cross_distances(X):
         The indices i and j of the vectors in X associated to the cross-
         distances in D: D[k] = np.abs(X[ij[k, 0]] - Y[ij[k, 1]]).
     """
-    X = check_array(X)
-    n_samples, n_features = X.shape
-    n_nonzero_cross_dist = n_samples * (n_samples - 1) // 2
-    ij = np.zeros((n_nonzero_cross_dist, 2), dtype=int)
-    D = np.zeros((n_nonzero_cross_dist, n_features))
-    ll_1 = 0
-    for k in range(n_samples - 1):
-        ll_0 = ll_1
-        ll_1 = ll_0 + n_samples - k - 1
-        ij[ll_0:ll_1, 0] = k
-        ij[ll_0:ll_1, 1] = np.arange(k + 1, n_samples)
-        D[ll_0:ll_1] = np.abs(X[k] - X[(k + 1) : n_samples])
-
-    return D, ij
+    if Y is not None:
+        X = check_array(X)
+        Y = check_array(Y)
+        D = X[:, np.newaxis, :] - Y[np.newaxis, :, :]
+        D = np.abs(D, D)
+        return D.reshape((-1, X.shape[1]))
+    else:
+        X = check_array(X)
+        n_samples, n_features = X.shape
+        n_nonzero_cross_dist = n_samples * (n_samples - 1) // 2
+        ij = np.zeros((n_nonzero_cross_dist, 2), dtype=np.int_)
+        D = np.zeros((n_nonzero_cross_dist, n_features))
+        ll_1 = 0
+        for k in range(n_samples - 1):
+            ll_0 = ll_1
+            ll_1 = ll_0 + n_samples - k - 1
+            ij[ll_0:ll_1, 0] = k
+            ij[ll_0:ll_1, 1] = np.arange(k + 1, n_samples)
+            D[ll_0:ll_1] = np.abs(X[k] - X[(k + 1) : n_samples])
+        return D, ij
 
 
 def my_dot(x, y):
@@ -336,7 +341,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         # X1 = (X1 - self.X_mean) / self.X_std
         # X2 = (X2 - self.X_mean) / self.X_std
 
-        dx_new = manhattan_distances(X1, Y=X2, sum_over_features=False)
+        dx_new = l1_cross_distances(X1, Y=X2)
         R_prior = self.corr(self.theta_, dx_new).reshape(n_eval_X1, n_eval_X2)
 
         if corr:
@@ -478,7 +483,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
 
             # Get pairwise componentwise L1-distances to the input training set
             # TODO: remove calculations of distances from here
-            dx = manhattan_distances(X, Y=self.X, sum_over_features=False)
+            dx = l1_cross_distances(X, Y=self.X)
             # Get meanession function and correlation
             r = self.corr(self.theta_, dx).reshape(n_eval, n_samples)
             # Predictor
@@ -548,7 +553,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         f_dx = self.mean.Jacobian(x)
 
         # correlation and its Jacobian
-        d = manhattan_distances(x, Y=self.X, sum_over_features=False)
+        d = l1_cross_distances(x, Y=self.X)
         r = self.corr(self.theta_, d).reshape(n_eval, n_samples)
         r_dx = self.corr_dx(x, X=self.X, r=r).T
 
@@ -586,7 +591,7 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
         f_dx2 = self.mean.Hessian(x)
 
         # The Hessian tensor of the correlation
-        d = manhattan_distances(x, Y=self.X, sum_over_features=False)
+        d = l1_cross_distances(x, Y=self.X)
         r = self.corr(self.theta_, d).reshape(n_eval, n_samples)
         r_dx2 = self.corr_Hessian(x, X=self.X, r=r)
 
@@ -928,17 +933,18 @@ class GaussianProcess(BaseEstimator, RegressorMixin):
             theta = par
             noise_var = 0
             R0 = self.correlation_matrix(theta)
-            try:
-                L, Ft, Yt, Q, G, rho = self._compute_aux_var(R0)
-                # TODO: check experimental correction of the sigma2 estimation
-                # k = np.linalg.matrix_rank(Q.dot(Q.T)) if Q is not None else 0
-                k = 0
-                sigma2 = (rho**2.0).sum(axis=0) / (n_samples - k)
-                log_likelihood = -0.5 * (
-                    n_samples * log(2.0 * pi * sigma2) + 2.0 * np.log(np.diag(L)).sum() + n_samples
-                )
-            except (LinAlgError, ValueError, Warning):
-                log_likelihood = None
+            with warnings.catch_warnings():
+                warnings.filterwarnings("error")
+                try:
+                    L, Ft, Yt, Q, G, rho = self._compute_aux_var(R0)
+                    # TODO: check experimental correction of the sigma2 estimation
+                    k = np.linalg.matrix_rank(Q.dot(Q.T)) if Q is not None else 0
+                    sigma2 = (rho**2.0).sum(axis=0) / (n_samples - k)
+                    log_likelihood = -0.5 * (
+                        n_samples * log(2.0 * pi * sigma2) + 2.0 * np.log(np.diag(L)).sum() + n_samples
+                    )
+                except (LinAlgError, ValueError, Warning):
+                    log_likelihood = None
 
         elif self.estimation_mode == "noise_estim":
             theta, alpha = par[:-1], par[-1]

@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 import warnings
+
+# from abc import ABC
 from typing import Callable
 
 import numpy as np
+
+# from scipy.optimize import root_scalar
 from scipy.stats import norm
 
 from ..utils.exception import ConstraintEvaluationError
+
+# import torch
+# from gpytorch.distributions import MultivariateNormal
+
+
+# from torch import Tensor
+# from torch.nn import Module
+
 
 __author__ = "Hao Wang"
 
@@ -171,14 +183,19 @@ class SCMC:
         lp = np.array([self._log_posterior(x, nu) for x in X])  # log-probability
         for _ in range(self.mh_steps):
             X_ = self._rproposal(X, t)
-            lp_ = np.array([self._log_posterior(x_, nu) for x_ in X_])
-            try:
-                prob = np.clip(np.exp(lp_ - lp), 0, 1)
-            except Warning:
-                prob = 1
-            mask = np.random.rand(N) <= prob
-            X[mask, :] = X_[mask, :]
-            lp[mask] = lp_[mask]
+            for i in range(self.dim):
+                X_dim = X.copy()
+                X_dim[:, i] = X_[:, i]
+                lp_ = np.array([self._log_posterior(x_, nu) for x_ in X_dim])
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("error")
+                    try:
+                        prob = np.clip(np.exp(lp_ - lp), 0, 1)
+                    except:
+                        prob = 1
+                mask = np.random.rand(N) <= prob
+                X[mask, i] = X_[mask, i]
+                lp[mask] = lp_[mask]
         return X
 
     def sample(self, N: int) -> np.ndarray:
